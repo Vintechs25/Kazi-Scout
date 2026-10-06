@@ -3,20 +3,27 @@ info:
   # Do not change the title, if the title changes, the import paths will be broken
   title: Api
   version: 0.1.0
-  description: API specification
+  description: Local-first job discovery and application tracking API
 servers:
   - url: /api
     description: Base API path
 tags:
   - name: health
-    description: Health operations
+  - name: auth
+  - name: dashboard
+  - name: jobs
+  - name: applications
+  - name: candidate
+  - name: search-profiles
+  - name: cvs
+  - name: agent
+  - name: settings
 paths:
   /healthz:
     get:
       operationId: healthCheck
       tags: [health]
       summary: Health check
-      description: Returns server health status
       responses:
         "200":
           description: Healthy
@@ -24,13 +31,600 @@ paths:
             application/json:
               schema:
                 $ref: "#/components/schemas/HealthStatus"
+  /auth/status:
+    get:
+      operationId: getAuthStatus
+      tags: [auth]
+      summary: Check local account setup and session status
+      responses:
+        "200":
+          description: Current authentication state
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/AuthStatus"
+  /auth/setup:
+    post:
+      operationId: setupLocalAccount
+      tags: [auth]
+      summary: Create the first local account
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/AuthPasswordInput"
+      responses:
+        "200":
+          description: Account created and signed in
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/AuthStatus"
+        "409":
+          description: An account already exists
+  /auth/login:
+    post:
+      operationId: loginLocalAccount
+      tags: [auth]
+      summary: Sign in to the local account
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/AuthPasswordInput"
+      responses:
+        "200":
+          description: Signed in
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/AuthStatus"
+        "401":
+          description: Invalid password
+  /auth/logout:
+    post:
+      operationId: logoutLocalAccount
+      tags: [auth]
+      summary: End the local session
+      responses:
+        "204":
+          description: Signed out
+  /dashboard:
+    get:
+      operationId: getDashboard
+      tags: [dashboard]
+      summary: Get live dashboard totals and recent activity
+      responses:
+        "200":
+          description: Dashboard data from persisted records
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/DashboardSummary"
+  /jobs:
+    get:
+      operationId: listJobs
+      tags: [jobs]
+      summary: List discovered and manually added jobs
+      parameters:
+        - in: query
+          name: q
+          schema: { type: string }
+        - in: query
+          name: status
+          schema:
+            $ref: "#/components/schemas/JobStatus"
+      responses:
+        "200":
+          description: Matching jobs
+          content:
+            application/json:
+              schema:
+                type: array
+                items: { $ref: "#/components/schemas/Job" }
+    post:
+      operationId: createJob
+      tags: [jobs]
+      summary: Add a real job record and reject exact duplicates
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/JobInput"
+      responses:
+        "201":
+          description: Job added
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Job"
+        "409":
+          description: Duplicate job fingerprint or source ID
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/DuplicateJob"
+  /jobs/{id}:
+    get:
+      operationId: getJob
+      tags: [jobs]
+      summary: Get a job
+      parameters:
+        - $ref: "#/components/parameters/Id"
+      responses:
+        "200":
+          description: Job details
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Job" }
+        "404": { description: Job not found }
+    patch:
+      operationId: updateJob
+      tags: [jobs]
+      summary: Update a job's review status
+      parameters:
+        - $ref: "#/components/parameters/Id"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/JobUpdate"
+      responses:
+        "200":
+          description: Updated job
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Job" }
+  /jobs/{id}/track:
+    post:
+      operationId: trackJobApplication
+      tags: [applications]
+      summary: Create a review-stage application record without submitting
+      parameters:
+        - $ref: "#/components/parameters/Id"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/TrackApplicationInput"
+      responses:
+        "201":
+          description: Application created in review state
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Application" }
+        "409":
+          description: This job already has an application record
+  /applications:
+    get:
+      operationId: listApplications
+      tags: [applications]
+      summary: List tracked applications
+      responses:
+        "200":
+          description: Application records
+          content:
+            application/json:
+              schema:
+                type: array
+                items: { $ref: "#/components/schemas/Application" }
+  /candidate-profile:
+    get:
+      operationId: getCandidateProfile
+      tags: [candidate]
+      summary: Get the editable candidate profile
+      responses:
+        "200":
+          description: Candidate profile
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/CandidateProfile" }
+    put:
+      operationId: saveCandidateProfile
+      tags: [candidate]
+      summary: Save verified candidate details
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/CandidateProfileInput"
+      responses:
+        "200":
+          description: Saved candidate profile
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/CandidateProfile" }
+  /search-profiles:
+    get:
+      operationId: listSearchProfiles
+      tags: [search-profiles]
+      summary: List job search profiles
+      responses:
+        "200":
+          description: Search profiles
+          content:
+            application/json:
+              schema:
+                type: array
+                items: { $ref: "#/components/schemas/SearchProfile" }
+    post:
+      operationId: createSearchProfile
+      tags: [search-profiles]
+      summary: Create a search profile
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/SearchProfileInput"
+      responses:
+        "201":
+          description: Created search profile
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/SearchProfile" }
+  /search-profiles/{id}:
+    patch:
+      operationId: updateSearchProfile
+      tags: [search-profiles]
+      summary: Update a search profile
+      parameters:
+        - $ref: "#/components/parameters/Id"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/SearchProfileUpdate"
+      responses:
+        "200":
+          description: Updated search profile
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/SearchProfile" }
+    delete:
+      operationId: deleteSearchProfile
+      tags: [search-profiles]
+      summary: Delete a search profile
+      parameters:
+        - $ref: "#/components/parameters/Id"
+      responses:
+        "204": { description: Deleted }
+  /cvs:
+    get:
+      operationId: listCvs
+      tags: [cvs]
+      summary: List locally stored CV metadata
+      responses:
+        "200":
+          description: CVs
+          content:
+            application/json:
+              schema:
+                type: array
+                items: { $ref: "#/components/schemas/Cv" }
+    post:
+      operationId: uploadCv
+      tags: [cvs]
+      summary: Store a PDF or DOCX CV locally
+      requestBody:
+        required: true
+        content:
+          multipart/form-data:
+            schema: { $ref: "#/components/schemas/CvUploadInput" }
+      responses:
+        "201":
+          description: CV stored locally
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Cv" }
+  /cvs/{id}:
+    delete:
+      operationId: deleteCv
+      tags: [cvs]
+      summary: Delete a CV file and its metadata
+      parameters:
+        - $ref: "#/components/parameters/Id"
+      responses:
+        "204": { description: Deleted }
+  /agent/status:
+    get:
+      operationId: getAgentStatus
+      tags: [agent]
+      summary: Get safe processing state
+      responses:
+        "200":
+          description: Agent state
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/AgentStatus" }
+  /agent/control:
+    post:
+      operationId: controlAgent
+      tags: [agent]
+      summary: Start, pause, resume, stop, or request a safe manual run
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/AgentCommand" }
+      responses:
+        "200":
+          description: Updated state
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/AgentStatus" }
+  /settings:
+    get:
+      operationId: getSettings
+      tags: [settings]
+      summary: Get integration connection status without exposing credentials
+      responses:
+        "200":
+          description: Current settings state
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/SettingsStatus" }
 components:
+  parameters:
+    Id:
+      in: path
+      name: id
+      required: true
+      schema: { type: string, minLength: 1 }
   schemas:
     HealthStatus:
       type: object
       properties:
-        status:
-          type: string
+        status: { type: string }
+      required: [status]
+    AuthStatus:
+      type: object
+      properties:
+        setupRequired: { type: boolean }
+        authenticated: { type: boolean }
+      required: [setupRequired, authenticated]
+    AuthPasswordInput:
+      type: object
+      properties:
+        password: { type: string, minLength: 12, maxLength: 256 }
+      required: [password]
+    DashboardActivity:
+      type: object
+      properties:
+        id: { type: string }
+        message: { type: string }
+        createdAt: { type: string, format: date-time }
+      required: [id, message, createdAt]
+    DashboardSummary:
+      type: object
+      properties:
+        jobsDiscovered: { type: integer }
+        newMatches: { type: integer }
+        applicationsSubmitted: { type: integer }
+        applicationsPending: { type: integer }
+        interviews: { type: integer }
+        offers: { type: integer }
+        responseRate: { type: number }
+        topMatchScore: { type: ["integer", "null"] }
+        jobsAwaitingReview: { type: integer }
+        agent: { $ref: "#/components/schemas/AgentStatus" }
+        recentActivity:
+          type: array
+          items: { $ref: "#/components/schemas/DashboardActivity" }
       required:
-        - status
-
+        - jobsDiscovered
+        - newMatches
+        - applicationsSubmitted
+        - applicationsPending
+        - interviews
+        - offers
+        - responseRate
+        - topMatchScore
+        - jobsAwaitingReview
+        - agent
+        - recentActivity
+    JobStatus:
+      type: string
+      enum: [DISCOVERED, MATCHED, SHORTLISTED, REJECTED, IGNORED, NEEDS_REVIEW]
+    Job:
+      type: object
+      properties:
+        id: { type: string }
+        title: { type: string }
+        company: { type: string }
+        location: { type: ["string", "null"] }
+        remote: { type: boolean }
+        salary: { type: ["string", "null"] }
+        source: { type: string }
+        sourceUrl: { type: ["string", "null"], format: uri }
+        description: { type: string }
+        matchScore: { type: ["integer", "null"], minimum: 0, maximum: 100 }
+        status: { $ref: "#/components/schemas/JobStatus" }
+        discoveredAt: { type: string, format: date-time }
+      required: [id, title, company, location, remote, salary, source, sourceUrl, description, matchScore, status, discoveredAt]
+    JobInput:
+      type: object
+      properties:
+        title: { type: string, minLength: 1, maxLength: 240 }
+        company: { type: string, minLength: 1, maxLength: 240 }
+        location: { type: ["string", "null"], maxLength: 240 }
+        remote: { type: boolean }
+        salary: { type: ["string", "null"], maxLength: 240 }
+        source: { type: string, minLength: 1, maxLength: 120 }
+        sourceUrl: { type: ["string", "null"], format: uri }
+        externalJobId: { type: ["string", "null"], maxLength: 500 }
+        description: { type: string, minLength: 1, maxLength: 100000 }
+      required: [title, company, location, remote, salary, source, sourceUrl, externalJobId, description]
+    JobUpdate:
+      type: object
+      properties:
+        status: { $ref: "#/components/schemas/JobStatus" }
+      required: [status]
+    DuplicateJob:
+      type: object
+      properties:
+        error: { type: string }
+        existingJobId: { type: string }
+      required: [error, existingJobId]
+    ApplicationStatus:
+      type: string
+      enum: [NEEDS_REVIEW, PREPARING, READY_TO_SUBMIT, SUBMITTED, EMAIL_SENT, AWAITING_RESPONSE, RECRUITER_RESPONSE, INTERVIEW, ASSESSMENT, OFFER, REJECTED, WITHDRAWN, BLOCKED]
+    Application:
+      type: object
+      properties:
+        id: { type: string }
+        jobId: { type: string }
+        jobTitle: { type: string }
+        company: { type: string }
+        appliedAt: { type: string, format: date-time }
+        method: { type: string, enum: [manual, email, browser] }
+        matchScore: { type: ["integer", "null"] }
+        status: { $ref: "#/components/schemas/ApplicationStatus" }
+        lastActivityAt: { type: string, format: date-time }
+      required: [id, jobId, jobTitle, company, appliedAt, method, matchScore, status, lastActivityAt]
+    TrackApplicationInput:
+      type: object
+      properties:
+        method: { type: string, enum: [manual, email, browser] }
+      required: [method]
+    CandidateProfile:
+      type: object
+      properties:
+        fullName: { type: string }
+        email: { type: string }
+        phone: { type: string }
+        country: { type: string }
+        city: { type: string }
+        timezone: { type: string }
+        targetRoles: { type: array, items: { type: string } }
+        skills: { type: array, items: { type: string } }
+        technologies: { type: array, items: { type: string } }
+        yearsExperience: { type: ["number", "null"], minimum: 0 }
+        education: { type: array, items: { type: string } }
+        certifications: { type: array, items: { type: string } }
+        industries: { type: array, items: { type: string } }
+        languages: { type: array, items: { type: string } }
+        preferredLocations: { type: array, items: { type: string } }
+        workModes: { type: array, items: { type: string, enum: [remote, hybrid, onsite] } }
+        relocation: { type: boolean }
+        visaSponsorship: { type: boolean }
+        minimumSalary: { type: ["number", "null"], minimum: 0 }
+        updatedAt: { type: ["string", "null"], format: date-time }
+      required: [fullName, email, phone, country, city, timezone, targetRoles, skills, technologies, yearsExperience, education, certifications, industries, languages, preferredLocations, workModes, relocation, visaSponsorship, minimumSalary, updatedAt]
+    CandidateProfileInput:
+      type: object
+      properties:
+        fullName: { type: string, maxLength: 240 }
+        email: { type: string, maxLength: 320 }
+        phone: { type: string, maxLength: 100 }
+        country: { type: string, maxLength: 120 }
+        city: { type: string, maxLength: 120 }
+        timezone: { type: string, maxLength: 100 }
+        targetRoles: { type: array, items: { type: string, maxLength: 200 } }
+        skills: { type: array, items: { type: string, maxLength: 120 } }
+        technologies: { type: array, items: { type: string, maxLength: 120 } }
+        yearsExperience: { type: ["number", "null"], minimum: 0 }
+        education: { type: array, items: { type: string, maxLength: 500 } }
+        certifications: { type: array, items: { type: string, maxLength: 300 } }
+        industries: { type: array, items: { type: string, maxLength: 150 } }
+        languages: { type: array, items: { type: string, maxLength: 100 } }
+        preferredLocations: { type: array, items: { type: string, maxLength: 200 } }
+        workModes: { type: array, items: { type: string, enum: [remote, hybrid, onsite] } }
+        relocation: { type: boolean }
+        visaSponsorship: { type: boolean }
+        minimumSalary: { type: ["number", "null"], minimum: 0 }
+      required: [fullName, email, phone, country, city, timezone, targetRoles, skills, technologies, yearsExperience, education, certifications, industries, languages, preferredLocations, workModes, relocation, visaSponsorship, minimumSalary]
+    SearchProfile:
+      type: object
+      properties:
+        id: { type: string }
+        name: { type: string }
+        keywords: { type: array, items: { type: string } }
+        locations: { type: array, items: { type: string } }
+        remoteSetting: { type: string, enum: [any, remote, hybrid, onsite] }
+        minimumMatchScore: { type: integer, minimum: 0, maximum: 100 }
+        minimumSalary: { type: ["number", "null"], minimum: 0 }
+        excludedKeywords: { type: array, items: { type: string } }
+        employmentTypes: { type: array, items: { type: string } }
+        enabled: { type: boolean }
+        createdAt: { type: string, format: date-time }
+      required: [id, name, keywords, locations, remoteSetting, minimumMatchScore, minimumSalary, excludedKeywords, employmentTypes, enabled, createdAt]
+    SearchProfileInput:
+      type: object
+      properties:
+        name: { type: string, minLength: 1, maxLength: 160 }
+        keywords: { type: array, items: { type: string, maxLength: 120 } }
+        locations: { type: array, items: { type: string, maxLength: 200 } }
+        remoteSetting: { type: string, enum: [any, remote, hybrid, onsite] }
+        minimumMatchScore: { type: integer, minimum: 0, maximum: 100 }
+        minimumSalary: { type: ["number", "null"], minimum: 0 }
+        excludedKeywords: { type: array, items: { type: string, maxLength: 120 } }
+        employmentTypes: { type: array, items: { type: string, maxLength: 80 } }
+        enabled: { type: boolean }
+      required: [name, keywords, locations, remoteSetting, minimumMatchScore, minimumSalary, excludedKeywords, employmentTypes, enabled]
+    SearchProfileUpdate:
+      type: object
+      properties:
+        name: { type: string, minLength: 1, maxLength: 160 }
+        keywords: { type: array, items: { type: string, maxLength: 120 } }
+        locations: { type: array, items: { type: string, maxLength: 200 } }
+        remoteSetting: { type: string, enum: [any, remote, hybrid, onsite] }
+        minimumMatchScore: { type: integer, minimum: 0, maximum: 100 }
+        minimumSalary: { type: ["number", "null"], minimum: 0 }
+        excludedKeywords: { type: array, items: { type: string, maxLength: 120 } }
+        employmentTypes: { type: array, items: { type: string, maxLength: 80 } }
+        enabled: { type: boolean }
+    Cv:
+      type: object
+      properties:
+        id: { type: string }
+        fileName: { type: string }
+        fileType: { type: string, enum: [pdf, docx] }
+        sizeBytes: { type: integer }
+        isMaster: { type: boolean }
+        uploadedAt: { type: string, format: date-time }
+      required: [id, fileName, fileType, sizeBytes, isMaster, uploadedAt]
+    CvUploadInput:
+      type: object
+      properties:
+        file: { type: string, format: binary }
+        isMaster: { type: boolean }
+      required: [file, isMaster]
+    AgentState:
+      type: string
+      enum: [STOPPED, STARTING, RUNNING, PAUSED, ERROR]
+    AgentStatus:
+      type: object
+      properties:
+        state: { $ref: "#/components/schemas/AgentState" }
+        message: { type: string }
+        updatedAt: { type: string, format: date-time }
+      required: [state, message, updatedAt]
+    AgentCommand:
+      type: object
+      properties:
+        command: { type: string, enum: [start, pause, resume, stop, runNow] }
+      required: [command]
+    ProviderConnection:
+      type: object
+      properties:
+        provider: { type: string, enum: [openai, gemini, gmail] }
+        status: { type: string, enum: [NOT_CONNECTED, CONNECTED, ERROR] }
+        detail: { type: string }
+      required: [provider, status, detail]
+    SettingsStatus:
+      type: object
+      properties:
+        providers:
+          type: array
+          items: { $ref: "#/components/schemas/ProviderConnection" }
+        applicationMode: { type: string, enum: [manual, approval, automatic] }
+        duplicateProtection: { type: boolean }
+      required: [providers, applicationMode, duplicateProtection]

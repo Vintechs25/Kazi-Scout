@@ -1,0 +1,28 @@
+kind = "web"
+previewPath = "/"
+title = "AI Job Agent"
+description = "A local-first job discovery and application workspace for organizing candidate information, reviewing real job matches, and preparing applications without losing control of submissions."
+version = "1.0.0"
+id = "artifacts/ai-job-agent"
+router = "path"
+
+[[services]]
+name = "web"
+paths = [ "/" ]
+localPort = 24245
+
+[services.development]
+run = "pnpm --filter @workspace/ai-job-agent run dev"
+
+[services.production]
+build = [ "pnpm", "--filter", "@workspace/ai-job-agent", "run", "build" ]
+serve = "static"
+publicDir = "artifacts/ai-job-agent/dist/public"
+
+[[services.production.rewrites]]
+from = "/*"
+to = "/index.html"
+
+[services.env]
+PORT = "24245"
+BASE_PATH = "/"

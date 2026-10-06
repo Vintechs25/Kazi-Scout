@@ -1,5 +1,22 @@
-import app from "./app";
-import { logger } from "./lib/logger";
+import path from "node:path";
+
+try {
+  process.loadEnvFile(path.resolve(process.cwd(), "../../.env"));
+} catch (error) {
+  if (
+    typeof error !== "object" ||
+    error === null ||
+    !("code" in error) ||
+    error.code !== "ENOENT"
+  ) {
+    throw error;
+  }
+}
+
+const [{ default: app }, { logger }] = await Promise.all([
+  import("./app"),
+  import("./lib/logger"),
+]);
 
 const rawPort = process.env["PORT"];
 
