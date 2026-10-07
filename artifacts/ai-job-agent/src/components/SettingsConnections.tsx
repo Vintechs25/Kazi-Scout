@@ -12,7 +12,7 @@ import {
 import {
   getGetSettingsQueryKey,
   useDisconnectGmail,
-  useGetSettings,
+  type GetSettingsQueryResult,
   useRemoveAiProvider,
   useSaveAiProvider,
   useSaveGmailOAuthConfig,
