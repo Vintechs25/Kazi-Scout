@@ -25,3 +25,4 @@ export * from "./cvs";
 export * from "./jobs";
 export * from "./searchProfiles";
 export * from "./systemState";
+export * from "./integrationSettings";

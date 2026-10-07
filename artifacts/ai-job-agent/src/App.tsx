@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { QueryClient, QueryClientProvider, useQueryClient } from '@tanstack/react-query';
 import { Link, Route, Switch, useLocation } from 'wouter';
 import {
@@ -11,10 +11,11 @@ import {
   useGetDashboard, useListJobs, useCreateJob, useGetJob, useUpdateJob, useTrackJobApplication,
   useListApplications, useGetCandidateProfile, useSaveCandidateProfile, useListSearchProfiles,
   useCreateSearchProfile, useUpdateSearchProfile, useDeleteSearchProfile, useListCvs, useUploadCv,
-  useDeleteCv, useGetAgentStatus, useControlAgent, useGetSettings, getGetDashboardQueryKey,
+  useDeleteCv, useParseCvProfile, useGetAgentStatus, useControlAgent, useGetSettings, getGetDashboardQueryKey,
   getListJobsQueryKey, getListApplicationsQueryKey, getGetJobQueryKey, getGetCandidateProfileQueryKey,
   getListSearchProfilesQueryKey, getListCvsQueryKey, getGetAgentStatusQueryKey,
 } from '@workspace/api-client-react';
+import { SettingsConnections } from './components/SettingsConnections';
 
 const queryClient = new QueryClient({ defaultOptions: { queries: { retry: 1, staleTime: 8000 } } });
 const nav = [
@@ -166,18 +167,26 @@ function Applications() {
 
 function Profile() {
   const q = useGetCandidateProfile(); const save = useSaveCandidateProfile(); const qc = useQueryClient();
+  const [formKey, setFormKey] = useState(0);
+  const draftKey = ['candidate-profile-draft'] as const;
   if (q.isLoading) return <main className="page-wrap"><Loading count={4}/></main>;
   if (q.isError) return <main className="page-wrap"><ErrorState error={q.error} retry={q.refetch}/></main>;
-  const p = q.data; if (!p) return null;
+  const savedProfile = q.data; if (!savedProfile) return null;
+  const draft = qc.getQueryData<Partial<typeof savedProfile>>(draftKey);
+  const p = { ...savedProfile, ...draft };
   return <main className="page-wrap"><PageHead eyebrow="Workspace / candidate" title="Verified candidate facts" sub="Your details stay yours. Check them before they inform a job match."/>
     <div className="notice" style={{ marginBottom: 17 }}>Keep this accurate. These details describe you; they are not shared or submitted automatically.</div>
-    <form className="panel" onSubmit={e => { e.preventDefault(); const f = new FormData(e.currentTarget); const modes = ['remote','hybrid','onsite'].filter(x => f.get(`mode-${x}`) === 'on'); save.mutate({ data: { fullName: String(f.get('fullName')), email: String(f.get('email')), phone: String(f.get('phone')), country: String(f.get('country')), city: String(f.get('city')), timezone: String(f.get('timezone')), targetRoles: split(String(f.get('targetRoles'))), skills: split(String(f.get('skills'))), technologies: split(String(f.get('technologies'))), yearsExperience: f.get('yearsExperience') ? Number(f.get('yearsExperience')) : null, education: split(String(f.get('education'))), certifications: split(String(f.get('certifications'))), industries: split(String(f.get('industries'))), languages: split(String(f.get('languages'))), preferredLocations: split(String(f.get('preferredLocations'))), workModes: modes as any, relocation: f.get('relocation') === 'on', visaSponsorship: f.get('visaSponsorship') === 'on', minimumSalary: f.get('minimumSalary') ? Number(f.get('minimumSalary')) : null } }, { onSuccess: () => qc.invalidateQueries({ queryKey: getGetCandidateProfileQueryKey() }) }); }}>
+    {draft && <div className="notice" role="status" data-testid="status-cv-profile-draft" style={{ marginBottom: 17 }}>
+      CV draft loaded. Review and edit all values before saving. Unspecified facts were left unchanged.
+      <button className="btn" type="button" style={{ marginLeft: 10 }} data-testid="button-discard-cv-draft" onClick={() => { qc.removeQueries({ queryKey: draftKey, exact: true }); setFormKey(value => value + 1); }}>Discard draft</button>
+    </div>}
+    <form key={formKey} className="panel" onSubmit={e => { e.preventDefault(); const f = new FormData(e.currentTarget); const modes = ['remote','hybrid','onsite'].filter(x => f.get(`mode-${x}`) === 'on'); save.mutate({ data: { fullName: String(f.get('fullName')), email: String(f.get('email')), phone: String(f.get('phone')), country: String(f.get('country')), city: String(f.get('city')), timezone: String(f.get('timezone')), targetRoles: split(String(f.get('targetRoles'))), skills: split(String(f.get('skills'))), technologies: split(String(f.get('technologies'))), yearsExperience: f.get('yearsExperience') ? Number(f.get('yearsExperience')) : null, education: split(String(f.get('education'))), certifications: split(String(f.get('certifications'))), industries: split(String(f.get('industries'))), languages: split(String(f.get('languages'))), preferredLocations: split(String(f.get('preferredLocations'))), workModes: modes as any, relocation: f.get('relocation') === 'on', visaSponsorship: f.get('visaSponsorship') === 'on', minimumSalary: f.get('minimumSalary') ? Number(f.get('minimumSalary')) : null } }, { onSuccess: result => { qc.setQueryData(getGetCandidateProfileQueryKey(), result); qc.removeQueries({ queryKey: draftKey, exact: true }); setFormKey(value => value + 1); } }); }}>
       <div className="panel-head"><div className="panel-title">Identity & preferences</div><div className="eyebrow">Last updated · {date(p.updatedAt)}</div></div><div className="panel-body"><div className="form-grid">
         <Field label="Full name" name="fullName" defaultValue={p.fullName}/><Field label="Email" name="email" type="email" defaultValue={p.email}/><Field label="Phone" name="phone" defaultValue={p.phone}/><Field label="Country" name="country" defaultValue={p.country}/><Field label="City" name="city" defaultValue={p.city}/><Field label="Timezone" name="timezone" defaultValue={p.timezone}/>
         <Field label="Target roles" name="targetRoles" defaultValue={p.targetRoles.join(', ')}/><Field label="Years of experience" name="yearsExperience" type="number" min="0" defaultValue={p.yearsExperience ?? ''}/><Field label="Skills" name="skills" defaultValue={p.skills.join(', ')}/><Field label="Technologies" name="technologies" defaultValue={p.technologies.join(', ')}/><Field label="Education" name="education" defaultValue={p.education.join(', ')}/><Field label="Certifications" name="certifications" defaultValue={p.certifications.join(', ')}/><Field label="Industries" name="industries" defaultValue={p.industries.join(', ')}/><Field label="Languages" name="languages" defaultValue={p.languages.join(', ')}/><Field label="Preferred locations" name="preferredLocations" defaultValue={p.preferredLocations.join(', ')}/><Field label="Minimum salary" name="minimumSalary" type="number" min="0" defaultValue={p.minimumSalary ?? ''}/>
         <div className="form-item full"><span className="label">Work modes</span><div style={{ display: 'flex', gap: 18, marginTop: 5 }}>{['remote','hybrid','onsite'].map(mode => <label key={mode} style={{ display:'flex', gap:6, alignItems:'center', fontSize:12, textTransform:'capitalize' }}><input type="checkbox" name={`mode-${mode}`} defaultChecked={p.workModes.includes(mode as any)}/>{mode}</label>)}</div></div>
         <label className="form-item" style={{ flexDirection:'row', alignItems:'center' }}><input type="checkbox" name="relocation" defaultChecked={p.relocation}/> Open to relocation</label><label className="form-item" style={{ flexDirection:'row', alignItems:'center' }}><input type="checkbox" name="visaSponsorship" defaultChecked={p.visaSponsorship}/> Requires visa sponsorship</label>
-      </div><div style={{ marginTop:20, display:'flex', alignItems:'center', gap:12 }}><Button variant="primary" type="submit" disabled={save.isPending}>{save.isPending ? 'Saving…' : 'Save verified facts'}</Button>{save.isError && <span className="field-hint">{errText(save.error)}</span>}{save.isSuccess && <span className="field-hint">Saved to your local profile.</span>}</div></div>
+      </div><div style={{ marginTop:20, display:'flex', alignItems:'center', gap:12 }}><Button variant="primary" type="submit" disabled={save.isPending} data-testid="button-save-profile">{save.isPending ? 'Saving…' : 'Save verified facts'}</Button>{save.isError && <span className="field-hint">{errText(save.error)}</span>}{save.isSuccess && <span className="field-hint">Saved to your local profile.</span>}</div></div>
     </form></main>;
 }
 
@@ -196,10 +205,198 @@ function SearchProfiles() {
 }
 
 function Cvs() {
-  const q = useListCvs(); const upload = useUploadCv(); const del = useDeleteCv(); const qc = useQueryClient();
-  return <main className="page-wrap"><PageHead eyebrow="Workspace / documents" title="CV library" sub="Files are stored locally. Upload only documents you want this workspace to use."/>
-    <section className="panel" style={{ marginBottom:14 }}><div className="panel-head"><div><div className="panel-title">Add a CV file</div><div className="field-hint" style={{ marginTop:4 }}>PDF or DOCX · local storage</div></div><FileText size={17} className="muted"/></div><div className="panel-body"><form onSubmit={e => { e.preventDefault(); const form = e.currentTarget; const file = (form.elements.namedItem('file') as HTMLInputElement).files?.[0]; if (!file) return; upload.mutate({ data: { file, isMaster: (form.elements.namedItem('isMaster') as HTMLInputElement).checked } }, { onSuccess: () => { form.reset(); qc.invalidateQueries({ queryKey: getListCvsQueryKey() }); }, onError: err => alert(errText(err)) }); }} style={{ display:'flex', gap:12, alignItems:'end', flexWrap:'wrap' }}><label className="form-item" style={{ flex:1,minWidth:220 }}><span className="label">Choose file</span><input className="field" type="file" name="file" accept=".pdf,.docx,application/pdf,application/vnd.openxmlformats-officedocument.wordprocessingml.document" required/></label><label style={{ display:'flex',gap:7,alignItems:'center',fontSize:11,paddingBottom:12 }}><input type="checkbox" name="isMaster"/> Set as master CV</label><Button variant="primary" type="submit" disabled={upload.isPending}>{upload.isPending ? 'Uploading…' : 'Upload locally'}</Button></form>{upload.isError && <p className="field-hint" style={{ color:'hsl(var(--destructive))' }}>{errText(upload.error)}</p>}</div></section>
-    <section className="panel"><div className="panel-head"><div className="panel-title">Stored files</div><span className="eyebrow">{q.data?.length ?? 0} files</span></div>{q.isLoading ? <div className="panel-body"><Loading count={2}/></div> : q.isError ? <ErrorState error={q.error} retry={q.refetch}/> : !(q.data?.length) ? <Empty icon={FileText} title="No CVs stored" copy="Uploaded files are listed here with their local file metadata."/ > : <div className="table-wrap"><table className="data-table"><thead><tr><th>File</th><th>Type</th><th>Size</th><th>Added</th><th>Role</th><th></th></tr></thead><tbody>{q.data.map(cv => <tr key={cv.id}><td><div className="job-name">{cv.fileName}</div></td><td>{cv.fileType.toUpperCase()}</td><td>{(cv.sizeBytes / 1024).toFixed(0)} KB</td><td>{date(cv.uploadedAt)}</td><td>{cv.isMaster ? <span className="badge badge-green">Master CV</span> : <span className="muted">—</span>}</td><td><Button variant="danger" onClick={() => { if (confirm(`Delete ${cv.fileName}? This removes the local file.`)) del.mutate({ id: cv.id }, { onSuccess: () => qc.invalidateQueries({ queryKey: getListCvsQueryKey() }) }); }}><Trash2 size={14}/>Delete</Button></td></tr>)}</tbody></table></div>}</section>
+  const q = useListCvs();
+  const upload = useUploadCv();
+  const del = useDeleteCv();
+  const parse = useParseCvProfile();
+  const settingsQ = useGetSettings();
+  const qc = useQueryClient();
+  const [, setLocation] = useLocation();
+  const uploadForm = useRef<HTMLFormElement | null>(null);
+  const [provider, setProvider] = useState<'' | 'openai' | 'gemini'>('');
+  const [consent, setConsent] = useState(false);
+  const [parseTarget, setParseTarget] = useState<string | null>(null);
+  const [parseProvider, setParseProvider] = useState<'' | 'openai' | 'gemini'>('');
+  const [parseConsent, setParseConsent] = useState(false);
+  const [parseError, setParseError] = useState('');
+  const aiProviders = (settingsQ.data?.providers ?? []).filter(
+    item => (item.provider === 'openai' || item.provider === 'gemini') && item.configured,
+  );
+
+  const runParse = (cvId: string, selectedProvider: 'openai' | 'gemini', confirmed: boolean) => {
+    setParseError('');
+    parse.mutate(
+      { id: cvId, data: { provider: selectedProvider, consent: confirmed } },
+      {
+        onSuccess: result => {
+          qc.setQueryData(['candidate-profile-draft'], result.draft);
+          setParseTarget(null);
+          setLocation('/profile');
+        },
+        onError: error => setParseError(errText(error)),
+      },
+    );
+  };
+
+  const uploadFile = (parseAfterUpload: boolean) => {
+    const form = uploadForm.current;
+    if (!form || !form.reportValidity()) return;
+    const file = (form.elements.namedItem('file') as HTMLInputElement).files?.[0];
+    if (!file) return;
+    const selectedProvider = provider;
+    const confirmed = consent;
+    if (parseAfterUpload && (!selectedProvider || !confirmed)) return;
+
+    upload.mutate(
+      {
+        data: {
+          file,
+          isMaster: (form.elements.namedItem('isMaster') as HTMLInputElement).checked,
+        },
+      },
+      {
+        onSuccess: cv => {
+          form.reset();
+          setProvider('');
+          setConsent(false);
+          void qc.invalidateQueries({ queryKey: getListCvsQueryKey() });
+          if (parseAfterUpload && selectedProvider) {
+            runParse(cv.id, selectedProvider, confirmed);
+          }
+        },
+      },
+    );
+  };
+
+  const readyProvider = (parseProvider === 'openai' || parseProvider === 'gemini') &&
+    aiProviders.some(item => item.provider === parseProvider);
+
+  return <main className="page-wrap">
+    <PageHead eyebrow="Workspace / documents" title="CV library" sub="Files stay on this device. Parsing sends extracted text only after you confirm."/>
+    <section className="panel" style={{ marginBottom:14 }}>
+      <div className="panel-head">
+        <div>
+          <div className="panel-title">Add a CV file</div>
+          <div className="field-hint" style={{ marginTop:4 }}>PDF or DOCX · locally stored</div>
+        </div>
+        <FileText size={17} className="muted"/>
+      </div>
+      <div className="panel-body">
+        {!settingsQ.isLoading && aiProviders.length === 0 && (
+          <div className="notice" style={{ marginBottom:14 }} data-testid="status-no-ai-provider">
+            Configure OpenAI or Gemini in <Link href="/settings">Agent & settings</Link> to parse CVs. You can still store a CV locally.
+          </div>
+        )}
+        {settingsQ.isError && <ErrorState error={settingsQ.error} retry={settingsQ.refetch}/>}
+        <form
+          ref={uploadForm}
+          onSubmit={event => { event.preventDefault(); uploadFile(false); }}
+          style={{ display:'grid', gap:14 }}
+          data-testid="form-upload-cv"
+        >
+          <div style={{ display:'flex', gap:12, alignItems:'end', flexWrap:'wrap' }}>
+            <label className="form-item" style={{ flex:1,minWidth:220 }}>
+              <span className="label">Choose file</span>
+              <input
+                className="field"
+                type="file"
+                name="file"
+                accept=".pdf,.docx,application/pdf,application/vnd.openxmlformats-officedocument.wordprocessingml.document"
+                required
+                data-testid="input-cv-file"
+              />
+            </label>
+            <label style={{ display:'flex',gap:7,alignItems:'center',fontSize:11,paddingBottom:12 }}>
+              <input type="checkbox" name="isMaster" data-testid="input-cv-master"/>
+              Set as master CV
+            </label>
+          </div>
+          <div className="form-grid">
+            <label className="form-item">
+              <span className="label">AI provider for parsing</span>
+              <select
+                className="field select"
+                value={provider}
+                onChange={event => setProvider(event.target.value as '' | 'openai' | 'gemini')}
+                data-testid="select-cv-provider"
+              >
+                <option value="">Choose a configured provider</option>
+                {aiProviders.map(item => <option key={item.provider} value={item.provider}>{labelize(item.provider)}</option>)}
+              </select>
+            </label>
+            <label className="form-item" style={{ flexDirection:'row',alignItems:'flex-start',gap:9 }}>
+              <input
+                type="checkbox"
+                checked={consent}
+                onChange={event => setConsent(event.target.checked)}
+                data-testid="checkbox-cv-consent"
+              />
+              <span className="field-hint">
+                I agree to send the text extracted from this CV to {provider || 'the selected provider'} for parsing.
+                The original file stays local; parsing creates an editable draft and does not save profile changes.
+              </span>
+            </label>
+          </div>
+          <div style={{ display:'flex',gap:8,flexWrap:'wrap' }}>
+            <Button
+              variant="primary"
+              type="button"
+              onClick={() => uploadFile(true)}
+              disabled={upload.isPending || parse.isPending || !provider || !consent}
+              data-testid="button-upload-parse-cv"
+            >
+              {upload.isPending ? 'Uploading…' : parse.isPending ? 'Parsing…' : 'Upload & parse CV'}
+            </Button>
+            <Button type="submit" disabled={upload.isPending || parse.isPending} data-testid="button-upload-cv-only">
+              {upload.isPending ? 'Uploading…' : 'Upload only'}
+            </Button>
+          </div>
+        </form>
+        {(upload.isError || parseError) && (
+          <p className="field-hint" style={{ color:'hsl(var(--destructive))' }} data-testid="status-cv-parse-error">
+            {upload.isError ? errText(upload.error) : parseError}
+          </p>
+        )}
+      </div>
+    </section>
+    <section className="panel">
+      <div className="panel-head">
+        <div className="panel-title">Stored files</div>
+        <span className="eyebrow" data-testid="text-cv-count">{q.data?.length ?? 0} files</span>
+      </div>
+      {q.isLoading ? <div className="panel-body"><Loading count={2}/></div> : q.isError ? <ErrorState error={q.error} retry={q.refetch}/> : !(q.data?.length) ? <Empty icon={FileText} title="No CVs stored" copy="Uploaded files are listed here with their local file metadata."/ > : <div className="table-wrap"><table className="data-table"><thead><tr><th>File</th><th>Type</th><th>Size</th><th>Added</th><th>Role</th><th></th></tr></thead><tbody>{q.data.map(cv => <tr key={cv.id} data-testid={`row-cv-${cv.id}`}><td><div className="job-name">{cv.fileName}</div></td><td>{cv.fileType.toUpperCase()}</td><td>{(cv.sizeBytes / 1024).toFixed(0)} KB</td><td>{date(cv.uploadedAt)}</td><td>{cv.isMaster ? <span className="badge badge-green">Master CV</span> : <span className="muted">—</span>}</td><td><div style={{ display:'flex',gap:6 }}><Button onClick={() => { setParseTarget(cv.id); setParseProvider(''); setParseConsent(false); setParseError(''); }} disabled={!aiProviders.length || parse.isPending} data-testid={`button-parse-cv-${cv.id}`}>Parse to profile</Button><Button variant="danger" onClick={() => { if (confirm(`Delete ${cv.fileName}? This removes the local file.`)) del.mutate({ id: cv.id }, { onSuccess: () => qc.invalidateQueries({ queryKey: getListCvsQueryKey() }) }); }} data-testid={`button-delete-cv-${cv.id}`}><Trash2 size={14}/>Delete</Button></div></td></tr>)}</tbody></table></div>}
+    </section>
+    {parseTarget && <div className="modal-backdrop" role="presentation" onMouseDown={event => { if (event.currentTarget === event.target) setParseTarget(null); }}>
+      <section className="drawer" role="dialog" aria-modal="true" aria-labelledby="cv-parse-title" data-testid="dialog-parse-cv">
+        <div className="drawer-head">
+          <div><div className="eyebrow">CV extraction</div><h2 className="panel-title" id="cv-parse-title">Review a profile draft</h2></div>
+          <Button onClick={() => setParseTarget(null)} data-testid="button-close-cv-parse"><X size={16}/></Button>
+        </div>
+        <div className="notice" style={{ marginBottom:16 }}>
+          The CV file stays local. Only text extracted from it is sent to the selected AI provider after you confirm. Nothing is saved to your candidate profile until you review and save it.
+        </div>
+        <label className="form-item">
+          <span className="label">AI provider</span>
+          <select className="field select" value={parseProvider} onChange={event => setParseProvider(event.target.value as '' | 'openai' | 'gemini')} data-testid="select-parse-provider">
+            <option value="">Choose a configured provider</option>
+            {aiProviders.map(item => <option key={item.provider} value={item.provider}>{labelize(item.provider)}</option>)}
+          </select>
+        </label>
+        <label style={{ display:'flex',gap:9,alignItems:'flex-start',margin:'14px 0' }}>
+          <input type="checkbox" checked={parseConsent} onChange={event => setParseConsent(event.target.checked)} data-testid="checkbox-parse-consent"/>
+          <span className="field-hint">I agree to send this CV's extracted text to {parseProvider || 'the selected provider'} for parsing.</span>
+        </label>
+        {parseError && <p className="field-hint" style={{ color:'hsl(var(--destructive))' }} data-testid="status-parse-dialog-error">{parseError}</p>}
+        <Button
+          variant="primary"
+          disabled={!readyProvider || !parseConsent || parse.isPending}
+          onClick={() => parseTarget && readyProvider && runParse(parseTarget, parseProvider as 'openai' | 'gemini', parseConsent)}
+          data-testid="button-confirm-parse-cv"
+        >
+          {parse.isPending ? 'Parsing…' : 'Parse CV'}
+        </Button>
+      </section>
+    </div>}
   </main>;
 }
 

@@ -607,6 +607,172 @@ export const DeleteCvResponse = zod.void()
 
 
 /**
+ * @summary Extract a reviewable candidate-profile draft from a stored CV
+ */
+
+
+
+export const ParseCvProfileParams = zod.object({
+  "id": zod.coerce.string().min(1)
+})
+
+export const ParseCvProfileBody = zod.object({
+  "provider": zod.enum(['openai', 'gemini']),
+  "consent": zod.boolean()
+})
+
+export const parseCvProfileResponseDraftFullNameMax = 240;
+
+export const parseCvProfileResponseDraftEmailMax = 320;
+
+export const parseCvProfileResponseDraftPhoneMax = 100;
+
+export const parseCvProfileResponseDraftCountryMax = 120;
+
+export const parseCvProfileResponseDraftCityMax = 120;
+
+export const parseCvProfileResponseDraftTimezoneMax = 100;
+
+export const parseCvProfileResponseDraftTargetRolesItemMax = 200;
+
+export const parseCvProfileResponseDraftSkillsItemMax = 120;
+
+export const parseCvProfileResponseDraftTechnologiesItemMax = 120;
+
+export const parseCvProfileResponseDraftYearsExperienceMin = 0;
+
+export const parseCvProfileResponseDraftEducationItemMax = 500;
+
+export const parseCvProfileResponseDraftCertificationsItemMax = 300;
+
+export const parseCvProfileResponseDraftIndustriesItemMax = 150;
+
+export const parseCvProfileResponseDraftLanguagesItemMax = 100;
+
+export const parseCvProfileResponseDraftPreferredLocationsItemMax = 200;
+
+export const parseCvProfileResponseDraftMinimumSalaryMin = 0;
+
+
+
+export const ParseCvProfileResponse = zod.object({
+  "draft": zod.object({
+  "fullName": zod.string().max(parseCvProfileResponseDraftFullNameMax).optional(),
+  "email": zod.string().max(parseCvProfileResponseDraftEmailMax).optional(),
+  "phone": zod.string().max(parseCvProfileResponseDraftPhoneMax).optional(),
+  "country": zod.string().max(parseCvProfileResponseDraftCountryMax).optional(),
+  "city": zod.string().max(parseCvProfileResponseDraftCityMax).optional(),
+  "timezone": zod.string().max(parseCvProfileResponseDraftTimezoneMax).optional(),
+  "targetRoles": zod.array(zod.string().max(parseCvProfileResponseDraftTargetRolesItemMax)).optional(),
+  "skills": zod.array(zod.string().max(parseCvProfileResponseDraftSkillsItemMax)).optional(),
+  "technologies": zod.array(zod.string().max(parseCvProfileResponseDraftTechnologiesItemMax)).optional(),
+  "yearsExperience": zod.number().min(parseCvProfileResponseDraftYearsExperienceMin).nullish(),
+  "education": zod.array(zod.string().max(parseCvProfileResponseDraftEducationItemMax)).optional(),
+  "certifications": zod.array(zod.string().max(parseCvProfileResponseDraftCertificationsItemMax)).optional(),
+  "industries": zod.array(zod.string().max(parseCvProfileResponseDraftIndustriesItemMax)).optional(),
+  "languages": zod.array(zod.string().max(parseCvProfileResponseDraftLanguagesItemMax)).optional(),
+  "preferredLocations": zod.array(zod.string().max(parseCvProfileResponseDraftPreferredLocationsItemMax)).optional(),
+  "workModes": zod.array(zod.enum(['remote', 'hybrid', 'onsite'])).optional(),
+  "relocation": zod.boolean().optional(),
+  "visaSponsorship": zod.boolean().optional(),
+  "minimumSalary": zod.number().min(parseCvProfileResponseDraftMinimumSalaryMin).nullish()
+}),
+  "warnings": zod.array(zod.string())
+})
+
+
+/**
+ * @summary Save an encrypted OpenAI or Gemini API configuration
+ */
+export const SaveAiProviderParams = zod.object({
+  "provider": zod.enum(['openai', 'gemini'])
+})
+
+export const saveAiProviderBodyApiKeyMin = 8;
+export const saveAiProviderBodyApiKeyMax = 2000;
+
+export const saveAiProviderBodyModelMax = 160;
+
+
+
+export const SaveAiProviderBody = zod.object({
+  "apiKey": zod.string().min(saveAiProviderBodyApiKeyMin).max(saveAiProviderBodyApiKeyMax),
+  "model": zod.string().min(1).max(saveAiProviderBodyModelMax)
+})
+
+export const SaveAiProviderResponse = zod.object({
+  "provider": zod.enum(['openai', 'gemini', 'gmail']),
+  "status": zod.enum(['NOT_CONFIGURED', 'CONFIGURED', 'CONNECTED', 'ERROR']),
+  "detail": zod.string(),
+  "configured": zod.boolean(),
+  "model": zod.string().nullable(),
+  "clientId": zod.string().nullable(),
+  "connectedEmail": zod.string().nullable()
+})
+
+
+/**
+ * @summary Remove a saved AI provider configuration
+ */
+export const RemoveAiProviderParams = zod.object({
+  "provider": zod.enum(['openai', 'gemini'])
+})
+
+export const RemoveAiProviderResponse = zod.void()
+
+
+/**
+ * @summary Verify the configured API key and selected model
+ */
+export const TestAiProviderParams = zod.object({
+  "provider": zod.enum(['openai', 'gemini'])
+})
+
+export const TestAiProviderResponse = zod.object({
+  "success": zod.boolean(),
+  "message": zod.string(),
+  "testedAt": zod.coerce.date()
+})
+
+
+/**
+ * @summary Save encrypted Google OAuth client credentials
+ */
+export const saveGmailOAuthConfigBodyClientIdMin = 8;
+export const saveGmailOAuthConfigBodyClientIdMax = 500;
+
+export const saveGmailOAuthConfigBodyClientSecretMin = 8;
+export const saveGmailOAuthConfigBodyClientSecretMax = 2000;
+
+
+
+export const SaveGmailOAuthConfigBody = zod.object({
+  "clientId": zod.string().min(saveGmailOAuthConfigBodyClientIdMin).max(saveGmailOAuthConfigBodyClientIdMax),
+  "clientSecret": zod.string().min(saveGmailOAuthConfigBodyClientSecretMin).max(saveGmailOAuthConfigBodyClientSecretMax)
+})
+
+export const SaveGmailOAuthConfigResponse = zod.object({
+  "provider": zod.enum(['openai', 'gemini', 'gmail']),
+  "status": zod.enum(['NOT_CONFIGURED', 'CONFIGURED', 'CONNECTED', 'ERROR']),
+  "detail": zod.string(),
+  "configured": zod.boolean(),
+  "model": zod.string().nullable(),
+  "clientId": zod.string().nullable(),
+  "connectedEmail": zod.string().nullable()
+})
+
+
+/**
+ * @summary Revoke and remove the saved Gmail connection
+ */
+export const DisconnectGmailResponse = zod.object({
+  "localCredentialsRemoved": zod.boolean(),
+  "googleRevocationConfirmed": zod.boolean(),
+  "message": zod.string()
+})
+
+
+/**
  * @summary Get safe processing state
  */
 export const GetAgentStatusResponse = zod.object({
@@ -636,11 +802,34 @@ export const ControlAgentResponse = zod.object({
 export const GetSettingsResponse = zod.object({
   "providers": zod.array(zod.object({
   "provider": zod.enum(['openai', 'gemini', 'gmail']),
-  "status": zod.enum(['NOT_CONNECTED', 'CONNECTED', 'ERROR']),
-  "detail": zod.string()
+  "status": zod.enum(['NOT_CONFIGURED', 'CONFIGURED', 'CONNECTED', 'ERROR']),
+  "detail": zod.string(),
+  "configured": zod.boolean(),
+  "model": zod.string().nullable(),
+  "clientId": zod.string().nullable(),
+  "connectedEmail": zod.string().nullable()
 })),
   "applicationMode": zod.enum(['manual', 'approval', 'automatic']),
-  "duplicateProtection": zod.boolean()
+  "duplicateProtection": zod.boolean(),
+  "gmailRedirectUri": zod.string()
 })
+
+
+/**
+ * @summary Start the read-only Gmail OAuth flow
+ */
+export const ConnectGmailResponse = zod.void()
+
+
+/**
+ * @summary Complete the read-only Gmail OAuth flow
+ */
+export const GmailOAuthCallbackQueryParams = zod.object({
+  "code": zod.coerce.string().optional(),
+  "state": zod.coerce.string().optional(),
+  "error": zod.coerce.string().optional()
+})
+
+export const GmailOAuthCallbackResponse = zod.void()
 
 

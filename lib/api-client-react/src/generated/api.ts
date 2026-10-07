@@ -22,20 +22,28 @@ import type {
 import type {
   AgentCommand,
   AgentStatus,
+  AiProviderConfigInput,
   Application,
   AuthPasswordInput,
   AuthStatus,
   CandidateProfile,
   CandidateProfileInput,
   Cv,
+  CvParseInput,
+  CvParseResult,
   CvUploadInput,
   DashboardSummary,
   DuplicateJob,
+  GmailDisconnectResult,
+  GmailOAuthCallbackParams,
+  GmailOAuthConfigInput,
   HealthStatus,
   Job,
   JobInput,
   JobUpdate,
   ListJobsParams,
+  ProviderConnection,
+  ProviderTestResult,
   SearchProfile,
   SearchProfileInput,
   SearchProfileUpdate,
@@ -1776,6 +1784,494 @@ export const useDeleteCv = <TError = ErrorType<unknown>,
       return useMutation(getDeleteCvMutationOptions(options));
     }
 
+export const getParseCvProfileUrl = (id: string,) => {
+
+
+
+
+  return `/api/cvs/${id}/parse`
+}
+
+/**
+ * @summary Extract a reviewable candidate-profile draft from a stored CV
+ */
+export const parseCvProfile = async (id: string,
+    cvParseInput: CvParseInput, options?: Parameters<typeof customFetch>[1]): Promise<CvParseResult> => {
+
+    const getHeaders = (h?: NonNullable<RequestInit['headers']>): Record<string, string | readonly string[]> => {
+    if (!h) return {};
+    if (h instanceof Headers) return Object.fromEntries(h.entries());
+    if (Symbol.iterator in h) {
+      return Object.fromEntries(
+        Array.from(h as Iterable<Iterable<string>>, (entry) => Array.from(entry) as [string, string]),
+      );
+    }
+    const headers: Record<string, string | readonly string[]> = {};
+    for (const [name, value] of Object.entries<string | readonly string[] | undefined>(h)) {
+      if (value !== undefined) headers[name] = value;
+    }
+    return headers;
+  };
+return customFetch<CvParseResult>(getParseCvProfileUrl(id),
+  {
+    ...options,
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json', ...getHeaders(options?.headers) },
+    body: JSON.stringify(cvParseInput)
+  }
+);}
+
+
+
+
+
+export const getParseCvProfileMutationKey = () => ['parseCvProfile'] as const;
+
+export const getParseCvProfileMutationOptions = <TError = ErrorType<void>,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof parseCvProfile>>, TError,ParseCvProfileMutationVariables, TContext>, request?: SecondParameter<typeof customFetch>}
+): UseMutationOptions<Awaited<ReturnType<typeof parseCvProfile>>, TError,ParseCvProfileMutationVariables, TContext> => {
+
+const mutationKey = getParseCvProfileMutationKey();
+const {mutation: mutationOptions, request: requestOptions} = options ?
+      options.mutation && 'mutationKey' in options.mutation && options.mutation.mutationKey ?
+      options
+      : {...options, mutation: {...options.mutation, mutationKey}}
+      : {mutation: { mutationKey, }, request: undefined};
+
+
+
+
+      const mutationFn: MutationFunction<Awaited<ReturnType<typeof parseCvProfile>>, ParseCvProfileMutationVariables> = (props) => {
+          const {id,data} = props ?? {};
+
+          return  parseCvProfile(id,data,requestOptions)
+        }
+
+
+
+
+
+
+  return  { mutationFn, ...mutationOptions }}
+
+    export type ParseCvProfileMutationResult = NonNullable<Awaited<ReturnType<typeof parseCvProfile>>>
+    export type ParseCvProfileMutationBody = BodyType<CvParseInput>
+    export type ParseCvProfileMutationError = ErrorType<void>
+    export type ParseCvProfileMutationVariables = {id: string;data: BodyType<CvParseInput>}
+
+    /**
+ * @summary Extract a reviewable candidate-profile draft from a stored CV
+ */
+export const useParseCvProfile = <TError = ErrorType<void>,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof parseCvProfile>>, TError,ParseCvProfileMutationVariables, TContext>, request?: SecondParameter<typeof customFetch>}
+ ): UseMutationResult<
+        Awaited<ReturnType<typeof parseCvProfile>>,
+        TError,
+        ParseCvProfileMutationVariables,
+        TContext
+      > => {
+      return useMutation(getParseCvProfileMutationOptions(options));
+    }
+
+export const getSaveAiProviderUrl = (provider: 'openai' | 'gemini',) => {
+
+
+
+
+  return `/api/settings/providers/${provider}`
+}
+
+/**
+ * @summary Save an encrypted OpenAI or Gemini API configuration
+ */
+export const saveAiProvider = async (provider: 'openai' | 'gemini',
+    aiProviderConfigInput: AiProviderConfigInput, options?: Parameters<typeof customFetch>[1]): Promise<ProviderConnection> => {
+
+    const getHeaders = (h?: NonNullable<RequestInit['headers']>): Record<string, string | readonly string[]> => {
+    if (!h) return {};
+    if (h instanceof Headers) return Object.fromEntries(h.entries());
+    if (Symbol.iterator in h) {
+      return Object.fromEntries(
+        Array.from(h as Iterable<Iterable<string>>, (entry) => Array.from(entry) as [string, string]),
+      );
+    }
+    const headers: Record<string, string | readonly string[]> = {};
+    for (const [name, value] of Object.entries<string | readonly string[] | undefined>(h)) {
+      if (value !== undefined) headers[name] = value;
+    }
+    return headers;
+  };
+return customFetch<ProviderConnection>(getSaveAiProviderUrl(provider),
+  {
+    ...options,
+    method: 'PUT',
+    headers: { 'Content-Type': 'application/json', ...getHeaders(options?.headers) },
+    body: JSON.stringify(aiProviderConfigInput)
+  }
+);}
+
+
+
+
+
+export const getSaveAiProviderMutationKey = () => ['saveAiProvider'] as const;
+
+export const getSaveAiProviderMutationOptions = <TError = ErrorType<unknown>,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof saveAiProvider>>, TError,SaveAiProviderMutationVariables, TContext>, request?: SecondParameter<typeof customFetch>}
+): UseMutationOptions<Awaited<ReturnType<typeof saveAiProvider>>, TError,SaveAiProviderMutationVariables, TContext> => {
+
+const mutationKey = getSaveAiProviderMutationKey();
+const {mutation: mutationOptions, request: requestOptions} = options ?
+      options.mutation && 'mutationKey' in options.mutation && options.mutation.mutationKey ?
+      options
+      : {...options, mutation: {...options.mutation, mutationKey}}
+      : {mutation: { mutationKey, }, request: undefined};
+
+
+
+
+      const mutationFn: MutationFunction<Awaited<ReturnType<typeof saveAiProvider>>, SaveAiProviderMutationVariables> = (props) => {
+          const {provider,data} = props ?? {};
+
+          return  saveAiProvider(provider,data,requestOptions)
+        }
+
+
+
+
+
+
+  return  { mutationFn, ...mutationOptions }}
+
+    export type SaveAiProviderMutationResult = NonNullable<Awaited<ReturnType<typeof saveAiProvider>>>
+    export type SaveAiProviderMutationBody = BodyType<AiProviderConfigInput>
+    export type SaveAiProviderMutationError = ErrorType<unknown>
+    export type SaveAiProviderMutationVariables = {provider: 'openai' | 'gemini';data: BodyType<AiProviderConfigInput>}
+
+    /**
+ * @summary Save an encrypted OpenAI or Gemini API configuration
+ */
+export const useSaveAiProvider = <TError = ErrorType<unknown>,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof saveAiProvider>>, TError,SaveAiProviderMutationVariables, TContext>, request?: SecondParameter<typeof customFetch>}
+ ): UseMutationResult<
+        Awaited<ReturnType<typeof saveAiProvider>>,
+        TError,
+        SaveAiProviderMutationVariables,
+        TContext
+      > => {
+      return useMutation(getSaveAiProviderMutationOptions(options));
+    }
+
+export const getRemoveAiProviderUrl = (provider: 'openai' | 'gemini',) => {
+
+
+
+
+  return `/api/settings/providers/${provider}`
+}
+
+/**
+ * @summary Remove a saved AI provider configuration
+ */
+export const removeAiProvider = async (provider: 'openai' | 'gemini', options?: Parameters<typeof customFetch>[1]): Promise<void> => {
+
+  return customFetch<void>(getRemoveAiProviderUrl(provider),
+  {
+    ...options,
+    method: 'DELETE'
+
+
+  }
+);}
+
+
+
+
+
+export const getRemoveAiProviderMutationKey = () => ['removeAiProvider'] as const;
+
+export const getRemoveAiProviderMutationOptions = <TError = ErrorType<unknown>,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof removeAiProvider>>, TError,RemoveAiProviderMutationVariables, TContext>, request?: SecondParameter<typeof customFetch>}
+): UseMutationOptions<Awaited<ReturnType<typeof removeAiProvider>>, TError,RemoveAiProviderMutationVariables, TContext> => {
+
+const mutationKey = getRemoveAiProviderMutationKey();
+const {mutation: mutationOptions, request: requestOptions} = options ?
+      options.mutation && 'mutationKey' in options.mutation && options.mutation.mutationKey ?
+      options
+      : {...options, mutation: {...options.mutation, mutationKey}}
+      : {mutation: { mutationKey, }, request: undefined};
+
+
+
+
+      const mutationFn: MutationFunction<Awaited<ReturnType<typeof removeAiProvider>>, RemoveAiProviderMutationVariables> = (props) => {
+          const {provider} = props ?? {};
+
+          return  removeAiProvider(provider,requestOptions)
+        }
+
+
+
+
+
+
+  return  { mutationFn, ...mutationOptions }}
+
+    export type RemoveAiProviderMutationResult = NonNullable<Awaited<ReturnType<typeof removeAiProvider>>>
+
+    export type RemoveAiProviderMutationError = ErrorType<unknown>
+    export type RemoveAiProviderMutationVariables = {provider: 'openai' | 'gemini'}
+
+    /**
+ * @summary Remove a saved AI provider configuration
+ */
+export const useRemoveAiProvider = <TError = ErrorType<unknown>,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof removeAiProvider>>, TError,RemoveAiProviderMutationVariables, TContext>, request?: SecondParameter<typeof customFetch>}
+ ): UseMutationResult<
+        Awaited<ReturnType<typeof removeAiProvider>>,
+        TError,
+        RemoveAiProviderMutationVariables,
+        TContext
+      > => {
+      return useMutation(getRemoveAiProviderMutationOptions(options));
+    }
+
+export const getTestAiProviderUrl = (provider: 'openai' | 'gemini',) => {
+
+
+
+
+  return `/api/settings/providers/${provider}/test`
+}
+
+/**
+ * @summary Verify the configured API key and selected model
+ */
+export const testAiProvider = async (provider: 'openai' | 'gemini', options?: Parameters<typeof customFetch>[1]): Promise<ProviderTestResult> => {
+
+  return customFetch<ProviderTestResult>(getTestAiProviderUrl(provider),
+  {
+    ...options,
+    method: 'POST'
+
+
+  }
+);}
+
+
+
+
+
+export const getTestAiProviderMutationKey = () => ['testAiProvider'] as const;
+
+export const getTestAiProviderMutationOptions = <TError = ErrorType<void>,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof testAiProvider>>, TError,TestAiProviderMutationVariables, TContext>, request?: SecondParameter<typeof customFetch>}
+): UseMutationOptions<Awaited<ReturnType<typeof testAiProvider>>, TError,TestAiProviderMutationVariables, TContext> => {
+
+const mutationKey = getTestAiProviderMutationKey();
+const {mutation: mutationOptions, request: requestOptions} = options ?
+      options.mutation && 'mutationKey' in options.mutation && options.mutation.mutationKey ?
+      options
+      : {...options, mutation: {...options.mutation, mutationKey}}
+      : {mutation: { mutationKey, }, request: undefined};
+
+
+
+
+      const mutationFn: MutationFunction<Awaited<ReturnType<typeof testAiProvider>>, TestAiProviderMutationVariables> = (props) => {
+          const {provider} = props ?? {};
+
+          return  testAiProvider(provider,requestOptions)
+        }
+
+
+
+
+
+
+  return  { mutationFn, ...mutationOptions }}
+
+    export type TestAiProviderMutationResult = NonNullable<Awaited<ReturnType<typeof testAiProvider>>>
+
+    export type TestAiProviderMutationError = ErrorType<void>
+    export type TestAiProviderMutationVariables = {provider: 'openai' | 'gemini'}
+
+    /**
+ * @summary Verify the configured API key and selected model
+ */
+export const useTestAiProvider = <TError = ErrorType<void>,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof testAiProvider>>, TError,TestAiProviderMutationVariables, TContext>, request?: SecondParameter<typeof customFetch>}
+ ): UseMutationResult<
+        Awaited<ReturnType<typeof testAiProvider>>,
+        TError,
+        TestAiProviderMutationVariables,
+        TContext
+      > => {
+      return useMutation(getTestAiProviderMutationOptions(options));
+    }
+
+export const getSaveGmailOAuthConfigUrl = () => {
+
+
+
+
+  return `/api/settings/gmail`
+}
+
+/**
+ * @summary Save encrypted Google OAuth client credentials
+ */
+export const saveGmailOAuthConfig = async (gmailOAuthConfigInput: GmailOAuthConfigInput, options?: Parameters<typeof customFetch>[1]): Promise<ProviderConnection> => {
+
+    const getHeaders = (h?: NonNullable<RequestInit['headers']>): Record<string, string | readonly string[]> => {
+    if (!h) return {};
+    if (h instanceof Headers) return Object.fromEntries(h.entries());
+    if (Symbol.iterator in h) {
+      return Object.fromEntries(
+        Array.from(h as Iterable<Iterable<string>>, (entry) => Array.from(entry) as [string, string]),
+      );
+    }
+    const headers: Record<string, string | readonly string[]> = {};
+    for (const [name, value] of Object.entries<string | readonly string[] | undefined>(h)) {
+      if (value !== undefined) headers[name] = value;
+    }
+    return headers;
+  };
+return customFetch<ProviderConnection>(getSaveGmailOAuthConfigUrl(),
+  {
+    ...options,
+    method: 'PUT',
+    headers: { 'Content-Type': 'application/json', ...getHeaders(options?.headers) },
+    body: JSON.stringify(gmailOAuthConfigInput)
+  }
+);}
+
+
+
+
+
+export const getSaveGmailOAuthConfigMutationKey = () => ['saveGmailOAuthConfig'] as const;
+
+export const getSaveGmailOAuthConfigMutationOptions = <TError = ErrorType<unknown>,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof saveGmailOAuthConfig>>, TError,SaveGmailOAuthConfigMutationVariables, TContext>, request?: SecondParameter<typeof customFetch>}
+): UseMutationOptions<Awaited<ReturnType<typeof saveGmailOAuthConfig>>, TError,SaveGmailOAuthConfigMutationVariables, TContext> => {
+
+const mutationKey = getSaveGmailOAuthConfigMutationKey();
+const {mutation: mutationOptions, request: requestOptions} = options ?
+      options.mutation && 'mutationKey' in options.mutation && options.mutation.mutationKey ?
+      options
+      : {...options, mutation: {...options.mutation, mutationKey}}
+      : {mutation: { mutationKey, }, request: undefined};
+
+
+
+
+      const mutationFn: MutationFunction<Awaited<ReturnType<typeof saveGmailOAuthConfig>>, SaveGmailOAuthConfigMutationVariables> = (props) => {
+          const {data} = props ?? {};
+
+          return  saveGmailOAuthConfig(data,requestOptions)
+        }
+
+
+
+
+
+
+  return  { mutationFn, ...mutationOptions }}
+
+    export type SaveGmailOAuthConfigMutationResult = NonNullable<Awaited<ReturnType<typeof saveGmailOAuthConfig>>>
+    export type SaveGmailOAuthConfigMutationBody = BodyType<GmailOAuthConfigInput>
+    export type SaveGmailOAuthConfigMutationError = ErrorType<unknown>
+    export type SaveGmailOAuthConfigMutationVariables = {data: BodyType<GmailOAuthConfigInput>}
+
+    /**
+ * @summary Save encrypted Google OAuth client credentials
+ */
+export const useSaveGmailOAuthConfig = <TError = ErrorType<unknown>,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof saveGmailOAuthConfig>>, TError,SaveGmailOAuthConfigMutationVariables, TContext>, request?: SecondParameter<typeof customFetch>}
+ ): UseMutationResult<
+        Awaited<ReturnType<typeof saveGmailOAuthConfig>>,
+        TError,
+        SaveGmailOAuthConfigMutationVariables,
+        TContext
+      > => {
+      return useMutation(getSaveGmailOAuthConfigMutationOptions(options));
+    }
+
+export const getDisconnectGmailUrl = () => {
+
+
+
+
+  return `/api/settings/gmail`
+}
+
+/**
+ * @summary Revoke and remove the saved Gmail connection
+ */
+export const disconnectGmail = async ( options?: Parameters<typeof customFetch>[1]): Promise<GmailDisconnectResult> => {
+
+  return customFetch<GmailDisconnectResult>(getDisconnectGmailUrl(),
+  {
+    ...options,
+    method: 'DELETE'
+
+
+  }
+);}
+
+
+
+
+
+export const getDisconnectGmailMutationKey = () => ['disconnectGmail'] as const;
+
+export const getDisconnectGmailMutationOptions = <TError = ErrorType<unknown>,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof disconnectGmail>>, TError,void, TContext>, request?: SecondParameter<typeof customFetch>}
+): UseMutationOptions<Awaited<ReturnType<typeof disconnectGmail>>, TError,void, TContext> => {
+
+const mutationKey = getDisconnectGmailMutationKey();
+const {mutation: mutationOptions, request: requestOptions} = options ?
+      options.mutation && 'mutationKey' in options.mutation && options.mutation.mutationKey ?
+      options
+      : {...options, mutation: {...options.mutation, mutationKey}}
+      : {mutation: { mutationKey, }, request: undefined};
+
+
+
+
+      const mutationFn: MutationFunction<Awaited<ReturnType<typeof disconnectGmail>>, void> = () => {
+
+
+          return  disconnectGmail(requestOptions)
+        }
+
+
+
+
+
+
+  return  { mutationFn, ...mutationOptions }}
+
+    export type DisconnectGmailMutationResult = NonNullable<Awaited<ReturnType<typeof disconnectGmail>>>
+
+    export type DisconnectGmailMutationError = ErrorType<unknown>
+
+
+    /**
+ * @summary Revoke and remove the saved Gmail connection
+ */
+export const useDisconnectGmail = <TError = ErrorType<unknown>,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof disconnectGmail>>, TError,void, TContext>, request?: SecondParameter<typeof customFetch>}
+ ): UseMutationResult<
+        Awaited<ReturnType<typeof disconnectGmail>>,
+        TError,
+        void,
+        TContext
+      > => {
+      return useMutation(getDisconnectGmailMutationOptions(options));
+    }
+
 export const getGetAgentStatusUrl = () => {
 
 
@@ -2006,6 +2502,167 @@ export function useGetSettings<TData = Awaited<ReturnType<typeof getSettings>>, 
  ):  UseQueryResult<TData, TError> & { queryKey: QueryKey } {
 
   const queryOptions = getGetSettingsQueryOptions(options)
+
+  const query = useQuery(queryOptions) as  UseQueryResult<TData, TError> & { queryKey: QueryKey };
+
+  return withQueryKey(query, queryOptions.queryKey);
+}
+
+
+
+
+
+
+
+export const getConnectGmailUrl = () => {
+
+
+
+
+  return `/api/integrations/gmail/connect`
+}
+
+/**
+ * @summary Start the read-only Gmail OAuth flow
+ */
+export const connectGmail = async ( options?: Parameters<typeof customFetch>[1]): Promise<unknown> => {
+
+  return customFetch<unknown>(getConnectGmailUrl(),
+  {
+    ...options,
+    method: 'GET'
+
+
+  }
+);}
+
+
+
+
+
+export const getConnectGmailQueryKey = () => {
+    return [
+    `/api/integrations/gmail/connect`
+    ] as const;
+    }
+
+
+export const getConnectGmailQueryOptions = <TData = Awaited<ReturnType<typeof connectGmail>>, TError = ErrorType<void>>( options?: { query?:UseQueryOptions<Awaited<ReturnType<typeof connectGmail>>, TError, TData>, request?: SecondParameter<typeof customFetch>}
+) => {
+
+const {query: queryOptions, request: requestOptions} = options ?? {};
+
+  const queryKey =  queryOptions?.queryKey ?? getConnectGmailQueryKey();
+
+
+
+    const queryFn: QueryFunction<Awaited<ReturnType<typeof connectGmail>>> = ({ signal }) => connectGmail({ signal, ...requestOptions });
+
+
+
+
+
+   return  { queryKey, queryFn, ...queryOptions} as UseQueryOptions<Awaited<ReturnType<typeof connectGmail>>, TError, TData> & { queryKey: QueryKey }
+}
+
+export type ConnectGmailQueryResult = NonNullable<Awaited<ReturnType<typeof connectGmail>>>
+export type ConnectGmailQueryError = ErrorType<void>
+
+
+/**
+ * @summary Start the read-only Gmail OAuth flow
+ */
+
+export function useConnectGmail<TData = Awaited<ReturnType<typeof connectGmail>>, TError = ErrorType<void>>(
+  options?: { query?:UseQueryOptions<Awaited<ReturnType<typeof connectGmail>>, TError, TData>, request?: SecondParameter<typeof customFetch>}
+
+ ):  UseQueryResult<TData, TError> & { queryKey: QueryKey } {
+
+  const queryOptions = getConnectGmailQueryOptions(options)
+
+  const query = useQuery(queryOptions) as  UseQueryResult<TData, TError> & { queryKey: QueryKey };
+
+  return withQueryKey(query, queryOptions.queryKey);
+}
+
+
+
+
+
+
+
+export const getGmailOAuthCallbackUrl = (params?: GmailOAuthCallbackParams,) => {
+  const normalizedParams = new URLSearchParams();
+
+  Object.entries(params || {}).forEach(([key, value]) => {
+
+    if (value !== undefined) {
+      normalizedParams.append(key, value === null ? 'null' : String(value))
+    }
+  });
+
+  const stringifiedParams = normalizedParams.toString();
+
+  return stringifiedParams.length > 0 ? `/api/integrations/gmail/callback?${stringifiedParams}` : `/api/integrations/gmail/callback`
+}
+
+/**
+ * @summary Complete the read-only Gmail OAuth flow
+ */
+export const gmailOAuthCallback = async (params?: GmailOAuthCallbackParams, options?: Parameters<typeof customFetch>[1]): Promise<unknown> => {
+
+  return customFetch<unknown>(getGmailOAuthCallbackUrl(params),
+  {
+    ...options,
+    method: 'GET'
+
+
+  }
+);}
+
+
+
+
+
+export const getGmailOAuthCallbackQueryKey = (params?: GmailOAuthCallbackParams,) => {
+    return [
+    `/api/integrations/gmail/callback`, ...(params ? [params] : [])
+    ] as const;
+    }
+
+
+export const getGmailOAuthCallbackQueryOptions = <TData = Awaited<ReturnType<typeof gmailOAuthCallback>>, TError = ErrorType<void>>(params?: GmailOAuthCallbackParams, options?: { query?:UseQueryOptions<Awaited<ReturnType<typeof gmailOAuthCallback>>, TError, TData>, request?: SecondParameter<typeof customFetch>}
+) => {
+
+const {query: queryOptions, request: requestOptions} = options ?? {};
+
+  const queryKey =  queryOptions?.queryKey ?? getGmailOAuthCallbackQueryKey(params);
+
+
+
+    const queryFn: QueryFunction<Awaited<ReturnType<typeof gmailOAuthCallback>>> = ({ signal }) => gmailOAuthCallback(params, { signal, ...requestOptions });
+
+
+
+
+
+   return  { queryKey, queryFn, ...queryOptions} as UseQueryOptions<Awaited<ReturnType<typeof gmailOAuthCallback>>, TError, TData> & { queryKey: QueryKey }
+}
+
+export type GmailOAuthCallbackQueryResult = NonNullable<Awaited<ReturnType<typeof gmailOAuthCallback>>>
+export type GmailOAuthCallbackQueryError = ErrorType<void>
+
+
+/**
+ * @summary Complete the read-only Gmail OAuth flow
+ */
+
+export function useGmailOAuthCallback<TData = Awaited<ReturnType<typeof gmailOAuthCallback>>, TError = ErrorType<void>>(
+ params?: GmailOAuthCallbackParams, options?: { query?:UseQueryOptions<Awaited<ReturnType<typeof gmailOAuthCallback>>, TError, TData>, request?: SecondParameter<typeof customFetch>}
+
+ ):  UseQueryResult<TData, TError> & { queryKey: QueryKey } {
+
+  const queryOptions = getGmailOAuthCallbackQueryOptions(params,options)
 
   const query = useQuery(queryOptions) as  UseQueryResult<TData, TError> & { queryKey: QueryKey };
 

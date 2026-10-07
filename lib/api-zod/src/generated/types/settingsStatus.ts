@@ -12,4 +12,5 @@ export interface SettingsStatus {
   providers: ProviderConnection[];
   applicationMode: SettingsStatusApplicationMode;
   duplicateProtection: boolean;
+  gmailRedirectUri: string;
 }

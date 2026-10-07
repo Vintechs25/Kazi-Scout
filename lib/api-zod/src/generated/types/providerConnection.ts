@@ -12,4 +12,11 @@ export interface ProviderConnection {
   provider: ProviderConnectionProvider;
   status: ProviderConnectionStatus;
   detail: string;
+  configured: boolean;
+  /** @nullable */
+  model: string | null;
+  /** @nullable */
+  clientId: string | null;
+  /** @nullable */
+  connectedEmail: string | null;
 }

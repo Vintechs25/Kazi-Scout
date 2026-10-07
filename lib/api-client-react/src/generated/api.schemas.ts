@@ -293,6 +293,59 @@ export interface CandidateProfileInput {
   minimumSalary: number | null;
 }
 
+export type CandidateProfileDraftWorkModesItem = typeof CandidateProfileDraftWorkModesItem[keyof typeof CandidateProfileDraftWorkModesItem];
+
+
+export const CandidateProfileDraftWorkModesItem = {
+  remote: 'remote',
+  hybrid: 'hybrid',
+  onsite: 'onsite',
+} as const;
+
+export interface CandidateProfileDraft {
+  /** @maxLength 240 */
+  fullName?: string;
+  /** @maxLength 320 */
+  email?: string;
+  /** @maxLength 100 */
+  phone?: string;
+  /** @maxLength 120 */
+  country?: string;
+  /** @maxLength 120 */
+  city?: string;
+  /** @maxLength 100 */
+  timezone?: string;
+  /** @items.maxLength 200 */
+  targetRoles?: string[];
+  /** @items.maxLength 120 */
+  skills?: string[];
+  /** @items.maxLength 120 */
+  technologies?: string[];
+  /**
+     * @minimum 0
+     * @nullable
+     */
+  yearsExperience?: number | null;
+  /** @items.maxLength 500 */
+  education?: string[];
+  /** @items.maxLength 300 */
+  certifications?: string[];
+  /** @items.maxLength 150 */
+  industries?: string[];
+  /** @items.maxLength 100 */
+  languages?: string[];
+  /** @items.maxLength 200 */
+  preferredLocations?: string[];
+  workModes?: CandidateProfileDraftWorkModesItem[];
+  relocation?: boolean;
+  visaSponsorship?: boolean;
+  /**
+     * @minimum 0
+     * @nullable
+     */
+  minimumSalary?: number | null;
+}
+
 export type SearchProfileRemoteSetting = typeof SearchProfileRemoteSetting[keyof typeof SearchProfileRemoteSetting];
 
 
@@ -423,6 +476,24 @@ export interface CvUploadInput {
   isMaster: boolean;
 }
 
+export type CvParseInputProvider = typeof CvParseInputProvider[keyof typeof CvParseInputProvider];
+
+
+export const CvParseInputProvider = {
+  openai: 'openai',
+  gemini: 'gemini',
+} as const;
+
+export interface CvParseInput {
+  provider: CvParseInputProvider;
+  consent: boolean;
+}
+
+export interface CvParseResult {
+  draft: CandidateProfileDraft;
+  warnings: string[];
+}
+
 export type AgentCommandCommand = typeof AgentCommandCommand[keyof typeof AgentCommandCommand];
 
 
@@ -451,7 +522,8 @@ export type ProviderConnectionStatus = typeof ProviderConnectionStatus[keyof typ
 
 
 export const ProviderConnectionStatus = {
-  NOT_CONNECTED: 'NOT_CONNECTED',
+  NOT_CONFIGURED: 'NOT_CONFIGURED',
+  CONFIGURED: 'CONFIGURED',
   CONNECTED: 'CONNECTED',
   ERROR: 'ERROR',
 } as const;
@@ -460,6 +532,51 @@ export interface ProviderConnection {
   provider: ProviderConnectionProvider;
   status: ProviderConnectionStatus;
   detail: string;
+  configured: boolean;
+  /** @nullable */
+  model: string | null;
+  /** @nullable */
+  clientId: string | null;
+  /** @nullable */
+  connectedEmail: string | null;
+}
+
+export interface AiProviderConfigInput {
+  /**
+     * @minLength 8
+     * @maxLength 2000
+     */
+  apiKey: string;
+  /**
+     * @minLength 1
+     * @maxLength 160
+     */
+  model: string;
+}
+
+export interface GmailOAuthConfigInput {
+  /**
+     * @minLength 8
+     * @maxLength 500
+     */
+  clientId: string;
+  /**
+     * @minLength 8
+     * @maxLength 2000
+     */
+  clientSecret: string;
+}
+
+export interface GmailDisconnectResult {
+  localCredentialsRemoved: boolean;
+  googleRevocationConfirmed: boolean;
+  message: string;
+}
+
+export interface ProviderTestResult {
+  success: boolean;
+  message: string;
+  testedAt: string;
 }
 
 export type SettingsStatusApplicationMode = typeof SettingsStatusApplicationMode[keyof typeof SettingsStatusApplicationMode];
@@ -475,10 +592,17 @@ export interface SettingsStatus {
   providers: ProviderConnection[];
   applicationMode: SettingsStatusApplicationMode;
   duplicateProtection: boolean;
+  gmailRedirectUri: string;
 }
 
 export type ListJobsParams = {
 q?: string;
 status?: JobStatus;
+};
+
+export type GmailOAuthCallbackParams = {
+code?: string;
+state?: string;
+error?: string;
 };
 

@@ -18,6 +18,7 @@ tags:
   - name: cvs
   - name: agent
   - name: settings
+  - name: integrations
 paths:
   /healthz:
     get:
@@ -333,6 +334,94 @@ paths:
         - $ref: "#/components/parameters/Id"
       responses:
         "204": { description: Deleted }
+  /cvs/{id}/parse:
+    post:
+      operationId: parseCvProfile
+      tags: [cvs]
+      summary: Extract a reviewable candidate-profile draft from a stored CV
+      parameters:
+        - $ref: "#/components/parameters/Id"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/CvParseInput" }
+      responses:
+        "200":
+          description: Candidate profile draft. No profile data is saved.
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/CvParseResult" }
+        "400": { description: Invalid request or missing consent }
+        "404": { description: CV not found }
+        "409": { description: Provider is not configured }
+        "422": { description: CV contains no extractable text }
+  /settings/providers/{provider}:
+    put:
+      operationId: saveAiProvider
+      tags: [settings]
+      summary: Save an encrypted OpenAI or Gemini API configuration
+      parameters:
+        - $ref: "#/components/parameters/AiProvider"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/AiProviderConfigInput" }
+      responses:
+        "200":
+          description: Provider configuration status, without the API key
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/ProviderConnection" }
+    delete:
+      operationId: removeAiProvider
+      tags: [settings]
+      summary: Remove a saved AI provider configuration
+      parameters:
+        - $ref: "#/components/parameters/AiProvider"
+      responses:
+        "204": { description: Removed }
+  /settings/providers/{provider}/test:
+    post:
+      operationId: testAiProvider
+      tags: [settings]
+      summary: Verify the configured API key and selected model
+      parameters:
+        - $ref: "#/components/parameters/AiProvider"
+      responses:
+        "200":
+          description: Provider test result
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/ProviderTestResult" }
+        "409": { description: Provider is not configured }
+  /settings/gmail:
+    put:
+      operationId: saveGmailOAuthConfig
+      tags: [settings]
+      summary: Save encrypted Google OAuth client credentials
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/GmailOAuthConfigInput" }
+      responses:
+        "200":
+          description: Gmail setup status, without the client secret
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/ProviderConnection" }
+    delete:
+      operationId: disconnectGmail
+      tags: [settings]
+      summary: Revoke and remove the saved Gmail connection
+      responses:
+        "200":
+          description: Local credentials were removed and Google revocation was attempted
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/GmailDisconnectResult" }
   /agent/status:
     get:
       operationId: getAgentStatus
@@ -371,6 +460,35 @@ paths:
           content:
             application/json:
               schema: { $ref: "#/components/schemas/SettingsStatus" }
+  /integrations/gmail/connect:
+    get:
+      operationId: connectGmail
+      tags: [integrations]
+      summary: Start the read-only Gmail OAuth flow
+      responses:
+        "302": { description: Redirect to Google for authorization }
+        "409": { description: Gmail OAuth client credentials are not configured }
+  /integrations/gmail/callback:
+    get:
+      operationId: gmailOAuthCallback
+      tags: [integrations]
+      summary: Complete the read-only Gmail OAuth flow
+      parameters:
+        - name: code
+          in: query
+          required: false
+          schema: { type: string }
+        - name: state
+          in: query
+          required: false
+          schema: { type: string }
+        - name: error
+          in: query
+          required: false
+          schema: { type: string }
+      responses:
+        "302": { description: Redirect to settings with the result }
+        "400": { description: Invalid or expired OAuth state }
 components:
   parameters:
     Id:
@@ -378,6 +496,11 @@ components:
       name: id
       required: true
       schema: { type: string, minLength: 1 }
+    AiProvider:
+      in: path
+      name: provider
+      required: true
+      schema: { type: string, enum: [openai, gemini] }
   schemas:
     HealthStatus:
       type: object
@@ -541,6 +664,28 @@ components:
         visaSponsorship: { type: boolean }
         minimumSalary: { type: ["number", "null"], minimum: 0 }
       required: [fullName, email, phone, country, city, timezone, targetRoles, skills, technologies, yearsExperience, education, certifications, industries, languages, preferredLocations, workModes, relocation, visaSponsorship, minimumSalary]
+    CandidateProfileDraft:
+      type: object
+      properties:
+        fullName: { type: string, maxLength: 240 }
+        email: { type: string, maxLength: 320 }
+        phone: { type: string, maxLength: 100 }
+        country: { type: string, maxLength: 120 }
+        city: { type: string, maxLength: 120 }
+        timezone: { type: string, maxLength: 100 }
+        targetRoles: { type: array, items: { type: string, maxLength: 200 } }
+        skills: { type: array, items: { type: string, maxLength: 120 } }
+        technologies: { type: array, items: { type: string, maxLength: 120 } }
+        yearsExperience: { type: ["number", "null"], minimum: 0 }
+        education: { type: array, items: { type: string, maxLength: 500 } }
+        certifications: { type: array, items: { type: string, maxLength: 300 } }
+        industries: { type: array, items: { type: string, maxLength: 150 } }
+        languages: { type: array, items: { type: string, maxLength: 100 } }
+        preferredLocations: { type: array, items: { type: string, maxLength: 200 } }
+        workModes: { type: array, items: { type: string, enum: [remote, hybrid, onsite] } }
+        relocation: { type: boolean }
+        visaSponsorship: { type: boolean }
+        minimumSalary: { type: ["number", "null"], minimum: 0 }
     SearchProfile:
       type: object
       properties:
@@ -597,6 +742,18 @@ components:
         file: { type: string, format: binary }
         isMaster: { type: boolean }
       required: [file, isMaster]
+    CvParseInput:
+      type: object
+      properties:
+        provider: { type: string, enum: [openai, gemini] }
+        consent: { type: boolean }
+      required: [provider, consent]
+    CvParseResult:
+      type: object
+      properties:
+        draft: { $ref: "#/components/schemas/CandidateProfileDraft" }
+        warnings: { type: array, items: { type: string } }
+      required: [draft, warnings]
     AgentState:
       type: string
       enum: [STOPPED, STARTING, RUNNING, PAUSED, ERROR]
@@ -616,9 +773,39 @@ components:
       type: object
       properties:
         provider: { type: string, enum: [openai, gemini, gmail] }
-        status: { type: string, enum: [NOT_CONNECTED, CONNECTED, ERROR] }
+        status: { type: string, enum: [NOT_CONFIGURED, CONFIGURED, CONNECTED, ERROR] }
         detail: { type: string }
-      required: [provider, status, detail]
+        configured: { type: boolean }
+        model: { type: ["string", "null"] }
+        clientId: { type: ["string", "null"] }
+        connectedEmail: { type: ["string", "null"] }
+      required: [provider, status, detail, configured, model, clientId, connectedEmail]
+    AiProviderConfigInput:
+      type: object
+      properties:
+        apiKey: { type: string, minLength: 8, maxLength: 2000 }
+        model: { type: string, minLength: 1, maxLength: 160 }
+      required: [apiKey, model]
+    GmailOAuthConfigInput:
+      type: object
+      properties:
+        clientId: { type: string, minLength: 8, maxLength: 500 }
+        clientSecret: { type: string, minLength: 8, maxLength: 2000 }
+      required: [clientId, clientSecret]
+    GmailDisconnectResult:
+      type: object
+      properties:
+        localCredentialsRemoved: { type: boolean }
+        googleRevocationConfirmed: { type: boolean }
+        message: { type: string }
+      required: [localCredentialsRemoved, googleRevocationConfirmed, message]
+    ProviderTestResult:
+      type: object
+      properties:
+        success: { type: boolean }
+        message: { type: string }
+        testedAt: { type: string, format: date-time }
+      required: [success, message, testedAt]
     SettingsStatus:
       type: object
       properties:
@@ -627,4 +814,5 @@ components:
           items: { $ref: "#/components/schemas/ProviderConnection" }
         applicationMode: { type: string, enum: [manual, approval, automatic] }
         duplicateProtection: { type: boolean }
-      required: [providers, applicationMode, duplicateProtection]
+        gmailRedirectUri: { type: string }
+      required: [providers, applicationMode, duplicateProtection, gmailRedirectUri]

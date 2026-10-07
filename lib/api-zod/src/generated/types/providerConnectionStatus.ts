@@ -10,7 +10,8 @@ export type ProviderConnectionStatus = typeof ProviderConnectionStatus[keyof typ
 
 
 export const ProviderConnectionStatus = {
-  NOT_CONNECTED: 'NOT_CONNECTED',
+  NOT_CONFIGURED: 'NOT_CONFIGURED',
+  CONFIGURED: 'CONFIGURED',
   CONNECTED: 'CONNECTED',
   ERROR: 'ERROR',
 } as const;
