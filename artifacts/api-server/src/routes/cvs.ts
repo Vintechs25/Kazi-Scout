@@ -254,7 +254,7 @@ router.post("/cvs/:id/parse", async (req, res): Promise<void> => {
   }
 
   const draft = Object.fromEntries(
-    Object.entries(validated.data.draft).flatMap(([key, value]) => {
+    Object.entries(validated.data.draft).flatMap<[string, string | string[] | number | boolean]>(([key, value]) => {
       if (typeof value === "string") {
         const trimmed = value.trim();
         return trimmed ? [[key, trimmed]] : [];
