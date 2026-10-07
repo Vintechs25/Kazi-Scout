@@ -1,0 +1,1041 @@
+﻿--- lib/db/src/index.ts
+import { mkdirSync } from "node:fs";
+import path from "node:path";
+import Database from "better-sqlite3";
+import { drizzle } from "drizzle-orm/better-sqlite3";
+import * as schema from "./schema";
+
+const projectRoot = path.resolve(process.cwd(), "../..");
+const databasePath = path.resolve(
+  projectRoot,
+  process.env.SQLITE_PATH ?? "storage/data/ai-job-agent.sqlite",
+);
+mkdirSync(path.dirname(databasePath), { recursive: true });
+
+const sqlite = new Database(databasePath);
+sqlite.pragma("journal_mode = WAL");
+sqlite.pragma("foreign_keys = ON");
+export const db = drizzle(sqlite, { schema });
+
+export * from "./schema";
+--- lib/db/drizzle.config.ts
+import { defineConfig } from "drizzle-kit";
+import path from "path";
+
+const projectRoot = path.resolve(__dirname, "../..");
+
+export default defineConfig({
+  schema: path.join(__dirname, "./src/schema/index.ts"),
+  dialect: "sqlite",
+  dbCredentials: {
+    url: path.resolve(
+      projectRoot,
+      process.env.SQLITE_PATH ?? "storage/data/ai-job-agent.sqlite",
+    ),
+  },
+});
+--- lib/db/package.json
+{
+  "name": "@workspace/db",
+  "version": "0.0.0",
+  "private": true,
+  "type": "module",
+  "exports": {
+    ".": "./src/index.ts",
+    "./schema": "./src/schema/index.ts"
+  },
+  "scripts": {
+    "push": "drizzle-kit push --config ./drizzle.config.ts",
+    "push-force": "drizzle-kit push --force --config ./drizzle.config.ts"
+  },
+  "dependencies": {
+    "better-sqlite3": "^12.2.0",
+    "drizzle-orm": "catalog:",
+    "drizzle-zod": "^0.8.3",
+    "zod": "catalog:"
+  },
+  "devDependencies": {
+    "@esbuild/win32-x64": "^0.28.2",
+    "@types/better-sqlite3": "^7.6.13",
+    "@types/node": "catalog:",
+    "drizzle-kit": "^0.31.10",
+    "esbuild": "^0.28.2"
+  }
+}
+--- artifacts/api-server/package.json
+{
+  "name": "@workspace/api-server",
+  "version": "0.0.0",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "dev": "export NODE_ENV=development && pnpm run build && pnpm run start",
+    "build": "node ./build.mjs",
+    "start": "node --enable-source-maps ./dist/index.mjs",
+    "typecheck": "tsc -p tsconfig.json --noEmit"
+  },
+  "dependencies": {
+    "@workspace/api-zod": "workspace:*",
+    "@workspace/db": "workspace:*",
+    "better-sqlite3": "^12.2.0",
+    "cookie-parser": "^1.4.7",
+    "cors": "^2.8.6",
+    "drizzle-orm": "catalog:",
+    "express": "^5.2.1",
+    "mammoth": "^1.13.0",
+    "multer": "^2.0.2",
+    "pdfjs-dist": "^6.4.299",
+    "pino": "^9.14.0",
+    "pino-http": "^10.5.0"
+  },
+  "devDependencies": {
+    "@types/cookie-parser": "^1.4.10",
+    "@types/cors": "^2.8.19",
+    "@types/express": "^5.0.6",
+    "@types/multer": "^2.0.0",
+    "@types/node": "catalog:",
+    "esbuild": "0.28.2",
+    "esbuild-plugin-pino": "^2.3.3",
+    "pino-pretty": "^13.1.3",
+    "thread-stream": "3.1.0"
+  }
+}
+--- artifacts/api-server/build.mjs
+import { createRequire } from "node:module";
+import path from "node:path";
+import { fileURLToPath } from "node:url";
+import { build as esbuild } from "esbuild";
+import esbuildPluginPino from "esbuild-plugin-pino";
+import { rm } from "node:fs/promises";
+
+// Plugins (e.g. 'esbuild-plugin-pino') may use `require` to resolve dependencies
+globalThis.require = createRequire(import.meta.url);
+
+const artifactDir = path.dirname(fileURLToPath(import.meta.url));
+
+async function buildAll() {
+  const distDir = path.resolve(artifactDir, "dist");
+  await rm(distDir, { recursive: true, force: true });
+
+  await esbuild({
+    entryPoints: [path.resolve(artifactDir, "src/index.ts")],
+    platform: "node",
+    bundle: true,
+    format: "esm",
+    outdir: distDir,
+    outExtension: { ".js": ".mjs" },
+    logLevel: "info",
+    // Some packages may not be bundleable, so we externalize them, we can add more here as needed.
+    // Some of the packages below may not be imported or installed, but we're adding them in case they are in the future.
+    // Examples of unbundleable packages:
+    // - uses native modules and loads them dynamically (e.g. sharp)
+    // - use path traversal to read files (e.g. @google-cloud/secret-manager loads sibling .proto files)
+    external: [
+      "*.node",
+      "sharp",
+      "better-sqlite3",
+      "sqlite3",
+      "canvas",
+      "bcrypt",
+      "argon2",
+      "fsevents",
+      "re2",
+      "farmhash",
+      "xxhash-addon",
+      "bufferutil",
+      "utf-8-validate",
+      "ssh2",
+      "cpu-features",
+      "dtrace-provider",
+      "isolated-vm",
+      "lightningcss",
+      "pg-native",
+      "oracledb",
+      "mongodb-client-encryption",
+      "nodemailer",
+      "handlebars",
+      "knex",
+      "typeorm",
+      "protobufjs",
+      "onnxruntime-node",
+      "@tensorflow/*",
+      "@prisma/client",
+      "@mikro-orm/*",
+      "@grpc/*",
+      "@swc/*",
+      "@aws-sdk/*",
+      "@azure/*",
+      "@opentelemetry/*",
+      "@google-cloud/*",
+      "@google/*",
+      "googleapis",
+      "firebase-admin",
+      "@parcel/watcher",
+      "@sentry/profiling-node",
+      "@tree-sitter/*",
+      "aws-sdk",
+      "classic-level",
+      "dd-trace",
+      "ffi-napi",
+      "grpc",
+      "hiredis",
+      "kerberos",
+      "leveldown",
+      "miniflare",
+      "mysql2",
+      "newrelic",
+      "odbc",
+      "piscina",
+      "realm",
+      "ref-napi",
+      "rocksdb",
+      "sass-embedded",
+      "sequelize",
+      "serialport",
+      "snappy",
+      "tinypool",
+      "usb",
+      "workerd",
+      "wrangler",
+      "zeromq",
+      "zeromq-prebuilt",
+      "playwright",
+      "puppeteer",
+      "puppeteer-core",
+      "electron",
+    ],
+    sourcemap: "linked",
+    plugins: [
+      // pino relies on workers to handle logging, instead of externalizing it we use a plugin to handle it
+      esbuildPluginPino({ transports: ["pino-pretty"] })
+    ],
+    // Make sure packages that are cjs only (e.g. express) but are bundled continue to work in our esm output file
+    banner: {
+      js: `import { createRequire as __bannerCrReq } from 'node:module';
+import __bannerPath from 'node:path';
+import __bannerUrl from 'node:url';
+
+globalThis.require = __bannerCrReq(import.meta.url);
+globalThis.__filename = __bannerUrl.fileURLToPath(import.meta.url);
+globalThis.__dirname = __bannerPath.dirname(globalThis.__filename);
+    `,
+    },
+  });
+}
+
+buildAll().catch((err) => {
+  console.error(err);
+  process.exit(1);
+});
+--- artifacts/api-server/src/app.ts
+import express, { type Express } from "express";
+import cookieParser from "cookie-parser";
+import path from "node:path";
+import pinoHttp from "pino-http";
+import router from "./routes";
+import { logger } from "./lib/logger";
+import type { ErrorRequestHandler } from "express";
+
+const app: Express = express();
+const serveWeb = process.env.SERVE_WEB === "true";
+const webDist = path.resolve(process.cwd(), "../ai-job-agent/dist/public");
+app.set("trust proxy", 1);
+app.disable("x-powered-by");
+app.use((_req, res, next) => {
+  res.setHeader("X-Content-Type-Options", "nosniff");
+  res.setHeader("Referrer-Policy", "no-referrer");
+  res.setHeader("X-Frame-Options", "DENY");
+  res.setHeader("Permissions-Policy", "camera=(), microphone=(), geolocation=()");
+  if (_req.path.startsWith("/api")) res.setHeader("Cache-Control", "no-store");
+  res.setHeader(
+    "Content-Security-Policy",
+    serveWeb
+      ? "default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline' https://fonts.googleapis.com; font-src 'self' https://fonts.gstatic.com data:; img-src 'self' data: blob:; connect-src 'self'; object-src 'none'; base-uri 'self'; frame-ancestors 'none'"
+      : "default-src 'none'; frame-ancestors 'none'; base-uri 'none'",
+  );
+  next();
+});
+
+app.use(
+  pinoHttp({
+    logger,
+    serializers: {
+      req(req) {
+        return {
+          id: req.id,
+          method: req.method,
+          url: req.url?.split("?")[0],
+        };
+      },
+      res(res) {
+        return {
+          statusCode: res.statusCode,
+        };
+      },
+    },
+  }),
+);
+app.use(cookieParser());
+app.use(express.json({ limit: "1mb" }));
+app.use(express.urlencoded({ extended: true }));
+
+if (serveWeb) {
+  app.use(express.static(webDist, { index: false }));
+}
+
+app.use("/api", router);
+
+if (serveWeb) {
+  app.get("/{*splat}", (req, res, next) => {
+    if (req.path === "/api" || req.path.startsWith("/api/")) {
+      next();
+      return;
+    }
+    res.sendFile(path.join(webDist, "index.html"), (error) => {
+      if (error) next(error);
+    });
+  });
+}
+
+const errorHandler: ErrorRequestHandler = (error, req, res, _next) => {
+  req.log.error({ err: error }, "Unhandled API error");
+  const code =
+    typeof error === "object" && error !== null && "code" in error
+      ? String(error.code)
+      : "";
+  const status = code === "LIMIT_FILE_SIZE" ? 413 : code.startsWith("LIMIT_") ? 400 : 500;
+  const message =
+    status === 413
+      ? "CV files must be 20 MB or smaller."
+      : status === 400
+        ? "Upload one PDF or DOCX CV at a time."
+        : "The request could not be completed.";
+  res.status(status).json({ error: message });
+};
+app.use(errorHandler);
+
+export default app;
+--- artifacts/api-server/src/routes/agent.ts
+import { Router, type IRouter } from "express";
+import { eq } from "drizzle-orm";
+import {
+  ControlAgentBody,
+  ControlAgentResponse,
+  GetAgentStatusResponse,
+} from "@workspace/api-zod";
+import { db, systemStateTable } from "@workspace/db";
+
+const router: IRouter = Router();
+
+async function getState() {
+  const [state] = await db
+    .select()
+    .from(systemStateTable)
+    .where(eq(systemStateTable.id, "agent"))
+    .limit(1);
+  return state;
+}
+
+router.get("/agent/status", async (_req, res): Promise<void> => {
+  const state = await getState();
+  res.json(
+    GetAgentStatusResponse.parse({
+      state: state?.agentState ?? "STOPPED",
+      message: state?.agentMessage ?? "Background workers are not configured yet.",
+      updatedAt: (state?.updatedAt ?? new Date()).toISOString(),
+    }),
+  );
+});
+
+router.post("/agent/control", async (req, res): Promise<void> => {
+  const parsed = ControlAgentBody.safeParse(req.body);
+  if (!parsed.success) {
+    res.status(400).json({ error: parsed.error.message });
+    return;
+  }
+  if (parsed.data.command !== "stop") {
+    res.status(409).json({
+      error: "Discovery workers and authorized job sources are not configured yet. The agent remains stopped.",
+    });
+    return;
+  }
+
+  const updatedAt = new Date();
+  const [state] = await db
+    .insert(systemStateTable)
+    .values({
+      id: "agent",
+      agentState: "STOPPED",
+      agentMessage: "Stopped. No automated applications or submissions can run.",
+      updatedAt,
+    })
+    .onConflictDoUpdate({
+      target: systemStateTable.id,
+      set: {
+        agentState: "STOPPED",
+        agentMessage: "Stopped. No automated applications or submissions can run.",
+        updatedAt,
+      },
+    })
+    .returning();
+  res.json(
+    ControlAgentResponse.parse({
+      state: state.agentState,
+      message: state.agentMessage,
+      updatedAt: state.updatedAt.toISOString(),
+    }),
+  );
+});
+
+export default router;
+--- artifacts/api-server/src/routes/jobs.ts
+import { Router, type IRouter } from "express";
+import { and, desc, eq, like, or } from "drizzle-orm";
+import {
+  CreateJobBody,
+  CreateJobResponse,
+  GetJobParams,
+  GetJobResponse,
+  ListJobsQueryParams,
+  ListJobsResponse,
+  TrackJobApplicationBody,
+  TrackJobApplicationParams,
+  TrackJobApplicationResponse,
+  UpdateJobBody,
+  UpdateJobParams,
+  UpdateJobResponse,
+} from "@workspace/api-zod";
+import { activityTable, applicationsTable, db, jobsTable } from "@workspace/db";
+import { fingerprintJob, isPotentialDuplicate, normalizeCompany, normalizeText } from "../lib/job-deduplication";
+
+const router: IRouter = Router();
+
+function uniqueConflict(error: unknown): boolean {
+  return (
+    typeof error === "object" &&
+    error !== null &&
+    "code" in error &&
+    typeof error.code === "string" &&
+    error.code.startsWith("SQLITE_CONSTRAINT")
+  );
+}
+
+function duplicateResponse(res: Parameters<Parameters<typeof router.post>[1]>[1], jobId: string): void {
+  res.status(409).json({
+    error: "This looks like a job already in your list. No second record was created.",
+    existingJobId: jobId,
+  });
+}
+
+router.get("/jobs", async (req, res): Promise<void> => {
+  const parsed = ListJobsQueryParams.safeParse(req.query);
+  if (!parsed.success) {
+    res.status(400).json({ error: parsed.error.message });
+    return;
+  }
+  const filters = [];
+  if (parsed.data.status) filters.push(eq(jobsTable.status, parsed.data.status));
+  if (parsed.data.q?.trim()) {
+    const term = `%${parsed.data.q.trim()}%`;
+    filters.push(
+      or(
+        like(jobsTable.title, term),
+        like(jobsTable.company, term),
+        like(jobsTable.location, term),
+        like(jobsTable.description, term),
+      ),
+    );
+  }
+  const rows = await db
+    .select()
+    .from(jobsTable)
+    .where(filters.length ? and(...filters) : undefined)
+    .orderBy(desc(jobsTable.discoveredAt))
+    .limit(500);
+  res.json(ListJobsResponse.parse(rows));
+});
+
+router.post("/jobs", async (req, res): Promise<void> => {
+  const parsed = CreateJobBody.safeParse(req.body);
+  if (!parsed.success) {
+    res.status(400).json({ error: parsed.error.message });
+    return;
+  }
+
+  const input = parsed.data;
+  const normalizedCompany = normalizeCompany(input.company);
+  const normalizedTitle = normalizeText(input.title);
+  const normalizedLocation = normalizeText(input.location ?? "");
+  const fingerprint = fingerprintJob(input);
+
+  const [fingerprintMatch] = await db
+    .select({ id: jobsTable.id })
+    .from(jobsTable)
+    .where(eq(jobsTable.fingerprint, fingerprint))
+    .limit(1);
+  if (fingerprintMatch) {
+    duplicateResponse(res, fingerprintMatch.id);
+    return;
+  }
+  if (input.externalJobId) {
+    const [sourceMatch] = await db
+      .select({ id: jobsTable.id })
+      .from(jobsTable)
+      .where(
+        and(
+          eq(jobsTable.source, input.source),
+          eq(jobsTable.externalJobId, input.externalJobId),
+        ),
+      )
+      .limit(1);
+    if (sourceMatch) {
+      duplicateResponse(res, sourceMatch.id);
+      return;
+    }
+  }
+
+  const id = crypto.randomUUID();
+  const now = new Date();
+  try {
+    const [job] = await db
+      .insert(jobsTable)
+      .values({
+        id,
+        ...input,
+        normalizedCompany,
+        normalizedTitle,
+        normalizedLocation,
+        fingerprint,
+        status: "DISCOVERED",
+        discoveredAt: now,
+      })
+      .returning();
+    await db.insert(activityTable).values({
+      id: crypto.randomUUID(),
+      kind: "job",
+      message: `Added ${job.title} at ${job.company}.`,
+      createdAt: now,
+    });
+    res.status(201).json(CreateJobResponse.parse(job));
+  } catch (error) {
+    if (uniqueConflict(error)) {
+      const [existing] = await db
+        .select({ id: jobsTable.id })
+        .from(jobsTable)
+        .where(
+          input.externalJobId
+            ? or(
+                eq(jobsTable.fingerprint, fingerprint),
+                and(
+                  eq(jobsTable.source, input.source),
+                  eq(jobsTable.externalJobId, input.externalJobId),
+                ),
+              )
+            : eq(jobsTable.fingerprint, fingerprint),
+        )
+        .limit(1);
+      if (existing) {
+        duplicateResponse(res, existing.id);
+        return;
+      }
+    }
+    throw error;
+  }
+});
+
+router.get("/jobs/:id", async (req, res): Promise<void> => {
+  const params = GetJobParams.safeParse(req.params);
+  if (!params.success) {
+    res.status(400).json({ error: params.error.message });
+    return;
+  }
+  const [job] = await db.select().from(jobsTable).where(eq(jobsTable.id, params.data.id));
+  if (!job) {
+    res.status(404).json({ error: "Job not found." });
+    return;
+  }
+  res.json(GetJobResponse.parse(job));
+});
+
+router.patch("/jobs/:id", async (req, res): Promise<void> => {
+  const params = UpdateJobParams.safeParse(req.params);
+  const body = UpdateJobBody.safeParse(req.body);
+  if (!params.success || !body.success) {
+    res.status(400).json({ error: "Invalid job update." });
+    return;
+  }
+  const [job] = await db
+    .update(jobsTable)
+    .set({ status: body.data.status })
+    .where(eq(jobsTable.id, params.data.id))
+    .returning();
+  if (!job) {
+    res.status(404).json({ error: "Job not found." });
+    return;
+  }
+  await db.insert(activityTable).values({
+    id: crypto.randomUUID(),
+    kind: "job",
+    message: `${job.title} at ${job.company} marked ${job.status.toLowerCase().replaceAll("_", " ")}.`,
+    createdAt: new Date(),
+  });
+  res.json(UpdateJobResponse.parse(job));
+});
+
+router.post("/jobs/:id/track", async (req, res): Promise<void> => {
+  const params = TrackJobApplicationParams.safeParse(req.params);
+  const body = TrackJobApplicationBody.safeParse(req.body);
+  if (!params.success || !body.success) {
+    res.status(400).json({ error: "Invalid application tracking request." });
+    return;
+  }
+  const [job] = await db.select().from(jobsTable).where(eq(jobsTable.id, params.data.id));
+  if (!job) {
+    res.status(404).json({ error: "Job not found." });
+    return;
+  }
+
+  const [existingApplication] = await db
+    .select({ id: applicationsTable.id })
+    .from(applicationsTable)
+    .where(eq(applicationsTable.jobId, job.id))
+    .limit(1);
+  if (existingApplication) {
+    res.status(409).json({ error: "An application record already exists for this job." });
+    return;
+  }
+
+  const existingApplications = await db
+    .select({ job: jobsTable, application: applicationsTable })
+    .from(applicationsTable)
+    .innerJoin(jobsTable, eq(applicationsTable.jobId, jobsTable.id));
+  const similarApplication = existingApplications.find(({ job: otherJob }) =>
+    isPotentialDuplicate(job, otherJob),
+  );
+  if (similarApplication) {
+    res.status(409).json({
+      error: `A similar job already has an application record (${similarApplication.job.title} at ${similarApplication.job.company}). Review it before creating another.`,
+    });
+    return;
+  }
+
+  const now = new Date();
+  const id = crypto.randomUUID();
+  let application;
+  try {
+    [application] = await db
+      .insert(applicationsTable)
+      .values({
+        id,
+        jobId: job.id,
+        method: body.data.method,
+        status: "NEEDS_REVIEW",
+        matchScore: job.matchScore,
+        appliedAt: now,
+        lastActivityAt: now,
+      })
+      .returning();
+  } catch (error) {
+    if (uniqueConflict(error)) {
+      res.status(409).json({ error: "An application record already exists for this job." });
+      return;
+    }
+    throw error;
+  }
+  await db.insert(activityTable).values({
+    id: crypto.randomUUID(),
+    kind: "application",
+    message: `Prepared a review record for ${job.title} at ${job.company}. Nothing was submitted.`,
+    createdAt: now,
+  });
+  res.status(201).json(
+    TrackJobApplicationResponse.parse({
+      ...application,
+      jobTitle: job.title,
+      company: job.company,
+    }),
+  );
+});
+
+export default router;
+--- artifacts/api-server/src/routes/index.ts
+import { Router, type IRouter } from "express";
+import authRouter from "./auth";
+import applicationsRouter from "./applications";
+import agentRouter from "./agent";
+import candidateRouter from "./candidate";
+import cvsRouter from "./cvs";
+import dashboardRouter from "./dashboard";
+import healthRouter from "./health";
+import jobsRouter from "./jobs";
+import gmailRouter, { gmailCallbackRouter } from "./gmail";
+import searchProfilesRouter from "./search-profiles";
+import settingsRouter from "./settings";
+import { requireAuth, requireSameOrigin } from "../lib/auth";
+
+const router: IRouter = Router();
+
+router.use(healthRouter);
+router.use(requireSameOrigin);
+router.use(authRouter);
+router.use(gmailCallbackRouter);
+router.use(requireAuth);
+router.use(gmailRouter);
+router.use(dashboardRouter);
+router.use(jobsRouter);
+router.use(applicationsRouter);
+router.use(candidateRouter);
+router.use(searchProfilesRouter);
+router.use(cvsRouter);
+router.use(agentRouter);
+router.use(settingsRouter);
+
+export default router;
+--- artifacts/api-server/src/lib/job-deduplication.ts
+import { createHash } from "node:crypto";
+import type { JobRecord } from "@workspace/db";
+
+export function normalizeText(value: string): string {
+  return value
+    .normalize("NFKD")
+    .replace(/\p{Diacritic}/gu, "")
+    .toLowerCase()
+    .replace(/\blimited\b|\bltd\b|\bllc\b|\bplc\b|\bgmbh\b/g, " ")
+    .replace(/\bincorporated\b|\binc\b|\bcorporation\b|\bcorp\b/g, " ")
+    .replace(/\bcompany\b|\bco\b|\bholdings\b|\bgroup\b/g, " ")
+    .replace(/[^a-z0-9]+/g, " ")
+    .trim()
+    .replace(/\s+/g, " ");
+}
+
+export function normalizeCompany(value: string): string {
+  return normalizeText(value);
+}
+
+export function fingerprintJob(input: {
+  company: string;
+  title: string;
+  location: string | null;
+  description: string;
+}): string {
+  const canonical = JSON.stringify([
+    normalizeCompany(input.company),
+    normalizeText(input.title),
+    normalizeText(input.location ?? ""),
+    normalizeText(input.description),
+  ]);
+  return createHash("sha256").update(canonical).digest("hex");
+}
+
+function tokenSimilarity(left: string, right: string): number {
+  const a = new Set(normalizeText(left).split(" ").filter((word) => word.length > 1));
+  const b = new Set(normalizeText(right).split(" ").filter((word) => word.length > 1));
+  if (a.size === 0 || b.size === 0) return 0;
+  let overlap = 0;
+  for (const word of a) {
+    if (b.has(word)) overlap += 1;
+  }
+  return overlap / new Set([...a, ...b]).size;
+}
+
+export function isPotentialDuplicate(left: JobRecord, right: JobRecord): boolean {
+  if (left.id === right.id || left.normalizedCompany !== right.normalizedCompany) {
+    return false;
+  }
+  const sameLocation =
+    left.normalizedLocation === right.normalizedLocation ||
+    tokenSimilarity(left.location ?? "", right.location ?? "") >= 0.65;
+  if (!sameLocation) return false;
+
+  const titleSimilarity = tokenSimilarity(left.title, right.title);
+  const descriptionSimilarity = tokenSimilarity(left.description, right.description);
+  return (
+    (titleSimilarity >= 0.75 && descriptionSimilarity >= 0.55) ||
+    (titleSimilarity >= 0.4 && descriptionSimilarity >= 0.85)
+  );
+}
+--- artifacts/api-server/src/lib/cv-text-extraction.ts
+import mammoth from "mammoth";
+import { getDocument } from "pdfjs-dist/legacy/build/pdf.mjs";
+
+const maxPages = 60;
+export const maxCvTextCharacters = 60_000;
+
+export async function extractCvText(
+  bytes: Buffer,
+  fileType: "pdf" | "docx",
+): Promise<{ text: string; truncated: boolean }> {
+  let extracted: string;
+
+  if (fileType === "docx") {
+    const result = await mammoth.extractRawText({ buffer: bytes });
+    extracted = result.value;
+  } else {
+    const document = await getDocument({
+      data: new Uint8Array(bytes),
+      isEvalSupported: false,
+      useSystemFonts: true,
+    }).promise;
+    try {
+      const pageCount = Math.min(document.numPages, maxPages);
+      const pages: string[] = [];
+      for (let pageNumber = 1; pageNumber <= pageCount; pageNumber += 1) {
+        const page = await document.getPage(pageNumber);
+        const content = await page.getTextContent();
+        pages.push(
+          content.items
+            .map((item) => ("str" in item && typeof item.str === "string" ? item.str : ""))
+            .filter(Boolean)
+            .join(" "),
+        );
+      }
+      extracted = pages.join("\n");
+    } finally {
+      await document.destroy();
+    }
+  }
+
+  const normalized = extracted.replace(/\s+/g, " ").trim();
+  if (!normalized) {
+    return { text: "", truncated: false };
+  }
+  return {
+    text: normalized.slice(0, maxCvTextCharacters),
+    truncated: normalized.length > maxCvTextCharacters,
+  };
+}
+--- C:\Users\Vintech Systems\Downloads\AI-Job-Agent\AI-Job-Agent\lib\db\src\schema\accounts.ts
+import { sqliteTable, text, integer } from "drizzle-orm/sqlite-core";
+import { createInsertSchema } from "drizzle-zod";
+
+export const accountsTable = sqliteTable("accounts", {
+  id: text("id").primaryKey().$defaultFn(() => "local"),
+  passwordSalt: text("password_salt").notNull(),
+  passwordHash: text("password_hash").notNull(),
+  createdAt: integer("created_at", { mode: "timestamp" }).notNull().$defaultFn(() => new Date()),
+});
+
+export const insertAccountSchema = createInsertSchema(accountsTable).omit({ createdAt: true });
+export type InsertAccount = typeof accountsTable.$inferInsert;
+export type Account = typeof accountsTable.$inferSelect;
+--- C:\Users\Vintech Systems\Downloads\AI-Job-Agent\AI-Job-Agent\lib\db\src\schema\activity.ts
+import { sqliteTable, text, integer, index } from "drizzle-orm/sqlite-core";
+import { createInsertSchema } from "drizzle-zod";
+
+export const activityTable = sqliteTable(
+  "activity",
+  {
+    id: text("id").primaryKey(),
+    message: text("message").notNull(),
+    kind: text("kind").notNull(),
+    createdAt: integer("created_at", { mode: "timestamp" }).notNull(),
+  },
+  (table) => [index("activity_created_at_idx").on(table.createdAt)],
+);
+
+export const insertActivitySchema = createInsertSchema(activityTable);
+export type InsertActivity = typeof activityTable.$inferInsert;
+export type Activity = typeof activityTable.$inferSelect;
+--- C:\Users\Vintech Systems\Downloads\AI-Job-Agent\AI-Job-Agent\lib\db\src\schema\applications.ts
+import { createInsertSchema } from "drizzle-zod";
+import { index, integer, sqliteTable, text, uniqueIndex } from "drizzle-orm/sqlite-core";
+import { jobsTable } from "./jobs";
+
+export const applicationsTable = sqliteTable(
+  "applications",
+  {
+    id: text("id").primaryKey(),
+    jobId: text("job_id").notNull().references(() => jobsTable.id, { onDelete: "restrict" }),
+    method: text("method", { enum: ["manual", "email", "browser"] }).notNull(),
+    status: text("status", {
+      enum: ["NEEDS_REVIEW", "PREPARING", "READY_TO_SUBMIT", "SUBMITTED", "EMAIL_SENT", "AWAITING_RESPONSE", "RECRUITER_RESPONSE", "INTERVIEW", "ASSESSMENT", "OFFER", "REJECTED", "WITHDRAWN", "BLOCKED"],
+    }).notNull().default("NEEDS_REVIEW"),
+    matchScore: integer("match_score"),
+    appliedAt: integer("applied_at", { mode: "timestamp" }).notNull(),
+    lastActivityAt: integer("last_activity_at", { mode: "timestamp" }).notNull(),
+  },
+  (table) => [
+    uniqueIndex("applications_job_id_unique").on(table.jobId),
+    index("applications_status_idx").on(table.status),
+    index("applications_applied_at_idx").on(table.appliedAt),
+  ],
+);
+
+export const insertApplicationSchema = createInsertSchema(applicationsTable);
+export type InsertApplication = typeof applicationsTable.$inferInsert;
+export type Application = typeof applicationsTable.$inferSelect;
+--- C:\Users\Vintech Systems\Downloads\AI-Job-Agent\AI-Job-Agent\lib\db\src\schema\candidateProfiles.ts
+import { createInsertSchema } from "drizzle-zod";
+import { integer, real, sqliteTable, text } from "drizzle-orm/sqlite-core";
+
+export const candidateProfilesTable = sqliteTable("candidate_profiles", {
+  id: text("id").primaryKey().$defaultFn(() => "primary"),
+  fullName: text("full_name").notNull().default(""),
+  email: text("email").notNull().default(""),
+  phone: text("phone").notNull().default(""),
+  country: text("country").notNull().default(""),
+  city: text("city").notNull().default(""),
+  timezone: text("timezone").notNull().default(""),
+  targetRoles: text("target_roles", { mode: "json" }).$type<string[]>().notNull().default([]),
+  skills: text("skills", { mode: "json" }).$type<string[]>().notNull().default([]),
+  technologies: text("technologies", { mode: "json" }).$type<string[]>().notNull().default([]),
+  yearsExperience: real("years_experience"),
+  education: text("education", { mode: "json" }).$type<string[]>().notNull().default([]),
+  certifications: text("certifications", { mode: "json" }).$type<string[]>().notNull().default([]),
+  industries: text("industries", { mode: "json" }).$type<string[]>().notNull().default([]),
+  languages: text("languages", { mode: "json" }).$type<string[]>().notNull().default([]),
+  preferredLocations: text("preferred_locations", { mode: "json" }).$type<string[]>().notNull().default([]),
+  workModes: text("work_modes", { mode: "json" }).$type<Array<"remote" | "hybrid" | "onsite">>().notNull().default([]),
+  relocation: integer("relocation", { mode: "boolean" }).notNull().default(false),
+  visaSponsorship: integer("visa_sponsorship", { mode: "boolean" }).notNull().default(false),
+  minimumSalary: real("minimum_salary"),
+  updatedAt: integer("updated_at", { mode: "timestamp" }),
+});
+
+export const insertCandidateProfileSchema = createInsertSchema(candidateProfilesTable);
+export type InsertCandidateProfile = typeof candidateProfilesTable.$inferInsert;
+export type CandidateProfile = typeof candidateProfilesTable.$inferSelect;
+--- C:\Users\Vintech Systems\Downloads\AI-Job-Agent\AI-Job-Agent\lib\db\src\schema\cvs.ts
+import { createInsertSchema } from "drizzle-zod";
+import { integer, sqliteTable, text } from "drizzle-orm/sqlite-core";
+
+export const cvsTable = sqliteTable("cvs", {
+  id: text("id").primaryKey(),
+  fileName: text("file_name").notNull(),
+  storageName: text("storage_name").notNull().unique(),
+  fileType: text("file_type", { enum: ["pdf", "docx"] }).notNull(),
+  sizeBytes: integer("size_bytes").notNull(),
+  isMaster: integer("is_master", { mode: "boolean" }).notNull().default(false),
+  uploadedAt: integer("uploaded_at", { mode: "timestamp" }).notNull(),
+});
+
+export const insertCvSchema = createInsertSchema(cvsTable);
+export type InsertCv = typeof cvsTable.$inferInsert;
+export type CvRecord = typeof cvsTable.$inferSelect;
+--- C:\Users\Vintech Systems\Downloads\AI-Job-Agent\AI-Job-Agent\lib\db\src\schema\index.ts
+// Export your models here. Add one export per file
+// export * from "./posts";
+//
+// Each model/table should ideally be split into different files.
+// Each model/table should define a Drizzle table, insert schema, and types:
+//
+//   import { pgTable, text, serial } from "drizzle-orm/pg-core";
+//   import { createInsertSchema } from "drizzle-zod";
+//   import { z } from "zod/v4";
+//
+//   export const postsTable = pgTable("posts", {
+//     id: serial("id").primaryKey(),
+//     title: text("title").notNull(),
+//   });
+//
+//   export const insertPostSchema = createInsertSchema(postsTable).omit({ id: true });
+//   export type InsertPost = z.infer<typeof insertPostSchema>;
+//   export type Post = typeof postsTable.$inferSelect;
+
+export * from "./accounts";
+export * from "./activity";
+export * from "./applications";
+export * from "./candidateProfiles";
+export * from "./cvs";
+export * from "./jobs";
+export * from "./searchProfiles";
+export * from "./systemState";
+export * from "./integrationSettings";
+--- C:\Users\Vintech Systems\Downloads\AI-Job-Agent\AI-Job-Agent\lib\db\src\schema\integrationSettings.ts
+import { createInsertSchema } from "drizzle-zod";
+import { integer, sqliteTable, text } from "drizzle-orm/sqlite-core";
+
+export const integrationSettingsTable = sqliteTable("integration_settings", {
+  provider: text("provider", { enum: ["openai", "gemini", "gmail"] }).primaryKey(),
+  encryptedCredentials: text("encrypted_credentials").notNull(),
+  model: text("model"),
+  clientId: text("client_id"),
+  status: text("status", { enum: ["CONFIGURED", "CONNECTED", "ERROR"] })
+    .notNull()
+    .default("CONFIGURED"),
+  connectedEmail: text("connected_email"),
+  updatedAt: integer("updated_at", { mode: "timestamp" }).notNull(),
+  testedAt: integer("tested_at", { mode: "timestamp" }),
+});
+
+export const insertIntegrationSettingsSchema = createInsertSchema(integrationSettingsTable);
+export type InsertIntegrationSettings = typeof integrationSettingsTable.$inferInsert;
+export type IntegrationSettings = typeof integrationSettingsTable.$inferSelect;
+--- C:\Users\Vintech Systems\Downloads\AI-Job-Agent\AI-Job-Agent\lib\db\src\schema\jobs.ts
+import { createInsertSchema } from "drizzle-zod";
+import { index, integer, real, sqliteTable, text, uniqueIndex } from "drizzle-orm/sqlite-core";
+
+export const jobsTable = sqliteTable(
+  "jobs",
+  {
+    id: text("id").primaryKey(),
+    title: text("title").notNull(),
+    company: text("company").notNull(),
+    normalizedCompany: text("normalized_company").notNull(),
+    normalizedTitle: text("normalized_title").notNull(),
+    location: text("location"),
+    normalizedLocation: text("normalized_location").notNull(),
+    remote: integer("remote", { mode: "boolean" }).notNull().default(false),
+    salary: text("salary"),
+    source: text("source").notNull(),
+    sourceUrl: text("source_url"),
+    externalJobId: text("external_job_id"),
+    description: text("description").notNull(),
+    fingerprint: text("fingerprint").notNull(),
+    matchScore: integer("match_score"),
+    status: text("status", {
+      enum: ["DISCOVERED", "MATCHED", "SHORTLISTED", "REJECTED", "IGNORED", "NEEDS_REVIEW"],
+    }).notNull().default("DISCOVERED"),
+    discoveredAt: integer("discovered_at", { mode: "timestamp" }).notNull(),
+  },
+  (table) => [
+    uniqueIndex("jobs_fingerprint_unique").on(table.fingerprint),
+    uniqueIndex("jobs_source_external_id_unique").on(table.source, table.externalJobId),
+    index("jobs_company_idx").on(table.normalizedCompany),
+    index("jobs_title_idx").on(table.normalizedTitle),
+    index("jobs_location_idx").on(table.normalizedLocation),
+    index("jobs_status_idx").on(table.status),
+    index("jobs_match_score_idx").on(table.matchScore),
+    index("jobs_discovered_at_idx").on(table.discoveredAt),
+  ],
+);
+
+export const insertJobSchema = createInsertSchema(jobsTable);
+export type InsertJob = typeof jobsTable.$inferInsert;
+export type JobRecord = typeof jobsTable.$inferSelect;
+--- C:\Users\Vintech Systems\Downloads\AI-Job-Agent\AI-Job-Agent\lib\db\src\schema\searchProfiles.ts
+import { createInsertSchema } from "drizzle-zod";
+import { integer, real, sqliteTable, text } from "drizzle-orm/sqlite-core";
+
+export const searchProfilesTable = sqliteTable("search_profiles", {
+  id: text("id").primaryKey(),
+  name: text("name").notNull(),
+  keywords: text("keywords", { mode: "json" }).$type<string[]>().notNull().default([]),
+  locations: text("locations", { mode: "json" }).$type<string[]>().notNull().default([]),
+  remoteSetting: text("remote_setting", { enum: ["any", "remote", "hybrid", "onsite"] }).notNull().default("any"),
+  minimumMatchScore: integer("minimum_match_score").notNull().default(80),
+  minimumSalary: real("minimum_salary"),
+  excludedKeywords: text("excluded_keywords", { mode: "json" }).$type<string[]>().notNull().default([]),
+  employmentTypes: text("employment_types", { mode: "json" }).$type<string[]>().notNull().default([]),
+  enabled: integer("enabled", { mode: "boolean" }).notNull().default(true),
+  createdAt: integer("created_at", { mode: "timestamp" }).notNull(),
+});
+
+export const insertSearchProfileSchema = createInsertSchema(searchProfilesTable);
+export type InsertSearchProfile = typeof searchProfilesTable.$inferInsert;
+export type SearchProfile = typeof searchProfilesTable.$inferSelect;
+--- C:\Users\Vintech Systems\Downloads\AI-Job-Agent\AI-Job-Agent\lib\db\src\schema\systemState.ts
+import { createInsertSchema } from "drizzle-zod";
+import { integer, sqliteTable, text } from "drizzle-orm/sqlite-core";
+
+export const systemStateTable = sqliteTable("system_state", {
+  id: text("id").primaryKey().$defaultFn(() => "agent"),
+  agentState: text("agent_state", { enum: ["STOPPED", "STARTING", "RUNNING", "PAUSED", "ERROR"] }).notNull().default("STOPPED"),
+  agentMessage: text("agent_message").notNull().default("Agent is stopped. No automated actions are running."),
+  applicationMode: text("application_mode", { enum: ["manual", "approval", "automatic"] }).notNull().default("approval"),
+  updatedAt: integer("updated_at", { mode: "timestamp" }).notNull(),
+});
+
+export const insertSystemStateSchema = createInsertSchema(systemStateTable);
+export type InsertSystemState = typeof systemStateTable.$inferInsert;
+export type SystemState = typeof systemStateTable.$inferSelect;
