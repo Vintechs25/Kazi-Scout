@@ -19,7 +19,7 @@ import {
   useTestAiProvider,
 } from "@workspace/api-client-react";
 
-type SettingsData = NonNullable<ReturnType<typeof useGetSettings>["data"]>;
+type SettingsData = GetSettingsQueryResult;
 type ProviderConnection = SettingsData["providers"][number];
 type AiProvider = "openai" | "gemini";
 
