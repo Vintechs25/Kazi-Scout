@@ -31,6 +31,7 @@ async function buildAll() {
       "*.node",
       "sharp",
       "better-sqlite3",
+      "pdfjs-dist/*",
       "sqlite3",
       "canvas",
       "bcrypt",
