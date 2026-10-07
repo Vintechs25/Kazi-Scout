@@ -34,7 +34,7 @@ export async function extractCvText(
       }
       extracted = pages.join("\n");
     } finally {
-      await document.destroy();
+      await loadingTask.destroy();
     }
   }
 
