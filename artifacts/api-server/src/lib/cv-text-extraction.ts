@@ -14,12 +14,12 @@ export async function extractCvText(
     const result = await mammoth.extractRawText({ buffer: bytes });
     extracted = result.value;
   } else {
-    const document = await getDocument({
+    const loadingTask = getDocument({
       data: new Uint8Array(bytes),
-      isEvalSupported: false,
       useSystemFonts: true,
-    }).promise;
+    });
     try {
+      const document = await loadingTask.promise;
       const pageCount = Math.min(document.numPages, maxPages);
       const pages: string[] = [];
       for (let pageNumber = 1; pageNumber <= pageCount; pageNumber += 1) {
