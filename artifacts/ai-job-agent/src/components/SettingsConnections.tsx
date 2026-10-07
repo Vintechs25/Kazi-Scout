@@ -248,7 +248,7 @@ function GmailCard({
   const removeConnection = () => {
     if (!confirm("Disconnect Gmail and remove its saved OAuth credentials?")) return;
     disconnect.mutate(
-      {},
+      undefined,
       {
         onSuccess: (result) => {
           setMessage(result.message);
