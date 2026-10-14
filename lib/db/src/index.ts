@@ -107,14 +107,36 @@ export function getDatabaseInstance(): any {
   return _sqliteInstance;
 }
 
+export function getTursoUrl(): string | undefined {
+  const raw =
+    process.env.TURSO_DATABASE_URL ||
+    process.env.TURSO_URL ||
+    process.env.TURSO_DB_URL ||
+    process.env.LIBSQL_URL ||
+    process.env.DATABASE_URL;
+  if (!raw) return undefined;
+  return raw.replace(/^["']|["']$/g, "").trim();
+}
+
+export function getTursoToken(): string | undefined {
+  const raw =
+    process.env.TURSO_AUTH_TOKEN ||
+    process.env.TURSO_TOKEN ||
+    process.env.LIBSQL_AUTH_TOKEN ||
+    process.env.DATABASE_AUTH_TOKEN;
+  if (!raw) return undefined;
+  return raw.replace(/^["']|["']$/g, "").trim();
+}
+
 export function isTursoConfigured(): boolean {
-  return Boolean(process.env.TURSO_DATABASE_URL || process.env.DATABASE_URL);
+  const url = getTursoUrl();
+  return Boolean(url && url.length > 0 && !url.endsWith(".sqlite") && !url.endsWith(".db"));
 }
 
 export function getLibsqlClient(): LibsqlClient {
   if (!_libsqlClient) {
-    const url = (process.env.TURSO_DATABASE_URL || process.env.DATABASE_URL)!.trim();
-    const authToken = process.env.TURSO_AUTH_TOKEN?.trim();
+    const url = getTursoUrl()!;
+    const authToken = getTursoToken();
     _libsqlClient = createClient({
       url,
       authToken,
