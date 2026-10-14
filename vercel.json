@@ -17,6 +17,8 @@
     "api-server": {
       "root": "artifacts/api-server",
       "framework": "express",
+      "buildCommand": "pnpm run build",
+      "outputDirectory": "dist",
       "entrypoint": "app.js"
     },
     "mockup-sandbox": {
