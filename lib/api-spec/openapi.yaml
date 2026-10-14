@@ -18,6 +18,7 @@ tags:
   - name: cvs
   - name: agent
   - name: settings
+  - name: discovery
   - name: integrations
 paths:
   /healthz:
@@ -460,6 +461,302 @@ paths:
           content:
             application/json:
               schema: { $ref: "#/components/schemas/SettingsStatus" }
+  /user/roles:
+    get:
+      operationId: getUserRoles
+      tags: [discovery]
+      summary: Get all role preferences for the user
+      responses:
+        "200":
+          description: User role preferences
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/UserRolesResponse"
+    post:
+      operationId: addCustomRole
+      tags: [discovery]
+      summary: Add a custom role for discovery
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                roleTitle: { type: string }
+              required: [roleTitle]
+      responses:
+        "200":
+          description: Role added successfully
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/RolePreference"
+  /user/roles/{roleId}:
+    put:
+      operationId: updateRolePreference
+      tags: [discovery]
+      summary: Update a role preference
+      parameters:
+        - name: roleId
+          in: path
+          required: true
+          schema: { type: string }
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/RolePreferenceUpdate"
+      responses:
+        "200":
+          description: Role updated
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/RolePreference"
+    delete:
+      operationId: removeRolePreference
+      tags: [discovery]
+      summary: Remove a role preference
+      parameters:
+        - name: roleId
+          in: path
+          required: true
+          schema: { type: string }
+      responses:
+        "200":
+          description: Role removed
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  success: { type: boolean }
+                  message: { type: string }
+  /user/roles/{roleId}/enable:
+    patch:
+      operationId: toggleRoleEnabled
+      tags: [discovery]
+      summary: Enable or disable a role
+      parameters:
+        - name: roleId
+          in: path
+          required: true
+          schema: { type: string }
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                enabled: { type: boolean }
+              required: [enabled]
+      responses:
+        "200":
+          description: Role toggle updated
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/RolePreference"
+  /user/roles/{roleId}/priority:
+    patch:
+      operationId: setRolePriority
+      tags: [discovery]
+      summary: Set role priority level
+      parameters:
+        - name: roleId
+          in: path
+          required: true
+          schema: { type: string }
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                priority: { type: string, enum: [high, medium, low] }
+              required: [priority]
+      responses:
+        "200":
+          description: Priority set
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/RolePreference"
+  /user/roles/{roleId}/weight:
+    patch:
+      operationId: setRoleWeight
+      tags: [discovery]
+      summary: Set role weight
+      parameters:
+        - name: roleId
+          in: path
+          required: true
+          schema: { type: string }
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                weight: { type: integer, minimum: 1, maximum: 100 }
+              required: [weight]
+      responses:
+        "200":
+          description: Weight set
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/RolePreference"
+  /user/discovery-settings:
+    get:
+      operationId: getUserDiscoverySettings
+      tags: [discovery]
+      summary: Get user discovery settings
+      responses:
+        "200":
+          description: Discovery settings
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/DiscoverySettingsResponse"
+    put:
+      operationId: updateUserDiscoverySettings
+      tags: [discovery]
+      summary: Update discovery settings
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/DiscoverySettingsUpdate"
+      responses:
+        "200":
+          description: Settings updated
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/DiscoverySettings"
+  /user/discovery-settings/search-frequency:
+    patch:
+      operationId: setSearchFrequency
+      tags: [discovery]
+      summary: Set search frequency
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                frequency: { type: string, enum: [manual, daily, every_2_days, weekly, biweekly] }
+              required: [frequency]
+      responses:
+        "200":
+          description: Frequency set
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/DiscoverySettings"
+  /discovery/run:
+    post:
+      operationId: runDiscovery
+      tags: [discovery]
+      summary: Run job discovery with CV guidance
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                config: { type: object }
+      responses:
+        "200":
+          description: Discovery results
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/DiscoveryResult"
+  /discovery/history:
+    get:
+      operationId: getDiscoveryHistory
+      tags: [discovery]
+      summary: Get discovery history
+      parameters:
+        - name: limit
+          in: query
+          schema: { type: integer, default: 50 }
+      responses:
+        "200":
+          description: Discovery history
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/DiscoveryHistory"
+  /discovery/statistics:
+    get:
+      operationId: getDiscoveryStatistics
+      tags: [discovery]
+      summary: Get discovery statistics
+      responses:
+        "200":
+          description: Discovery statistics
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/DiscoveryStatistics"
+  /discovery/guidance:
+    get:
+      operationId: getDiscoveryGuidance
+      tags: [discovery]
+      summary: Get discovery guidance
+      responses:
+        "200":
+          description: Discovery guidance
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/DiscoveryGuidance"
+  /jobs/{jobId}/verify:
+    post:
+      operationId: verifyJobRequirements
+      tags: [discovery]
+      summary: Verify job requirements against user profile
+      parameters:
+        - name: jobId
+          in: path
+          required: true
+          schema: { type: string }
+      responses:
+        "200":
+          description: Verification result
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/JobVerificationResult"
+  /jobs/{jobId}/match:
+    post:
+      operationId: matchJobToUser
+      tags: [discovery]
+      summary: Get enhanced match details for a job
+      parameters:
+        - name: jobId
+          in: path
+          required: true
+          schema: { type: string }
+      responses:
+        "200":
+          description: Match details
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/JobMatchDetails"
   /integrations/gmail/connect:
     get:
       operationId: connectGmail
@@ -816,3 +1113,346 @@ components:
         duplicateProtection: { type: boolean }
         gmailRedirectUri: { type: string }
       required: [providers, applicationMode, duplicateProtection, gmailRedirectUri]
+    # Discovery schemas
+    RolePreference:
+      type: object
+      properties:
+        id: { type: string }
+        accountId: { type: string }
+        roleTitle: { type: string }
+        source: { type: string, enum: [cv, manual, suggested] }
+        enabled: { type: boolean }
+        priority: { type: string, enum: [high, medium, low] }
+        weight: { type: integer, minimum: 1, maximum: 100 }
+        searchQueries:
+          type: array
+          items: { type: string }
+        keywords:
+          type: array
+          items: { type: string }
+        exclusionKeywords:
+          type: array
+          items: { type: string }
+        minSalary: { type: [integer, "null"] }
+        maxSalary: { type: [integer, "null"] }
+        locationPreferences:
+          type: array
+          items: { type: string }
+        remoteOnly: { type: boolean }
+        experienceLevel:
+          type: array
+          items: { type: string }
+        industryPreferences:
+          type: array
+          items: { type: string }
+        companySize:
+          type: array
+          items: { type: string }
+        createdAt: { type: string, format: date-time }
+        updatedAt: { type: string, format: date-time }
+      required: [id, accountId, roleTitle, source, enabled, priority, weight, createdAt, updatedAt]
+    RolePreferenceUpdate:
+      type: object
+      properties:
+        roleTitle: { type: string }
+        enabled: { type: boolean }
+        priority: { type: string, enum: [high, medium, low] }
+        weight: { type: integer, minimum: 1, maximum: 100 }
+        searchQueries:
+          type: array
+          items: { type: string }
+        keywords:
+          type: array
+          items: { type: string }
+        exclusionKeywords:
+          type: array
+          items: { type: string }
+        minSalary: { type: [integer, "null"] }
+        maxSalary: { type: [integer, "null"] }
+        locationPreferences:
+          type: array
+          items: { type: string }
+        remoteOnly: { type: boolean }
+        experienceLevel:
+          type: array
+          items: { type: string }
+        industryPreferences:
+          type: array
+          items: { type: string }
+        companySize:
+          type: array
+          items: { type: string }
+    UserRolesResponse:
+      type: object
+      properties:
+        success: { type: boolean }
+        preferences:
+          type: array
+          items: { $ref: "#/components/schemas/RolePreference" }
+        statistics:
+          type: object
+          properties:
+            totalRoles: { type: integer }
+            enabledRoles: { type: integer }
+            highPriorityRoles: { type: integer }
+            manualRoles: { type: integer }
+            cvRoles: { type: integer }
+            selectedForDiscovery: { type: integer }
+        suggestions:
+          type: object
+          properties:
+            roles:
+              type: array
+              items: { type: string }
+            primary:
+              type: array
+              items: { type: string }
+            secondary:
+              type: array
+              items: { type: string }
+            reasoning:
+              type: array
+              items: { type: string }
+    DiscoverySettings:
+      type: object
+      properties:
+        id: { type: string }
+        accountId: { type: string }
+        selectedRoleIds:
+          type: array
+          items: { type: string }
+        searchFrequency: { type: string, enum: [manual, daily, every_2_days, weekly, biweekly] }
+        searchTimePreference: { type: [string, "null"] }
+        maxJobsPerSearch: { type: integer, minimum: 10, maximum: 500 }
+        autoApproveHighMatches: { type: boolean }
+        minMatchScoreForAutoApprove: { type: integer, minimum: 0, maximum: 100 }
+        preferredSourceIds:
+          type: array
+          items: { type: string }
+        excludedSourceIds:
+          type: array
+          items: { type: string }
+        enableAllKenyaSources: { type: boolean }
+        enableGlobalRemoteSources: { type: boolean }
+        enableRecruitmentAgencies: { type: boolean }
+        enableStartups: { type: boolean }
+        enableFreelance: { type: boolean }
+        defaultMinSalary: { type: [integer, "null"] }
+        defaultMaxSalary: { type: [integer, "null"] }
+        defaultLocations:
+          type: array
+          items: { type: string }
+        defaultRemoteOnly: { type: boolean }
+        defaultJobTypes:
+          type: array
+          items: { type: string }
+        defaultExperienceLevels:
+          type: array
+          items: { type: string }
+        defaultIndustries:
+          type: array
+          items: { type: string }
+        defaultCompanies:
+          type: array
+          items: { type: string }
+        defaultExcludeKeywords:
+          type: array
+          items: { type: string }
+        requireApplicationInstructions: { type: boolean }
+        enableAISuggestions: { type: boolean }
+        enableKeywordExpansion: { type: boolean }
+        expansionKeywords:
+          type: array
+          items: { type: string }
+        notifyNewJobs: { type: boolean }
+        notificationChannels:
+          type: array
+          items: { type: string, enum: [in_app, email, sms] }
+        lastDiscoveryRun: { type: [string, "null"], format: date-time }
+        nextScheduledRun: { type: [string, "null"], format: date-time }
+        totalDiscoveries: { type: integer }
+        totalJobsDiscovered: { type: integer }
+        totalMatches: { type: integer }
+        totalApplications: { type: integer }
+        createdAt: { type: string, format: date-time }
+        updatedAt: { type: string, format: date-time }
+      required: [id, accountId, selectedRoleIds, searchFrequency, maxJobsPerSearch, autoApproveHighMatches, enableAllKenyaSources, enableGlobalRemoteSources, enableRecruitmentAgencies, enableStartups, totalDiscoveries, totalJobsDiscovered, totalMatches, totalApplications, createdAt, updatedAt]
+    DiscoverySettingsUpdate:
+      type: object
+      properties:
+        selectedRoleIds:
+          type: array
+          items: { type: string }
+        searchFrequency: { type: string, enum: [manual, daily, every_2_days, weekly, biweekly] }
+        searchTimePreference: { type: [string, "null"] }
+        maxJobsPerSearch: { type: integer, minimum: 10, maximum: 500 }
+        autoApproveHighMatches: { type: boolean }
+        minMatchScoreForAutoApprove: { type: integer, minimum: 0, maximum: 100 }
+        preferredSourceIds:
+          type: array
+          items: { type: string }
+        excludedSourceIds:
+          type: array
+          items: { type: string }
+        enableAllKenyaSources: { type: boolean }
+        enableGlobalRemoteSources: { type: boolean }
+    DiscoverySettingsResponse:
+      type: object
+      properties:
+        success: { type: boolean }
+        settings: { $ref: "#/components/schemas/DiscoverySettings" }
+        enabledRoles:
+          type: object
+          properties:
+            roles:
+              type: array
+              items: { type: string }
+            preferences:
+              type: array
+              items: { $ref: "#/components/schemas/RolePreference" }
+            searchQueries:
+              type: array
+              items: { type: string }
+        sources:
+          type: object
+          properties:
+            allSources:
+              type: array
+              items: { type: object }
+        guidance:
+          type: object
+          properties:
+            guidance:
+              type: array
+              items: { type: string }
+            enabledRoles:
+              type: array
+              items: { type: string }
+            searchQueries:
+              type: array
+              items: { type: string }
+            sourceRecommendations:
+              type: array
+              items: { type: string }
+            filters: { type: object }
+    DiscoveryResult:
+      type: object
+      properties:
+        discovered: { type: integer }
+        duplicates: { type: integer }
+        matched: { type: integer }
+        highMatches: { type: integer }
+        mediumMatches: { type: integer }
+        lowMatches: { type: integer }
+        rejected: { type: integer }
+        errors:
+          type: array
+          items: { type: string }
+        sourcesScraped:
+          type: array
+          items: { type: string }
+        executionTime: { type: integer }
+        rolesSearched:
+          type: array
+          items: { type: string }
+        cvMatched: { type: integer }
+        requirementVerified: { type: integer }
+        canApply: { type: integer }
+    DiscoveryHistory:
+      type: object
+      properties:
+        runs:
+          type: array
+          items: { $ref: "#/components/schemas/DiscoveryRun" }
+        total: { type: integer }
+    DiscoveryRun:
+      type: object
+      properties:
+        id: { type: string }
+        rolesSearched:
+          type: array
+          items: { type: string }
+        sourcesScraped:
+          type: array
+          items: { type: string }
+        discovered: { type: integer }
+        matched: { type: integer }
+        highMatches: { type: integer }
+        executionTime: { type: integer }
+        errors:
+          type: array
+          items: { type: string }
+        startedAt: { type: string, format: date-time }
+        completedAt: { type: [string, "null"], format: date-time }
+    DiscoveryStatistics:
+      type: object
+      properties:
+        totalDiscoveries: { type: integer }
+        totalJobsDiscovered: { type: integer }
+        totalMatches: { type: integer }
+        avgJobsPerDiscovery: { type: number }
+        avgMatchesPerDiscovery: { type: number }
+        lastDiscovery: { type: [string, "null"], format: date-time }
+        bestDiscovery:
+          type: object
+          properties:
+            discovered: { type: integer }
+            matched: { type: integer }
+            date: { type: string, format: date-time }
+        sourcesScraped: { type: integer }
+        mostSuccessfulSource: { type: [string, "null"] }
+    DiscoveryGuidance:
+      type: object
+      properties:
+        guidance:
+          type: array
+          items: { type: string }
+        enabledRoles:
+          type: array
+          items: { type: string }
+        searchQueries:
+          type: array
+          items: { type: string }
+        sourceRecommendations:
+          type: array
+          items: { type: string }
+        filters: { type: object }
+    JobVerificationResult:
+      type: object
+      properties:
+        success: { type: boolean }
+        jobId: { type: string }
+        hasClearInstructions: { type: boolean }
+        applicationMethod: { type: string, enum: [online, email, portal, walk_in, phone, post, referral, social, unknown] }
+        applicationUrl: { type: [string, "null"] }
+        applicationEmail: { type: [string, "null"] }
+        deadline: { type: [string, "null"] }
+        isUrgent: { type: boolean }
+        daysUntilDeadline: { type: [integer, "null"] }
+        requiredDocuments:
+          type: array
+          items: { type: string }
+        canApply: { type: boolean }
+        canApplyReason: { type: [string, "null"] }
+        cannotApplyReason: { type: [string, "null"] }
+        verificationScore: { type: integer }
+        confidence: { type: integer }
+        verifiedAt: { type: string, format: date-time }
+    JobMatchDetails:
+      type: object
+      properties:
+        success: { type: boolean }
+        job:
+          type: object
+          properties:
+            id: { type: string }
+            title: { type: string }
+        matchScore: { type: integer }
+        cvMatchedSkills:
+          type: array
+          items: { type: string }
+        cvMissingSkills:
+          type: array
+          items: { type: string }
+        roleMatchScore: { type: integer }
+        decision: { type: string, enum: [ELIGIBLE, INELIGIBLE, NEEDS_REVIEW] }

@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { useQueryClient } from "@tanstack/react-query";
 import {
   Check,
@@ -44,24 +44,83 @@ function AiProviderCard({
   const save = useSaveAiProvider();
   const test = useTestAiProvider();
   const remove = useRemoveAiProvider();
+  const [apiKey, setApiKey] = useState("");
+  const [selectedModel, setSelectedModel] = useState(connection.model ?? "");
   const [testMessage, setTestMessage] = useState("");
   const [removeMessage, setRemoveMessage] = useState("");
+  const [models, setModels] = useState<string[]>([]);
+  const [loadingModels, setLoadingModels] = useState(false);
+  const [modelsError, setModelsError] = useState("");
+  const [searchQuery, setSearchQuery] = useState("");
+
+  // Sync selectedModel if connection.model changes and we don't have one selected yet
+  useEffect(() => {
+    if (connection.model && !selectedModel) {
+      setSelectedModel(connection.model);
+    }
+  }, [connection.model, selectedModel]);
+
+  const fetchModels = async (keyToUse?: string) => {
+    const key = (keyToUse !== undefined ? keyToUse : apiKey).trim();
+    if (!key && !connection.configured) {
+      setModelsError("Please enter an API key first.");
+      return;
+    }
+
+    setLoadingModels(true);
+    setModelsError("");
+    try {
+      const response = await fetch(`/api/settings/providers/${provider}/models`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ apiKey: key || undefined }),
+      });
+      if (!response.ok) {
+        const resJson = await response.json().catch(() => null);
+        const errorText = resJson?.error || (await response.text().catch(() => "")) || "Failed to fetch models";
+        setModelsError(errorText);
+        setModels([]);
+      } else {
+        const data = await response.json();
+        const fetched: string[] = data.models || [];
+        setModels(fetched);
+        if (fetched.length > 0) {
+          if (!selectedModel || !fetched.includes(selectedModel)) {
+            setSelectedModel(fetched[0]);
+          }
+        }
+      }
+    } catch {
+      setModelsError("Failed to fetch models. Check connection.");
+      setModels([]);
+    } finally {
+      setLoadingModels(false);
+    }
+  };
+
+  const filteredModels = models.filter((m) =>
+    m.toLowerCase().includes(searchQuery.toLowerCase()),
+  );
 
   const saveProvider = (event: React.FormEvent<HTMLFormElement>) => {
     event.preventDefault();
     const form = event.currentTarget;
     const values = new FormData(form);
+    const modelValue = String(values.get("model") || selectedModel || "").trim();
+    const apiKeyValue = String(values.get("apiKey") || apiKey || "").trim();
+
     save.mutate(
       {
         provider,
         data: {
-          apiKey: String(values.get("apiKey") ?? ""),
-          model: String(values.get("model") ?? ""),
+          apiKey: apiKeyValue,
+          model: modelValue,
         },
       },
       {
         onSuccess: () => {
           form.reset();
+          setApiKey("");
           setTestMessage("");
           void queryClient.invalidateQueries({ queryKey: getGetSettingsQueryKey() });
         },
@@ -92,6 +151,8 @@ function AiProviderCard({
         onSuccess: () => {
           setRemoveMessage("Saved credentials removed.");
           setTestMessage("");
+          setSelectedModel("");
+          setModels([]);
           void queryClient.invalidateQueries({ queryKey: getGetSettingsQueryKey() });
         },
         onError: (error) => setRemoveMessage(readableError(error)),
@@ -121,33 +182,121 @@ function AiProviderCard({
         <form onSubmit={saveProvider} className="form-grid">
           <label className="form-item">
             <span className="label">API key</span>
-            <input
-              className="field"
-              type="password"
-              name="apiKey"
-              autoComplete="new-password"
-              required
-              minLength={8}
-              maxLength={2000}
-              data-testid={`input-api-key-${provider}`}
-            />
+            <div style={{ display: "flex", gap: 8 }}>
+              <input
+                className="field"
+                type="password"
+                name="apiKey"
+                value={apiKey}
+                onChange={(e) => {
+                  setApiKey(e.target.value);
+                  if (modelsError) setModelsError("");
+                }}
+                autoComplete="new-password"
+                required
+                minLength={8}
+                maxLength={2000}
+                placeholder={connection.configured ? "Enter new key to update..." : "Paste API key..."}
+                data-testid={`input-api-key-${provider}`}
+                style={{ flex: 1 }}
+              />
+              <button
+                type="button"
+                className="btn"
+                onClick={() => fetchModels(apiKey)}
+                disabled={loadingModels || (!apiKey && !connection.configured)}
+                title="Fetch compatible models for this key"
+                data-testid={`button-fetch-models-${provider}`}
+              >
+                {loadingModels ? "Loading..." : "Get Models"}
+              </button>
+            </div>
             <span className="field-hint">
               Encrypted before local storage. The saved value is never shown again.
             </span>
           </label>
           <label className="form-item">
             <span className="label">Model ID</span>
-            <input
-              className="field"
-              type="text"
-              name="model"
-              defaultValue={connection.model ?? ""}
-              required
-              maxLength={160}
-              data-testid={`input-model-${provider}`}
-            />
-            <span className="field-hint">
-              Use a model available to this API key.
+            {models.length > 0 ? (
+              <>
+                {models.length > 5 && (
+                  <input
+                    className="field"
+                    type="text"
+                    placeholder="Search models..."
+                    value={searchQuery}
+                    onChange={(e) => setSearchQuery(e.target.value)}
+                    style={{ marginBottom: 8 }}
+                  />
+                )}
+                <select
+                  className="field select"
+                  name="model"
+                  value={selectedModel}
+                  onChange={(e) => setSelectedModel(e.target.value)}
+                  required
+                  data-testid={`input-model-${provider}`}
+                  style={{ width: "100%" }}
+                >
+                  <option value="">Select a compatible model...</option>
+                  {filteredModels.map((model) => (
+                    <option key={model} value={model}>
+                      {model}
+                    </option>
+                  ))}
+                </select>
+              </>
+            ) : (
+              <input
+                className="field"
+                type="text"
+                name="model"
+                value={selectedModel}
+                onChange={(e) => setSelectedModel(e.target.value)}
+                required
+                maxLength={160}
+                data-testid={`input-model-${provider}`}
+                placeholder={
+                  provider === "gemini"
+                    ? "e.g. gemini-1.5-flash or gemini-2.0-flash"
+                    : "e.g. gpt-4o-mini or gpt-4o"
+                }
+              />
+            )}
+            <span className="field-hint" style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
+              {loadingModels && <span>Loading available compatible models...</span>}
+              {modelsError && (
+                <span style={{ color: "hsl(var(--destructive))" }}>{modelsError}</span>
+              )}
+              {models.length > 0 && !loadingModels && !modelsError && (
+                <span>
+                  Found {models.length} compatible model{models.length === 1 ? "" : "s"}.{" "}
+                  <button
+                    type="button"
+                    className="btn-quiet"
+                    style={{ padding: 0, fontSize: 11 }}
+                    onClick={() => setModels([])}
+                  >
+                    Hide list
+                  </button>
+                </span>
+              )}
+              {!loadingModels && !modelsError && models.length === 0 && connection.configured && (
+                <span>
+                  Configured: <strong>{connection.model}</strong>.{" "}
+                  <button
+                    type="button"
+                    className="btn-quiet"
+                    style={{ padding: 0, fontSize: 11 }}
+                    onClick={() => fetchModels("")}
+                  >
+                    Load available models
+                  </button>
+                </span>
+              )}
+              {!loadingModels && !modelsError && models.length === 0 && !connection.configured && (
+                <span>Enter your API key and click "Get Models" to view compatible models.</span>
+              )}
             </span>
           </label>
           <div className="form-item full" style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>

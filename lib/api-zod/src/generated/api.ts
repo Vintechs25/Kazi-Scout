@@ -98,7 +98,7 @@ export const GetDashboardResponse = zod.object({
  */
 export const ListJobsQueryParams = zod.object({
   "q": zod.coerce.string().optional(),
-  "status": zod.enum(['DISCOVERED', 'MATCHED', 'SHORTLISTED', 'REJECTED', 'IGNORED', 'NEEDS_REVIEW']).optional()
+  "status": zod.enum(['DISCOVERED', 'MATCHED', 'SHORTLISTED', 'APPLIED', 'REJECTED', 'IGNORED', 'NEEDS_REVIEW']).optional()
 })
 
 export const listJobsResponseMatchScoreMin = 0;
@@ -117,7 +117,7 @@ export const ListJobsResponseItem = zod.object({
   "sourceUrl": zod.string().url().nullable(),
   "description": zod.string(),
   "matchScore": zod.number().int().min(listJobsResponseMatchScoreMin).max(listJobsResponseMatchScoreMax).nullable(),
-  "status": zod.enum(['DISCOVERED', 'MATCHED', 'SHORTLISTED', 'REJECTED', 'IGNORED', 'NEEDS_REVIEW']),
+  "status": zod.enum(['DISCOVERED', 'MATCHED', 'SHORTLISTED', 'APPLIED', 'REJECTED', 'IGNORED', 'NEEDS_REVIEW']),
   "discoveredAt": zod.coerce.date()
 })
 export const ListJobsResponse = zod.array(ListJobsResponseItem)
@@ -170,7 +170,7 @@ export const CreateJobResponse = zod.object({
   "sourceUrl": zod.string().url().nullable(),
   "description": zod.string(),
   "matchScore": zod.number().int().min(createJobResponseMatchScoreMin).max(createJobResponseMatchScoreMax).nullable(),
-  "status": zod.enum(['DISCOVERED', 'MATCHED', 'SHORTLISTED', 'REJECTED', 'IGNORED', 'NEEDS_REVIEW']),
+  "status": zod.enum(['DISCOVERED', 'MATCHED', 'SHORTLISTED', 'APPLIED', 'REJECTED', 'IGNORED', 'NEEDS_REVIEW']),
   "discoveredAt": zod.coerce.date()
 })
 
@@ -201,7 +201,7 @@ export const GetJobResponse = zod.object({
   "sourceUrl": zod.string().url().nullable(),
   "description": zod.string(),
   "matchScore": zod.number().int().min(getJobResponseMatchScoreMin).max(getJobResponseMatchScoreMax).nullable(),
-  "status": zod.enum(['DISCOVERED', 'MATCHED', 'SHORTLISTED', 'REJECTED', 'IGNORED', 'NEEDS_REVIEW']),
+  "status": zod.enum(['DISCOVERED', 'MATCHED', 'SHORTLISTED', 'APPLIED', 'REJECTED', 'IGNORED', 'NEEDS_REVIEW']),
   "discoveredAt": zod.coerce.date()
 })
 
@@ -217,7 +217,7 @@ export const UpdateJobParams = zod.object({
 })
 
 export const UpdateJobBody = zod.object({
-  "status": zod.enum(['DISCOVERED', 'MATCHED', 'SHORTLISTED', 'REJECTED', 'IGNORED', 'NEEDS_REVIEW'])
+  "status": zod.enum(['DISCOVERED', 'MATCHED', 'SHORTLISTED', 'APPLIED', 'REJECTED', 'IGNORED', 'NEEDS_REVIEW'])
 })
 
 export const updateJobResponseMatchScoreMin = 0;
@@ -236,7 +236,7 @@ export const UpdateJobResponse = zod.object({
   "sourceUrl": zod.string().url().nullable(),
   "description": zod.string(),
   "matchScore": zod.number().int().min(updateJobResponseMatchScoreMin).max(updateJobResponseMatchScoreMax).nullable(),
-  "status": zod.enum(['DISCOVERED', 'MATCHED', 'SHORTLISTED', 'REJECTED', 'IGNORED', 'NEEDS_REVIEW']),
+  "status": zod.enum(['DISCOVERED', 'MATCHED', 'SHORTLISTED', 'APPLIED', 'REJECTED', 'IGNORED', 'NEEDS_REVIEW']),
   "discoveredAt": zod.coerce.date()
 })
 

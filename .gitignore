@@ -57,5 +57,19 @@ storage/
 *.sqlite-shm
 *.sqlite-wal
 logs/
+*.log
+*.backup
+*.bak
 playwright/.auth/
 playwright/.state/
+
+# Local diagnostic, account reset & scratch debug scripts
+check-account.js
+reset-account.js
+reset-password.bat
+start-frontend.bat
+start-server.bat
+scripts/debug-*.mjs
+scripts/check-*.mjs
+scripts/restore-*.mjs
+scripts/verify-master-cv.mjs

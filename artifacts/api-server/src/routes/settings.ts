@@ -1,3 +1,6 @@
+import fs from "node:fs";
+import { unlink } from "node:fs/promises";
+import path from "node:path";
 import { Router, type IRouter } from "express";
 import { eq } from "drizzle-orm";
 import {
@@ -11,8 +14,14 @@ import {
   TestAiProviderResponse,
 } from "@workspace/api-zod";
 import {
+  activityTable,
+  applicationsTable,
+  candidateProfilesTable,
+  cvsTable,
   db,
   integrationSettingsTable,
+  jobsTable,
+  searchProfilesTable,
   systemStateTable,
   type IntegrationSettings,
 } from "@workspace/db";
@@ -176,6 +185,112 @@ router.delete("/settings/providers/:provider", async (req, res): Promise<void> =
     .delete(integrationSettingsTable)
     .where(eq(integrationSettingsTable.provider, params.data.provider));
   res.status(204).send();
+});
+
+router.post("/settings/providers/:provider/models", async (req, res): Promise<void> => {
+  const params = SaveAiProviderParams.safeParse(req.params);
+  if (!params.success) {
+    res.status(400).json({ error: "Choose OpenAI or Gemini." });
+    return;
+  }
+
+  let { apiKey } = req.body as { apiKey?: string };
+
+  // If no apiKey in request body, retrieve saved credentials from database
+  if (!apiKey || !apiKey.trim()) {
+    const [row] = await db
+      .select()
+      .from(integrationSettingsTable)
+      .where(eq(integrationSettingsTable.provider, params.data.provider))
+      .limit(1);
+
+    if (row) {
+      try {
+        const credentials = decryptCredentials<{ apiKey?: unknown }>(row.encryptedCredentials);
+        if (typeof credentials.apiKey === "string" && credentials.apiKey.trim()) {
+          apiKey = credentials.apiKey.trim();
+        }
+      } catch {
+        // Ignored
+      }
+    }
+  }
+
+  if (!apiKey || !apiKey.trim()) {
+    res.status(400).json({ error: "Enter an API key or save credentials first to list models." });
+    return;
+  }
+
+  const { listModels } = await import("../lib/provider-services");
+  const result = await listModels(params.data.provider, apiKey);
+
+  if (!result.success) {
+    res.status(400).json({ error: result.message || "Failed to list models." });
+    return;
+  }
+
+  res.json({
+    success: true,
+    models: result.models,
+  });
+});
+
+router.post("/settings/wipe-data", async (_req, res): Promise<void> => {
+  try {
+    // 0. Stop background agent so it doesn't immediately rediscover jobs
+    try {
+      const { handleAgentCommand } = await import("../lib/agent-worker");
+      await handleAgentCommand("stop");
+    } catch {
+      // ignore
+    }
+
+    // 1. Delete all CVs and remove physical files from storage
+    const allCvs = await db.select().from(cvsTable);
+    const custom = process.env.CV_STORAGE_PATH ?? "storage/cvs";
+    const storageDirCandidates = [
+      path.resolve(process.cwd(), custom),
+      path.resolve(process.cwd(), "..", custom),
+      path.resolve(process.cwd(), "../..", custom),
+    ];
+    let resolvedStorageDir = path.resolve(process.cwd(), custom);
+    for (const c of storageDirCandidates) {
+      if (fs.existsSync(c)) {
+        resolvedStorageDir = c;
+        break;
+      }
+    }
+    for (const cv of allCvs) {
+      try {
+        await unlink(path.join(resolvedStorageDir, cv.storageName));
+      } catch {
+        // ignore if already deleted
+      }
+    }
+
+    // 2. Delete all records from personal tables
+    await db.delete(applicationsTable);
+    await db.delete(jobsTable);
+    await db.delete(cvsTable);
+    await db.delete(searchProfilesTable);
+    await db.delete(candidateProfilesTable);
+    await db.delete(activityTable);
+
+    // 3. Insert initial fresh activity log entry
+    await db.insert(activityTable).values({
+      id: crypto.randomUUID(),
+      kind: "system",
+      message: "Personal workspace data wiped by user. All API keys and connection settings remain safely preserved.",
+      createdAt: new Date(),
+    });
+
+    res.json({
+      success: true,
+      message: "All personal data (profiles, CVs, jobs, applications, activity logs) was successfully wiped. API keys and configuration settings were preserved.",
+    });
+  } catch (err: any) {
+    res.status(500).json({ error: err.message || "Failed to wipe workspace data." });
+  }
 });
 
 export default router;

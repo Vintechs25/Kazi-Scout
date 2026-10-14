@@ -80,4 +80,53 @@ router.put("/candidate-profile", async (req, res): Promise<void> => {
   );
 });
 
+router.get("/candidate-profile/evidence", async (_req, res): Promise<void> => {
+  try {
+    const { getOrGenerateCandidateEvidence, getCandidateEvidenceDiagnostics } = await import(
+      "../lib/candidate-evidence"
+    );
+    const evidence = await getOrGenerateCandidateEvidence();
+    const diagnostics = await getCandidateEvidenceDiagnostics();
+    res.json({ evidence, diagnostics });
+  } catch (err: any) {
+    res.status(500).json({ error: err.message || "Failed to load candidate evidence profile" });
+  }
+});
+
+router.post("/candidate-profile/evidence/refresh", async (_req, res): Promise<void> => {
+  try {
+    const { getOrGenerateCandidateEvidence, getCandidateEvidenceDiagnostics } = await import(
+      "../lib/candidate-evidence"
+    );
+    const evidence = await getOrGenerateCandidateEvidence(true);
+    const diagnostics = await getCandidateEvidenceDiagnostics();
+    res.json({ evidence, diagnostics });
+  } catch (err: any) {
+    res.status(500).json({ error: err.message || "Failed to refresh candidate evidence profile" });
+  }
+});
+
+router.put("/candidate-profile/evidence", async (req, res): Promise<void> => {
+  try {
+    const { saveCandidateEvidenceOverride, getCandidateEvidenceDiagnostics } = await import(
+      "../lib/candidate-evidence"
+    );
+    const saved = saveCandidateEvidenceOverride(req.body);
+    const diagnostics = await getCandidateEvidenceDiagnostics();
+    res.json({ evidence: saved, diagnostics });
+  } catch (err: any) {
+    res.status(400).json({ error: err.message || "Invalid candidate evidence profile update" });
+  }
+});
+
+router.get("/candidate-profile/diagnostics", async (_req, res): Promise<void> => {
+  try {
+    const { getCandidateEvidenceDiagnostics } = await import("../lib/candidate-evidence");
+    const diagnostics = await getCandidateEvidenceDiagnostics();
+    res.json(diagnostics);
+  } catch (err: any) {
+    res.status(500).json({ error: err.message || "Failed to get CV diagnostics" });
+  }
+});
+
 export default router;

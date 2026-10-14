@@ -1,19 +1,37 @@
-# AI Job Agent
+# KaziScout
 
-A local-first job-search workspace. The app stores its account, job records, applications, and CV files on the computer running it. It does not submit applications automatically; records created from the job screen remain marked for review.
+**Find the right work. Apply with confidence.**
 
-## Run on Windows
+*Powered by Vintech Systems & Consulting*
 
-Requirements: Node.js 24 or newer and pnpm (`corepack enable`).
+---
 
-1. Install dependencies from the project folder:
+A professional, local-first career discovery and job search workspace tailored for the Kenyan job market and global remote opportunities. KaziScout systematically monitors verified recruitment endpoints across Kenyan government services (Public Service Commission, GHRIS), all 47 County Governments, NGOs, tech enterprises, and curated remote career boards.
+
+The platform stores its account credentials, job discovery records, search profiles, applications, and CV files securely on your local computer. It operates on a strict consent model: applications and communications are prepared for your review and are never submitted without your explicit command.
+
+## Key Capabilities
+
+- **Intelligent Discovery Desk**: Multi-source crawling across public and private job boards with full provenance tracking.
+- **National & County Coverage**: Dedicated tracking for all 47 Kenyan County Governments and public sector portals.
+- **AI Matching Engine**: Semantic matching against candidate master profiles and role criteria using Google Gemini and OpenAI.
+- **Document Vault**: CV parsing, credential storage, and tailoring.
+- **Application Tracking**: Structured workflow from discovery and review to submission and interview tracking.
+- **Privacy & Security**: Local-first SQLite database and sandboxed environment.
+
+## Getting Started on Windows
+
+Requirements: Node.js 20+ and pnpm (`corepack enable`).
+
+1. Install dependencies from the project root:
 
    ```powershell
    corepack enable
    pnpm install
    ```
 
-2. Copy `.env.example` to `.env` and set a random `SESSION_SECRET` with at least 32 characters. For example, in PowerShell:
+2. Configure environment:
+   Copy `.env.example` to `.env` and set a secure `SESSION_SECRET` with at least 32 characters:
 
    ```powershell
    $bytes = New-Object byte[] 32
@@ -21,32 +39,26 @@ Requirements: Node.js 24 or newer and pnpm (`corepack enable`).
    $secret = [Convert]::ToBase64String($bytes)
    ```
 
-   Put the generated value in `.env`. Keep that file private; it is ignored by Git.
+   Put the generated secret into `.env`.
 
-3. Create/update the local SQLite schema:
+3. Prepare the local SQLite schema:
 
    ```powershell
    npm run db:setup
    ```
 
-4. Build and start the single local app process:
+4. Build and start KaziScout:
 
    ```powershell
    npm run build
    npm start
    ```
 
-   Open <http://localhost:5000>. For a local development-style rebuild and launch, use `npm run dev`.
+   Open your browser to <http://localhost:5000>.
 
-The first visit asks you to create the local account. Your password is stored as a salted hash. The database defaults to `storage/data/ai-job-agent.sqlite`, and uploaded CVs default to `storage/cvs/`. Both locations are local and excluded from Git. Set `SQLITE_PATH` or `CV_STORAGE_PATH` in `.env` to move either location.
+## Privacy and Data Storage
 
-To back up the app, stop it and copy the SQLite database together with the `storage/cvs` folder. Keep the database and CV folder together.
-
-## Current limits
-
-- There are no seeded or sample jobs. Add a real listing manually or use a connected source when one is implemented.
-- Agent start/run is blocked until discovery workers and authorized sources are configured. Stop is always available.
-- Application records created from a job are review-stage records, not proof of a submission.
-- Provider and Gmail states stay disconnected until their integration setup is implemented.
-- Do not bypass CAPTCHA, login, anti-bot controls, or a job site's terms.
-- This project is intended to run locally or on infrastructure you control. It is not configured for cloud deployment.
+- On your first visit, KaziScout prompts you to create a secure local master password.
+- Your password is stored as a salted hash.
+- The local database defaults to `storage/data/ai-job-agent.sqlite`, and uploaded CVs default to `storage/cvs/`.
+- All credentials, API keys, and personal candidate facts remain strictly local.

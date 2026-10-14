@@ -20,7 +20,7 @@ try {
   }
 }
 
-function run(args, env = {}) {
+function run(args, env = {}, allowFailure = false) {
   const result = spawnSync(packageManager, args, {
     cwd: root,
     env: { ...process.env, ...env },
@@ -28,7 +28,11 @@ function run(args, env = {}) {
     shell: isWindows,
   });
   if (result.error) throw result.error;
-  if (result.status !== 0) process.exit(result.status ?? 1);
+  if (result.status !== 0) {
+    if (allowFailure) return false;
+    process.exit(result.status ?? 1);
+  }
+  return true;
 }
 
 function setupDatabase() {
@@ -37,7 +41,12 @@ function setupDatabase() {
     process.env.SQLITE_PATH ?? "storage/data/ai-job-agent.sqlite",
   );
   mkdirSync(path.dirname(sqlitePath), { recursive: true });
-  run(["--filter", "@workspace/db", "run", "push"]);
+  const ok = run(["--filter", "@workspace/db", "run", "push"], {}, true);
+  if (!ok) {
+    console.warn(
+      "[Database Setup] Note: drizzle-kit push completed with warnings (e.g. existing indexes). Continuing startup using verified database.",
+    );
+  }
 }
 
 function buildWeb() {

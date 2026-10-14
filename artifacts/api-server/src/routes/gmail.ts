@@ -20,7 +20,7 @@ import {
 const gmailRouter: IRouter = Router();
 export const gmailCallbackRouter: IRouter = Router();
 const stateCookieName = "gmail_oauth_state";
-const gmailReadOnlyScope = "https://www.googleapis.com/auth/gmail.readonly";
+const gmailSendScope = "openid email https://www.googleapis.com/auth/gmail.send https://www.googleapis.com/auth/gmail.compose https://www.googleapis.com/auth/gmail.readonly";
 
 type GmailCredentials = {
   clientSecret: string;
@@ -63,11 +63,11 @@ function connectionResponse(
   const detail =
     status === "CONNECTED"
       ? connectedEmail
-        ? `Read-only Gmail is connected as ${connectedEmail}.`
-        : "Read-only Gmail is connected."
+        ? `Gmail is connected as ${connectedEmail} (Ready to send approved applications).`
+        : "Gmail is connected (Ready to send approved applications)."
       : status === "ERROR"
         ? "Gmail authorization failed. Review the OAuth setup and try again."
-        : "OAuth client credentials are saved. Connect Gmail to grant read-only access.";
+        : "Google OAuth credentials saved. Click 'Connect with Google' to authorize sending applications.";
   return {
     provider: "gmail" as const,
     status,
@@ -232,7 +232,7 @@ gmailRouter.get("/integrations/gmail/connect", async (req, res): Promise<void> =
     prompt: "consent",
     redirect_uri: gmailRedirectUri(req),
     response_type: "code",
-    scope: `openid email ${gmailReadOnlyScope}`,
+    scope: gmailSendScope,
     state,
   }).toString();
   res.redirect(authorizationUrl.toString());
@@ -308,8 +308,7 @@ gmailCallbackRouter.get(
       };
       if (
         typeof tokenPayload.access_token !== "string" ||
-        typeof tokenPayload.scope !== "string" ||
-        !tokenPayload.scope.split(" ").includes(gmailReadOnlyScope)
+        typeof tokenPayload.scope !== "string"
       ) {
         res.redirect(settingsRedirectUri(req, "error"));
         return;

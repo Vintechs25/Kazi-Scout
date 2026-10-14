@@ -6,27 +6,44 @@ import {
   GetAgentStatusResponse,
 } from "@workspace/api-zod";
 import { db, systemStateTable } from "@workspace/db";
+import { handleAgentCommand, getAgentStatus } from "../lib/agent-worker";
+import { discoverAndMatchJobs } from "../lib/job-search-service";
 
 const router: IRouter = Router();
 
-async function getState() {
-  const [state] = await db
-    .select()
-    .from(systemStateTable)
-    .where(eq(systemStateTable.id, "agent"))
-    .limit(1);
-  return state;
-}
-
 router.get("/agent/status", async (_req, res): Promise<void> => {
-  const state = await getState();
-  res.json(
-    GetAgentStatusResponse.parse({
-      state: state?.agentState ?? "STOPPED",
-      message: state?.agentMessage ?? "Background workers are not configured yet.",
-      updatedAt: (state?.updatedAt ?? new Date()).toISOString(),
-    }),
-  );
+  try {
+    const status = await getAgentStatus();
+    res.json(
+      GetAgentStatusResponse.parse({
+        state: status.state,
+        message: status.message,
+        updatedAt: status.updatedAt.toISOString(),
+      }),
+    );
+  } catch (error) {
+    res.status(500).json(
+      GetAgentStatusResponse.parse({
+        state: "ERROR",
+        message: error instanceof Error ? error.message : "Unknown error",
+        updatedAt: new Date().toISOString(),
+      }),
+    );
+  }
+});
+
+router.post("/agent/trigger-search", async (_req, res): Promise<void> => {
+  try {
+    const result = await discoverAndMatchJobs();
+    res.json({
+      success: true,
+      result,
+    });
+  } catch (error: any) {
+    res.status(500).json({
+      error: error instanceof Error ? error.message : "Failed to trigger search",
+    });
+  }
 });
 
 router.post("/agent/control", async (req, res): Promise<void> => {
@@ -35,38 +52,21 @@ router.post("/agent/control", async (req, res): Promise<void> => {
     res.status(400).json({ error: parsed.error.message });
     return;
   }
-  if (parsed.data.command !== "stop") {
-    res.status(409).json({
-      error: "Discovery workers and authorized job sources are not configured yet. The agent remains stopped.",
-    });
-    return;
-  }
 
-  const updatedAt = new Date();
-  const [state] = await db
-    .insert(systemStateTable)
-    .values({
-      id: "agent",
-      agentState: "STOPPED",
-      agentMessage: "Stopped. No automated applications or submissions can run.",
-      updatedAt,
-    })
-    .onConflictDoUpdate({
-      target: systemStateTable.id,
-      set: {
-        agentState: "STOPPED",
-        agentMessage: "Stopped. No automated applications or submissions can run.",
-        updatedAt,
-      },
-    })
-    .returning();
-  res.json(
-    ControlAgentResponse.parse({
-      state: state.agentState,
-      message: state.agentMessage,
-      updatedAt: state.updatedAt.toISOString(),
-    }),
-  );
+  try {
+    const result = await handleAgentCommand(parsed.data.command);
+    res.json(
+      ControlAgentResponse.parse({
+        state: result.state,
+        message: result.message,
+        updatedAt: result.updatedAt,
+      }),
+    );
+  } catch (error) {
+    res.status(500).json({ 
+      error: error instanceof Error ? error.message : "Unknown error" 
+    });
+  }
 });
 
 export default router;

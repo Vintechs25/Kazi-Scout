@@ -11,6 +11,10 @@ export const applicationsTable = sqliteTable(
     status: text("status", {
       enum: ["NEEDS_REVIEW", "PREPARING", "READY_TO_SUBMIT", "SUBMITTED", "EMAIL_SENT", "AWAITING_RESPONSE", "RECRUITER_RESPONSE", "INTERVIEW", "ASSESSMENT", "OFFER", "REJECTED", "WITHDRAWN", "BLOCKED"],
     }).notNull().default("NEEDS_REVIEW"),
+    recipientEmail: text("recipient_email"),
+    subjectLine: text("subject_line"),
+    coverLetter: text("cover_letter"),
+    attachedDocumentIds: text("attached_document_ids"),
     matchScore: integer("match_score"),
     appliedAt: integer("applied_at", { mode: "timestamp" }).notNull(),
     lastActivityAt: integer("last_activity_at", { mode: "timestamp" }).notNull(),

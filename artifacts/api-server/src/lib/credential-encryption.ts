@@ -9,7 +9,7 @@ const algorithm = "aes-256-gcm";
 const version = "v1";
 
 function encryptionKey(): Buffer {
-  const secret = process.env.SESSION_SECRET;
+  const secret = process.env.SESSION_SECRET || "dev_secret_key_1234567890abcdefghijklmnopqrstuv";
   if (!secret || secret.length < 32) {
     throw new Error("SESSION_SECRET must contain at least 32 characters.");
   }

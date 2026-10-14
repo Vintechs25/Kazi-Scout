@@ -24,3 +24,21 @@ export function settingsRedirectUri(req: Request, result: string): string {
   url.searchParams.set("gmail", result);
   return url.toString();
 }
+
+// Gmail scopes for read-write access (comma-separated)
+export const GMAIL_SCOPES = {
+  READ_ONLY: "https://www.googleapis.com/auth/gmail.readonly",
+  READ_WRITE: "https://www.googleapis.com/auth/gmail.modify",
+  SEND: "https://www.googleapis.com/auth/gmail.send",
+  FULL: "https://www.googleapis.com/auth/gmail.readonly,https://www.googleapis.com/auth/gmail.send",
+} as const;
+
+// Get the appropriate scope based on application mode
+export function getGmailScope(applicationMode: string): string {
+  // If application mode allows automatic sending, use send scope
+  if (applicationMode === "automatic") {
+    return GMAIL_SCOPES.FULL;
+  }
+  // For approval mode, read-only is sufficient for now
+  return GMAIL_SCOPES.READ_ONLY;
+}

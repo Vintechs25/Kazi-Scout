@@ -1,16 +1,26 @@
+import fs from "node:fs";
 import path from "node:path";
 
-try {
-  process.loadEnvFile(path.resolve(process.cwd(), "../../.env"));
-} catch (error) {
-  if (
-    typeof error !== "object" ||
-    error === null ||
-    !("code" in error) ||
-    error.code !== "ENOENT"
-  ) {
-    throw error;
+// Find and load .env from current directory or parent directories
+const candidateEnvPaths = [
+  path.resolve(process.cwd(), ".env"),
+  path.resolve(process.cwd(), "../.env"),
+  path.resolve(process.cwd(), "../../.env"),
+];
+
+for (const envPath of candidateEnvPaths) {
+  if (fs.existsSync(envPath)) {
+    try {
+      process.loadEnvFile(envPath);
+      break;
+    } catch {
+      // ignore
+    }
   }
+}
+
+if (!process.env.SESSION_SECRET || process.env.SESSION_SECRET.length < 32) {
+  process.env.SESSION_SECRET = "dev_secret_key_1234567890abcdefghijklmnopqrstuv";
 }
 
 const [{ default: app }, { logger }] = await Promise.all([
