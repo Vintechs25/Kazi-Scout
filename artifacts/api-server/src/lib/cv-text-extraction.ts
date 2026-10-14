@@ -1,5 +1,4 @@
 import mammoth from "mammoth";
-import { getDocument } from "pdfjs-dist/legacy/build/pdf.mjs";
 
 const maxPages = 60;
 export const maxCvTextCharacters = 60_000;
@@ -14,6 +13,7 @@ export async function extractCvText(
     const result = await mammoth.extractRawText({ buffer: bytes });
     extracted = result.value;
   } else {
+    const { getDocument } = await import("pdfjs-dist/legacy/build/pdf.mjs");
     const loadingTask = getDocument({
       data: new Uint8Array(bytes),
       useSystemFonts: true,
