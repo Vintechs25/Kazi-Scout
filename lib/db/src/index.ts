@@ -2,13 +2,12 @@ import { existsSync, mkdirSync, statSync } from "node:fs";
 import path from "node:path";
 import { createRequire } from "node:module";
 import { fileURLToPath } from "node:url";
-import type DatabaseConstructor from "better-sqlite3";
-import type { BetterSQLite3Database } from "drizzle-orm/better-sqlite3";
+import { drizzle } from "drizzle-orm/better-sqlite3";
 import * as schema from "./schema/index";
 
 const _req = createRequire(import.meta.url);
 
-function loadBetterSqlite3(): typeof DatabaseConstructor {
+function loadBetterSqlite3(): any {
   const currentFile = typeof import.meta.url === "string" ? fileURLToPath(import.meta.url) : "";
   const currentDir = currentFile ? path.dirname(currentFile) : process.cwd();
   const searchDirs = [
@@ -39,36 +38,6 @@ function loadBetterSqlite3(): typeof DatabaseConstructor {
     }
   }
   return _req("better-sqlite3");
-}
-
-function loadDrizzleOrm(): (client: any, config?: any) => any {
-  const currentFile = typeof import.meta.url === "string" ? fileURLToPath(import.meta.url) : "";
-  const currentDir = currentFile ? path.dirname(currentFile) : process.cwd();
-  const searchDirs = [
-    process.cwd(),
-    currentDir,
-    path.resolve(currentDir, ".."),
-    path.resolve(currentDir, "../.."),
-    path.resolve(currentDir, "node_modules"),
-    path.resolve(currentDir, "../node_modules"),
-    path.resolve(currentDir, "../../node_modules"),
-    path.resolve(process.cwd(), "artifacts/api-server"),
-    path.resolve(process.cwd(), "artifacts/api-server/dist"),
-    "/var/task",
-    "/var/task/dist",
-  ];
-  for (const dir of searchDirs) {
-    try {
-      const resolved = _req.resolve("drizzle-orm/better-sqlite3", { paths: [dir] });
-      const mod = _req(resolved);
-      if (typeof mod.drizzle === "function") return mod.drizzle;
-      if (typeof mod.default === "function") return mod.default;
-    } catch {
-      // try next
-    }
-  }
-  const mod = _req("drizzle-orm/better-sqlite3");
-  return mod.drizzle || mod.default;
 }
 
 function getDatabasePath(): string {
@@ -128,17 +97,16 @@ export function getDatabaseInstance(): any {
   return _sqliteInstance;
 }
 
-export function getDb(): BetterSQLite3Database<typeof schema> {
+export function getDb(): ReturnType<typeof drizzle> {
   if (!_drizzleInstance) {
     const sqlite = getDatabaseInstance();
-    const drizzleFn = loadDrizzleOrm();
-    _drizzleInstance = drizzleFn(sqlite, { schema });
+    _drizzleInstance = drizzle(sqlite, { schema });
   }
   return _drizzleInstance;
 }
 
-export const db: BetterSQLite3Database<typeof schema> = new Proxy(
-  {} as BetterSQLite3Database<typeof schema>,
+export const db: ReturnType<typeof drizzle> = new Proxy(
+  {} as ReturnType<typeof drizzle>,
   {
     get(_target, prop, receiver) {
       const instance = getDb() as any;

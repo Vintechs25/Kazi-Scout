@@ -3,7 +3,8 @@ import path from "node:path";
 import { fileURLToPath } from "node:url";
 import { build as esbuild } from "esbuild";
 import esbuildPluginPino from "esbuild-plugin-pino";
-import { rm, copyFile, writeFile, cp, mkdir } from "node:fs/promises";
+import { rm, copyFile, writeFile, cp, mkdir, readdir, readFile } from "node:fs/promises";
+import { existsSync } from "node:fs";
 
 // Plugins (e.g. 'esbuild-plugin-pino') may use `require` to resolve dependencies
 globalThis.require = createRequire(import.meta.url);
@@ -144,6 +145,57 @@ globalThis.__dirname = __bannerPath.dirname(globalThis.__filename);
   );
 
   // Dereference native SQLite dependencies into real folders
+  async function copyFolderSafely(src, dest) {
+    await mkdir(dest, { recursive: true });
+    const entries = await readdir(src, { withFileTypes: true });
+    for (const entry of entries) {
+      const srcPath = path.resolve(src, entry.name);
+      const destPath = path.resolve(dest, entry.name);
+      if (entry.isDirectory()) {
+        await copyFolderSafely(srcPath, destPath);
+      } else {
+        try {
+          await copyFile(srcPath, destPath);
+        } catch (e) {
+          // If locked on Windows (e.g. .node binary currently loaded), skip if target exists
+          if (!existsSync(destPath)) {
+            console.warn(`[Build] Warning copying file ${destPath}: ${e.message}`);
+          }
+        }
+      }
+    }
+  }
+
+  async function patchBetterSqlitePackage(dir) {
+    try {
+      const pJsonPath = path.resolve(dir, "package.json");
+      if (existsSync(pJsonPath)) {
+        const raw = await readFile(pJsonPath, "utf-8");
+        const parsed = JSON.parse(raw);
+        let changed = false;
+        if (!parsed.exports) {
+          parsed.exports = {
+            ".": "./lib/index.js",
+            "./*": "./*"
+          };
+          changed = true;
+        }
+        if (changed) {
+          await writeFile(pJsonPath, JSON.stringify(parsed, null, 2));
+        }
+      }
+      // Create bridge files in case resolution falls back to index.js
+      await writeFile(path.resolve(dir, "index.js"), 'module.exports = require("./lib/index.js");\n');
+      await writeFile(path.resolve(dir, "index.cjs"), 'module.exports = require("./lib/index.js");\n');
+      await writeFile(
+        path.resolve(dir, "index.mjs"),
+        'import b from "./lib/index.js";\nexport default b;\nexport * from "./lib/index.js";\n'
+      );
+    } catch (err) {
+      console.warn(`[Build] Note patching ${dir}: ${err.message}`);
+    }
+  }
+
   async function copyNativePackage(pkgName, searchPaths, targetDirs) {
     try {
       const pkgJsonPath = require.resolve(`${pkgName}/package.json`, {
@@ -154,9 +206,7 @@ globalThis.__dirname = __bannerPath.dirname(globalThis.__filename);
         const destDir = path.resolve(destRoot, pkgName);
         if (path.resolve(srcDir) === path.resolve(destDir)) continue;
         try {
-          await rm(destDir, { recursive: true, force: true }).catch(() => {});
-          await mkdir(path.dirname(destDir), { recursive: true });
-          await cp(srcDir, destDir, { recursive: true, dereference: true, force: true });
+          await copyFolderSafely(srcDir, destDir);
         } catch (copyErr) {
           console.warn(`[Build] Warning copying to ${destDir}: ${copyErr.message}`);
         }
@@ -180,6 +230,13 @@ globalThis.__dirname = __bannerPath.dirname(globalThis.__filename);
   ];
 
   const bSrc = await copyNativePackage("better-sqlite3", searchRoots, targetNodeModules);
+  if (bSrc) {
+    await patchBetterSqlitePackage(bSrc);
+  }
+  for (const root of targetNodeModules) {
+    await patchBetterSqlitePackage(path.resolve(root, "better-sqlite3"));
+  }
+
   const binSrc = await copyNativePackage("bindings", [bSrc, ...searchRoots].filter(Boolean), [
     ...targetNodeModules,
     path.resolve(distDir, "node_modules/better-sqlite3/node_modules"),
