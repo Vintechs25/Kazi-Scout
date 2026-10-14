@@ -1,8 +1,75 @@
 import { existsSync, mkdirSync, statSync } from "node:fs";
 import path from "node:path";
-import Database from "better-sqlite3";
-import { drizzle } from "drizzle-orm/better-sqlite3";
+import { createRequire } from "node:module";
+import { fileURLToPath } from "node:url";
+import type DatabaseConstructor from "better-sqlite3";
+import type { BetterSQLite3Database } from "drizzle-orm/better-sqlite3";
 import * as schema from "./schema/index";
+
+const _req = createRequire(import.meta.url);
+
+function loadBetterSqlite3(): typeof DatabaseConstructor {
+  const currentFile = typeof import.meta.url === "string" ? fileURLToPath(import.meta.url) : "";
+  const currentDir = currentFile ? path.dirname(currentFile) : process.cwd();
+  const searchDirs = [
+    process.cwd(),
+    currentDir,
+    path.resolve(currentDir, ".."),
+    path.resolve(currentDir, "../.."),
+    path.resolve(currentDir, "node_modules"),
+    path.resolve(currentDir, "../node_modules"),
+    path.resolve(currentDir, "../../node_modules"),
+    path.resolve(process.cwd(), "artifacts/api-server"),
+    path.resolve(process.cwd(), "artifacts/api-server/dist"),
+    path.resolve(process.cwd(), "node_modules/better-sqlite3"),
+    path.resolve(process.cwd(), "artifacts/api-server/node_modules/better-sqlite3"),
+    path.resolve(process.cwd(), "dist/node_modules/better-sqlite3"),
+    "/var/task",
+    "/var/task/dist",
+    "/var/task/node_modules/better-sqlite3",
+    "/var/task/dist/node_modules/better-sqlite3",
+  ];
+  for (const dir of searchDirs) {
+    try {
+      const resolved = _req.resolve("better-sqlite3", { paths: [dir] });
+      const mod = _req(resolved);
+      return mod.default || mod;
+    } catch {
+      // try next
+    }
+  }
+  return _req("better-sqlite3");
+}
+
+function loadDrizzleOrm(): (client: any, config?: any) => any {
+  const currentFile = typeof import.meta.url === "string" ? fileURLToPath(import.meta.url) : "";
+  const currentDir = currentFile ? path.dirname(currentFile) : process.cwd();
+  const searchDirs = [
+    process.cwd(),
+    currentDir,
+    path.resolve(currentDir, ".."),
+    path.resolve(currentDir, "../.."),
+    path.resolve(currentDir, "node_modules"),
+    path.resolve(currentDir, "../node_modules"),
+    path.resolve(currentDir, "../../node_modules"),
+    path.resolve(process.cwd(), "artifacts/api-server"),
+    path.resolve(process.cwd(), "artifacts/api-server/dist"),
+    "/var/task",
+    "/var/task/dist",
+  ];
+  for (const dir of searchDirs) {
+    try {
+      const resolved = _req.resolve("drizzle-orm/better-sqlite3", { paths: [dir] });
+      const mod = _req(resolved);
+      if (typeof mod.drizzle === "function") return mod.drizzle;
+      if (typeof mod.default === "function") return mod.default;
+    } catch {
+      // try next
+    }
+  }
+  const mod = _req("drizzle-orm/better-sqlite3");
+  return mod.drizzle || mod.default;
+}
 
 function getDatabasePath(): string {
   if (process.env.SQLITE_PATH === ":memory:") return ":memory:";
@@ -34,26 +101,58 @@ function getDatabasePath(): string {
   return candidates[0];
 }
 
-const databasePath = getDatabasePath();
-if (databasePath !== ":memory:") {
-  mkdirSync(path.dirname(databasePath), { recursive: true });
+let _sqliteInstance: any = null;
+let _drizzleInstance: any = null;
+
+export function getDatabaseInstance(): any {
+  if (!_sqliteInstance) {
+    const Database = loadBetterSqlite3();
+    const databasePath = getDatabasePath();
+    if (databasePath !== ":memory:") {
+      mkdirSync(path.dirname(databasePath), { recursive: true });
+    }
+    const sqlite = new Database(databasePath);
+    try {
+      if (!process.env.VERCEL) {
+        sqlite.pragma("journal_mode = WAL");
+      } else {
+        sqlite.pragma("journal_mode = DELETE");
+      }
+      sqlite.pragma("foreign_keys = ON");
+      ensureSchemaColumns(sqlite);
+    } catch (err) {
+      console.error("Warning: SQLite initialization error:", err);
+    }
+    _sqliteInstance = sqlite;
+  }
+  return _sqliteInstance;
 }
 
-const sqlite = new Database(databasePath);
-try {
-  if (!process.env.VERCEL) {
-    sqlite.pragma("journal_mode = WAL");
-  } else {
-    sqlite.pragma("journal_mode = DELETE");
+export function getDb(): BetterSQLite3Database<typeof schema> {
+  if (!_drizzleInstance) {
+    const sqlite = getDatabaseInstance();
+    const drizzleFn = loadDrizzleOrm();
+    _drizzleInstance = drizzleFn(sqlite, { schema });
   }
-  sqlite.pragma("foreign_keys = ON");
-  ensureSchemaColumns(sqlite);
-} catch (err) {
-  console.error("Warning: SQLite initialization error:", err);
+  return _drizzleInstance;
 }
+
+export const db: BetterSQLite3Database<typeof schema> = new Proxy(
+  {} as BetterSQLite3Database<typeof schema>,
+  {
+    get(_target, prop, receiver) {
+      const instance = getDb() as any;
+      const value = Reflect.get(instance, prop, receiver);
+      if (typeof value === "function") {
+        return value.bind(instance);
+      }
+      return value;
+    },
+  }
+);
 
 // Automatically ensure base tables and new schema columns exist in SQLite database
-function ensureSchemaColumns(dbInstance: InstanceType<typeof Database>) {
+function ensureSchemaColumns(dbInstance: any) {
   try {
     // 1. Ensure all core tables exist (required for fresh environments like Vercel /tmp)
     dbInstance.exec(`
@@ -553,8 +652,5 @@ function ensureSchemaColumns(dbInstance: InstanceType<typeof Database>) {
   }
 }
 
-ensureSchemaColumns(sqlite);
-
-export const db = drizzle(sqlite, { schema });
-
 export * from "./schema/index";
+

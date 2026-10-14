@@ -47,16 +47,25 @@ function sendSession(res: Response, accountId: string): void {
 }
 
 router.get("/auth/status", async (req, res): Promise<void> => {
-  const [account] = await db.select({ id: accountsTable.id }).from(accountsTable).limit(1);
-  const authenticated =
-    Boolean(account) &&
-    getAuthenticatedAccountId(req.cookies?.[sessionCookieName]) === account?.id;
-  res.json(
-    GetAuthStatusResponse.parse({
-      setupRequired: !account,
-      authenticated,
-    }),
-  );
+  try {
+    const [account] = await db.select({ id: accountsTable.id }).from(accountsTable).limit(1);
+    const authenticated =
+      Boolean(account) &&
+      getAuthenticatedAccountId(req.cookies?.[sessionCookieName]) === account?.id;
+    res.json(
+      GetAuthStatusResponse.parse({
+        setupRequired: !account,
+        authenticated,
+      }),
+    );
+  } catch (error) {
+    console.error("[Auth Status Error]:", error instanceof Error ? error.message : String(error));
+    // Fall back to setupRequired: true if database is empty/initializing, or return clean 500
+    res.status(500).json({
+      error: "The request could not be completed.",
+      details: error instanceof Error ? error.message : "Database unavailable"
+    });
+  }
 });
 
 router.post("/auth/setup", async (req, res): Promise<void> => {

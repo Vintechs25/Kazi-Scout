@@ -12,7 +12,7 @@ const artifactDir = path.dirname(fileURLToPath(import.meta.url));
 
 async function buildAll() {
   const distDir = path.resolve(artifactDir, "dist");
-  await rm(distDir, { recursive: true, force: true });
+  await rm(distDir, { recursive: true, force: true }).catch(() => {});
 
   await esbuild({
     entryPoints: [
@@ -153,9 +153,13 @@ globalThis.__dirname = __bannerPath.dirname(globalThis.__filename);
       for (const destRoot of targetDirs) {
         const destDir = path.resolve(destRoot, pkgName);
         if (path.resolve(srcDir) === path.resolve(destDir)) continue;
-        await rm(destDir, { recursive: true, force: true }).catch(() => {});
-        await mkdir(path.dirname(destDir), { recursive: true });
-        await cp(srcDir, destDir, { recursive: true, dereference: true });
+        try {
+          await rm(destDir, { recursive: true, force: true }).catch(() => {});
+          await mkdir(path.dirname(destDir), { recursive: true });
+          await cp(srcDir, destDir, { recursive: true, dereference: true, force: true });
+        } catch (copyErr) {
+          console.warn(`[Build] Warning copying to ${destDir}: ${copyErr.message}`);
+        }
       }
       return srcDir;
     } catch (e) {
