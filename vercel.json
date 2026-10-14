@@ -5,6 +5,12 @@
       "root": "artifacts/ai-job-agent",
       "framework": "vite",
       "outputDirectory": "dist/public",
+      "rewrites": [
+        {
+          "source": "/(.*)",
+          "destination": "/index.html"
+        }
+      ],
       "bindings": [
         {
           "type": "service",
@@ -24,6 +30,12 @@
     "mockup-sandbox": {
       "root": "artifacts/mockup-sandbox",
       "framework": "vite",
+      "rewrites": [
+        {
+          "source": "/(.*)",
+          "destination": "/index.html"
+        }
+      ],
       "bindings": [
         {
           "type": "service",
@@ -42,22 +54,9 @@
       }
     },
     {
-      "source": "/assets/(.*)",
-      "destination": {
-        "service": "ai-job-agent"
-      }
-    },
-    {
-      "source": "/(.*\\..*)",
-      "destination": {
-        "service": "ai-job-agent"
-      }
-    },
-    {
       "source": "/(.*)",
       "destination": {
-        "service": "ai-job-agent",
-        "path": "/index.html"
+        "service": "ai-job-agent"
       }
     }
   ]
