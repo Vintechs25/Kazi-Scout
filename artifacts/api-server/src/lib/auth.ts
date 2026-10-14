@@ -23,7 +23,7 @@ export function createSessionCookie(accountId: string): string {
     process.env.NODE_ENV === "production" && process.env.LOCAL_APP !== "true"
       ? "; Secure"
       : "";
-  return `${sessionCookieName}=${encodeURIComponent(`${payload}.${sign(payload)}`)}; Path=/api; Max-Age=${sessionDurationMs / 1000}; HttpOnly; SameSite=Strict${secure}`;
+  return `${sessionCookieName}=${encodeURIComponent(`${payload}.${sign(payload)}`)}; Path=/; Max-Age=${sessionDurationMs / 1000}; HttpOnly; SameSite=Lax${secure}`;
 }
 
 export function verifySession(value: unknown): string | null {
@@ -60,20 +60,50 @@ export const requireSameOrigin: RequestHandler = (req, res, next) => {
   }
   const origin = req.get("origin");
   if (origin) {
-    const host =
-      req.get("x-forwarded-host")?.split(",")[0]?.trim() ?? req.get("host");
-    const protocol =
-      req.get("x-forwarded-proto")?.split(",")[0]?.trim() ?? req.protocol;
-    let matchesRequestOrigin = false;
+    let allowed = false;
     try {
       const parsedOrigin = new URL(origin);
-      matchesRequestOrigin =
-        parsedOrigin.host.toLowerCase() === host?.toLowerCase() &&
-        parsedOrigin.protocol.replace(":", "") === protocol;
+      const originHost = parsedOrigin.hostname.toLowerCase();
+
+      // Allow local development
+      if (originHost === "localhost" || originHost === "127.0.0.1" || originHost.endsWith(".local")) {
+        allowed = true;
+      }
+
+      // Allow Vintech Systems custom domains
+      if (originHost === "vintechsystems.store" || originHost.endsWith(".vintechsystems.store")) {
+        allowed = true;
+      }
+
+      // Allow Vercel deployment domains
+      if (originHost === "vercel.app" || originHost.endsWith(".vercel.app")) {
+        allowed = true;
+      }
+
+      // Match against request host and x-forwarded-host
+      const rawHost = req.get("x-forwarded-host") || req.get("host") || "";
+      const currentHosts = rawHost
+        .split(",")
+        .map((h) => h.trim().toLowerCase().split(":")[0]);
+
+      if (currentHosts.includes(originHost)) {
+        allowed = true;
+      }
+
+      // Match against Vercel project environment URLs
+      const vercelHost = (process.env.VERCEL_PROJECT_PRODUCTION_URL || process.env.VERCEL_URL || "")
+        .toLowerCase()
+        .replace(/^https?:\/\//, "")
+        .split("/")[0]
+        .split(":")[0];
+      if (vercelHost && originHost === vercelHost) {
+        allowed = true;
+      }
     } catch {
-      matchesRequestOrigin = false;
+      allowed = false;
     }
-    if (!matchesRequestOrigin) {
+
+    if (!allowed) {
       res.status(403).json({ error: "Cross-origin requests are not allowed." });
       return;
     }
@@ -100,5 +130,5 @@ export function expiredSessionCookie(): string {
     process.env.NODE_ENV === "production" && process.env.LOCAL_APP !== "true"
       ? "; Secure"
       : "";
-  return `${sessionCookieName}=; Path=/api; Max-Age=0; HttpOnly; SameSite=Strict${secure}`;
+  return `${sessionCookieName}=; Path=/; Max-Age=0; HttpOnly; SameSite=Lax${secure}`;
 }

@@ -6,7 +6,7 @@ import router from "./routes/index";
 import { logger } from "./lib/logger";
 import type { ErrorRequestHandler } from "express";
 import fs from "node:fs";
-import { ensureDatabaseReady } from "@workspace/db";
+import { ensureDatabaseReady, isTursoConfigured } from "@workspace/db";
 
 const app: Express = express();
 const serveWeb = process.env.SERVE_WEB === "true";
@@ -58,7 +58,11 @@ app.use(express.urlencoded({ extended: true }));
 app.get(["/healthz", "/api/healthz"], (_req, res) => {
   res.setHeader("Content-Type", "application/json");
   res.setHeader("Cache-Control", "no-store");
-  res.status(200).json({ status: "ok", ok: true });
+  res.status(200).json({
+    status: "ok",
+    ok: true,
+    database: isTursoConfigured() ? "turso" : "sqlite-local",
+  });
 });
 
 if (serveWeb) {
