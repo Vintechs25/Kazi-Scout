@@ -32,8 +32,17 @@ const databasePath = getDatabasePath();
 mkdirSync(path.dirname(databasePath), { recursive: true });
 
 const sqlite = new Database(databasePath);
-sqlite.pragma("journal_mode = WAL");
-sqlite.pragma("foreign_keys = ON");
+try {
+  if (!process.env.VERCEL) {
+    sqlite.pragma("journal_mode = WAL");
+  } else {
+    sqlite.pragma("journal_mode = DELETE");
+  }
+  sqlite.pragma("foreign_keys = ON");
+  ensureSchemaColumns(sqlite);
+} catch (err) {
+  console.error("Warning: SQLite initialization error:", err);
+}
 
 // Automatically ensure base tables and new schema columns exist in SQLite database
 function ensureSchemaColumns(dbInstance: InstanceType<typeof Database>) {
