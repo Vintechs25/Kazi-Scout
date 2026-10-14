@@ -36,6 +36,9 @@ export function getCvStorageCandidateDirs(): string[] {
       path.resolve(process.cwd(), "../..", custom),
     ];
   }
+  if (process.env.VERCEL) {
+    return ["/tmp/cvs"];
+  }
   return [
     path.resolve(process.cwd(), "storage/cvs"),
     path.resolve(process.cwd(), "../storage/cvs"),

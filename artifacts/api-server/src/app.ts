@@ -2,7 +2,7 @@ import express, { type Express } from "express";
 import cookieParser from "cookie-parser";
 import path from "node:path";
 import pinoHttp from "pino-http";
-import router from "./routes";
+import router from "./routes/index";
 import { logger } from "./lib/logger";
 import type { ErrorRequestHandler } from "express";
 
@@ -58,6 +58,7 @@ if (serveWeb) {
 }
 
 app.use("/api", router);
+app.use("/", router);
 
 if (serveWeb) {
   app.get("/{*splat}", (req, res, next) => {

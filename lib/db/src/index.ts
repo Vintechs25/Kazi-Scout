@@ -6,6 +6,7 @@ import * as schema from "./schema/index";
 
 function getDatabasePath(): string {
   if (process.env.SQLITE_PATH) return path.resolve(process.cwd(), process.env.SQLITE_PATH);
+  if (process.env.VERCEL) return "/tmp/ai-job-agent.sqlite";
   
   const candidates = [
     path.resolve(process.cwd(), "storage/data/ai-job-agent.sqlite"),
@@ -34,9 +35,148 @@ const sqlite = new Database(databasePath);
 sqlite.pragma("journal_mode = WAL");
 sqlite.pragma("foreign_keys = ON");
 
-// Automatically ensure new schema columns exist in SQLite database
+// Automatically ensure base tables and new schema columns exist in SQLite database
 function ensureSchemaColumns(dbInstance: InstanceType<typeof Database>) {
   try {
+    // 1. Ensure all core tables exist (required for fresh environments like Vercel /tmp)
+    dbInstance.exec(`
+      CREATE TABLE IF NOT EXISTS accounts (
+        id text PRIMARY KEY,
+        password_salt text NOT NULL,
+        password_hash text NOT NULL,
+        created_at integer NOT NULL
+      );
+
+      CREATE TABLE IF NOT EXISTS candidate_profiles (
+        id text PRIMARY KEY,
+        full_name text NOT NULL DEFAULT '',
+        email text NOT NULL DEFAULT '',
+        phone text NOT NULL DEFAULT '',
+        country text NOT NULL DEFAULT '',
+        city text NOT NULL DEFAULT '',
+        timezone text NOT NULL DEFAULT '',
+        target_roles text NOT NULL DEFAULT '[]',
+        skills text NOT NULL DEFAULT '[]',
+        technologies text NOT NULL DEFAULT '[]',
+        years_experience real,
+        education text NOT NULL DEFAULT '[]',
+        certifications text NOT NULL DEFAULT '[]',
+        industries text NOT NULL DEFAULT '[]',
+        languages text NOT NULL DEFAULT '[]',
+        preferred_locations text NOT NULL DEFAULT '[]',
+        work_modes text NOT NULL DEFAULT '[]',
+        relocation integer NOT NULL DEFAULT 0,
+        visa_sponsorship integer NOT NULL DEFAULT 0,
+        minimum_salary real,
+        updated_at integer
+      );
+
+      CREATE TABLE IF NOT EXISTS cvs (
+        id text PRIMARY KEY,
+        account_id text,
+        file_name text NOT NULL,
+        storage_name text NOT NULL UNIQUE,
+        file_type text NOT NULL,
+        category text NOT NULL DEFAULT 'cv',
+        title text,
+        size_bytes integer NOT NULL,
+        is_master integer NOT NULL DEFAULT 0,
+        uploaded_at integer NOT NULL
+      );
+
+      CREATE TABLE IF NOT EXISTS jobs (
+        id text PRIMARY KEY,
+        title text NOT NULL,
+        company text NOT NULL,
+        normalized_company text NOT NULL,
+        normalized_title text NOT NULL,
+        location text,
+        normalized_location text NOT NULL,
+        remote integer NOT NULL DEFAULT 0,
+        salary text,
+        source text NOT NULL,
+        source_url text,
+        external_job_id text,
+        description text NOT NULL,
+        fingerprint text NOT NULL,
+        match_score integer,
+        status text NOT NULL DEFAULT 'DISCOVERED',
+        rejection_reason text,
+        match_reason text,
+        ai_decision text,
+        ai_provider text,
+        ai_model text,
+        ai_evaluated_at integer,
+        evidence_fingerprint text,
+        matched_skills text DEFAULT '[]',
+        missing_skills text DEFAULT '[]',
+        uncertainties text DEFAULT '[]',
+        is_ai_verified integer NOT NULL DEFAULT 0,
+        hard_eligibility_failure integer NOT NULL DEFAULT 0,
+        source_id text,
+        hiring_employer text,
+        discovered_at integer NOT NULL
+      );
+      CREATE UNIQUE INDEX IF NOT EXISTS jobs_fingerprint_unique ON jobs (fingerprint);
+      CREATE UNIQUE INDEX IF NOT EXISTS jobs_source_external_id_unique ON jobs (source, external_job_id);
+
+      CREATE TABLE IF NOT EXISTS applications (
+        id text PRIMARY KEY,
+        job_id text NOT NULL,
+        method text NOT NULL,
+        status text NOT NULL DEFAULT 'NEEDS_REVIEW',
+        recipient_email text,
+        subject_line text,
+        cover_letter text,
+        attached_document_ids text,
+        match_score integer,
+        applied_at integer NOT NULL,
+        last_activity_at integer NOT NULL
+      );
+      CREATE UNIQUE INDEX IF NOT EXISTS applications_job_id_unique ON applications (job_id);
+
+      CREATE TABLE IF NOT EXISTS search_profiles (
+        id text PRIMARY KEY,
+        name text NOT NULL,
+        keywords text NOT NULL DEFAULT '[]',
+        locations text NOT NULL DEFAULT '[]',
+        remote_setting text NOT NULL DEFAULT 'any',
+        minimum_match_score integer NOT NULL DEFAULT 80,
+        minimum_salary real,
+        excluded_keywords text NOT NULL DEFAULT '[]',
+        employment_types text NOT NULL DEFAULT '[]',
+        enabled integer NOT NULL DEFAULT 1,
+        created_at integer NOT NULL
+      );
+
+      CREATE TABLE IF NOT EXISTS system_state (
+        id text PRIMARY KEY,
+        agent_state text NOT NULL DEFAULT 'STOPPED',
+        agent_message text NOT NULL DEFAULT 'Agent is stopped. No automated actions are running.',
+        application_mode text NOT NULL DEFAULT 'approval',
+        updated_at integer NOT NULL
+      );
+
+      CREATE TABLE IF NOT EXISTS integration_settings (
+        provider text PRIMARY KEY,
+        encrypted_credentials text NOT NULL,
+        model text,
+        client_id text,
+        status text NOT NULL DEFAULT 'CONFIGURED',
+        connected_email text,
+        updated_at integer NOT NULL,
+        tested_at integer
+      );
+
+      CREATE TABLE IF NOT EXISTS activity (
+        id text PRIMARY KEY,
+        message text NOT NULL,
+        kind text NOT NULL,
+        created_at integer NOT NULL
+      );
+      CREATE INDEX IF NOT EXISTS activity_created_at_idx ON activity (created_at);
+    `);
+
     const cvsCols = (dbInstance.prepare("PRAGMA table_info(cvs)").all() as any[]).map(c => c.name);
     if (!cvsCols.includes("category")) {
       dbInstance.exec("ALTER TABLE cvs ADD COLUMN category text NOT NULL DEFAULT 'cv'");
