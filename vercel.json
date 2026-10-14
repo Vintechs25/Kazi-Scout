@@ -17,8 +17,7 @@
     "api-server": {
       "root": "artifacts/api-server",
       "framework": "express",
-      "outputDirectory": "dist",
-      "entrypoint": "dist/app.js"
+      "entrypoint": "src/app.ts"
     },
     "mockup-sandbox": {
       "root": "artifacts/mockup-sandbox",
