@@ -15,7 +15,15 @@ const DEFAULT_JSON_ACCEPT = "application/json, application/problem+json";
 // Module-level configuration
 // ---------------------------------------------------------------------------
 
-let _baseUrl: string | null = null;
+const envApiServerUrl: string | undefined =
+  typeof globalThis !== "undefined"
+    ? (globalThis as Record<string, any>).process?.env?.API_SERVER_URL
+    : undefined;
+
+let _baseUrl: string | null =
+  typeof envApiServerUrl === "string" && envApiServerUrl.length > 0
+    ? envApiServerUrl.replace(/\/+$/, "")
+    : null;
 let _authTokenGetter: AuthTokenGetter | null = null;
 
 /**
