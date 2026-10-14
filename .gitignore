@@ -1,5 +1,3 @@
-# See https://docs.github.com/en/get-started/getting-started-with-git/ignoring-files for more about ignoring files.
-
 # compiled output
 dist
 tmp
@@ -9,7 +7,9 @@ out-tsc
 .expo-shared
 
 # dependencies
-node_modules
+node_modules/
+jspm_packages/
+.pnpm-store
 
 # IDEs and editors
 /.idea
@@ -26,15 +26,21 @@ node_modules
 !.vscode/tasks.json
 !.vscode/launch.json
 !.vscode/extensions.json
+.vscode-test
 
-# misc
+# misc & logs
+logs/
+*.log
+*.backup
+*.bak
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+testem.log
+/coverage
 /.sass-cache
 /connect.lock
-/coverage
 /libpeerconnection.log
-npm-debug.log
-yarn-error.log
-testem.log
 /typings
 
 # System Files
@@ -44,11 +50,15 @@ Thumbs.db
 .cursor/rules/nx-rules.mdc
 .github/instructions/nx.instructions.md
 
-# Replit
+# Replit & Caches
 .cache/
 .local/
+.parcel-cache
+.eslintcache
+.stylelintcache
+.node_repl_history
 
-# Local-first AI Job Agent data and credentials
+# Local-first KaziScout data, databases, and credentials
 .env
 .env.*
 !.env.example
@@ -56,10 +66,6 @@ storage/
 *.sqlite
 *.sqlite-shm
 *.sqlite-wal
-logs/
-*.log
-*.backup
-*.bak
 playwright/.auth/
 playwright/.state/
 
@@ -73,3 +79,8 @@ scripts/debug-*.mjs
 scripts/check-*.mjs
 scripts/restore-*.mjs
 scripts/verify-master-cv.mjs
+
+# Vite & build caches
+vite.config.js.timestamp-*
+vite.config.ts.timestamp-*
+.vite/

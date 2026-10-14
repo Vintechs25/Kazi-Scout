@@ -1,4 +1,4 @@
-# KaziScout
+# KaziScout (Kazi-Scout)
 
 **Find the right work. Apply with confidence.**
 
