@@ -42,9 +42,22 @@
       }
     },
     {
-      "source": "/(.*)",
+      "source": "/assets/(.*)",
       "destination": {
         "service": "ai-job-agent"
+      }
+    },
+    {
+      "source": "/(.*\\..*)",
+      "destination": {
+        "service": "ai-job-agent"
+      }
+    },
+    {
+      "source": "/(.*)",
+      "destination": {
+        "service": "ai-job-agent",
+        "path": "/index.html"
       }
     }
   ]
