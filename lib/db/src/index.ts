@@ -5,8 +5,14 @@ import { drizzle } from "drizzle-orm/better-sqlite3";
 import * as schema from "./schema/index";
 
 function getDatabasePath(): string {
+  if (process.env.SQLITE_PATH === ":memory:") return ":memory:";
   if (process.env.SQLITE_PATH) return path.resolve(process.cwd(), process.env.SQLITE_PATH);
-  if (process.env.VERCEL) return "/tmp/ai-job-agent.sqlite";
+  if (process.env.VERCEL) {
+    if (process.platform === "win32") {
+      return path.resolve(process.env.TEMP || "storage/data", "ai-job-agent.sqlite");
+    }
+    return "/tmp/ai-job-agent.sqlite";
+  }
   
   const candidates = [
     path.resolve(process.cwd(), "storage/data/ai-job-agent.sqlite"),
@@ -29,7 +35,9 @@ function getDatabasePath(): string {
 }
 
 const databasePath = getDatabasePath();
-mkdirSync(path.dirname(databasePath), { recursive: true });
+if (databasePath !== ":memory:") {
+  mkdirSync(path.dirname(databasePath), { recursive: true });
+}
 
 const sqlite = new Database(databasePath);
 try {

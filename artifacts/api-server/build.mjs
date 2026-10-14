@@ -3,7 +3,7 @@ import path from "node:path";
 import { fileURLToPath } from "node:url";
 import { build as esbuild } from "esbuild";
 import esbuildPluginPino from "esbuild-plugin-pino";
-import { rm, copyFile } from "node:fs/promises";
+import { rm, copyFile, writeFile, cp, mkdir } from "node:fs/promises";
 
 // Plugins (e.g. 'esbuild-plugin-pino') may use `require` to resolve dependencies
 globalThis.require = createRequire(import.meta.url);
@@ -25,11 +25,6 @@ async function buildAll() {
     outdir: distDir,
     outExtension: { ".js": ".mjs" },
     logLevel: "info",
-    // Some packages may not be bundleable, so we externalize them, we can add more here as needed.
-    // Some of the packages below may not be imported or installed, but we're adding them in case they are in the future.
-    // Examples of unbundleable packages:
-    // - uses native modules and loads them dynamically (e.g. sharp)
-    // - use path traversal to read files (e.g. @google-cloud/secret-manager loads sibling .proto files)
     external: [
       "*.node",
       "sharp",
@@ -107,10 +102,8 @@ async function buildAll() {
     ],
     sourcemap: "linked",
     plugins: [
-      // pino relies on workers to handle logging, instead of externalizing it we use a plugin to handle it
       esbuildPluginPino({ transports: ["pino-pretty"] })
     ],
-    // Make sure packages that are cjs only (e.g. express) but are bundled continue to work in our esm output file
     banner: {
       js: `import { createRequire as __bannerCrReq } from 'node:module';
 import __bannerPath from 'node:path';
@@ -125,9 +118,80 @@ globalThis.__dirname = __bannerPath.dirname(globalThis.__filename);
 
   await copyFile(path.resolve(distDir, "app.mjs"), path.resolve(distDir, "app.js"));
   await copyFile(path.resolve(distDir, "index.mjs"), path.resolve(distDir, "index.js"));
+
+  // Ensure dist is explicitly marked as ESM
+  await writeFile(
+    path.resolve(distDir, "package.json"),
+    JSON.stringify({ type: "module" }, null, 2)
+  );
+
+  // Expose root bridge entrypoints for Vercel
+  await writeFile(
+    path.resolve(artifactDir, "app.js"),
+    'export { default } from "./dist/app.js";\n'
+  );
+  await writeFile(
+    path.resolve(artifactDir, "app.mjs"),
+    'export { default } from "./dist/app.mjs";\n'
+  );
+  await writeFile(
+    path.resolve(artifactDir, "index.js"),
+    'export * from "./dist/index.js";\n'
+  );
+  await writeFile(
+    path.resolve(artifactDir, "index.mjs"),
+    'export * from "./dist/index.mjs";\n'
+  );
+
+  // Dereference native SQLite dependencies into real folders
+  async function copyNativePackage(pkgName, searchPaths, targetDirs) {
+    try {
+      const pkgJsonPath = require.resolve(`${pkgName}/package.json`, {
+        paths: searchPaths,
+      });
+      const srcDir = path.dirname(pkgJsonPath);
+      for (const destRoot of targetDirs) {
+        const destDir = path.resolve(destRoot, pkgName);
+        if (path.resolve(srcDir) === path.resolve(destDir)) continue;
+        await rm(destDir, { recursive: true, force: true }).catch(() => {});
+        await mkdir(path.dirname(destDir), { recursive: true });
+        await cp(srcDir, destDir, { recursive: true, dereference: true });
+      }
+      return srcDir;
+    } catch (e) {
+      console.warn(`[Build] Note for ${pkgName}: ${e.message}`);
+      return null;
+    }
+  }
+
+  const targetNodeModules = [
+    path.resolve(distDir, "node_modules"),
+    path.resolve(artifactDir, "node_modules"),
+    path.resolve(artifactDir, "../../node_modules"),
+  ];
+
+  const searchRoots = [
+    artifactDir,
+    path.resolve(artifactDir, "../../"),
+  ];
+
+  const bSrc = await copyNativePackage("better-sqlite3", searchRoots, targetNodeModules);
+  const binSrc = await copyNativePackage("bindings", [bSrc, ...searchRoots].filter(Boolean), [
+    ...targetNodeModules,
+    path.resolve(distDir, "node_modules/better-sqlite3/node_modules"),
+    path.resolve(artifactDir, "node_modules/better-sqlite3/node_modules"),
+  ]);
+  await copyNativePackage("file-uri-to-path", [binSrc, bSrc, ...searchRoots].filter(Boolean), [
+    ...targetNodeModules,
+    path.resolve(distDir, "node_modules/better-sqlite3/node_modules"),
+    path.resolve(artifactDir, "node_modules/better-sqlite3/node_modules"),
+    path.resolve(distDir, "node_modules/bindings/node_modules"),
+    path.resolve(artifactDir, "node_modules/bindings/node_modules"),
+  ]);
 }
 
 buildAll().catch((err) => {
   console.error(err);
   process.exit(1);
 });
+
