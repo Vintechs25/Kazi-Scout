@@ -1,5 +1,5 @@
 import { spawnSync } from "node:child_process";
-import { mkdirSync } from "node:fs";
+import { existsSync, mkdirSync } from "node:fs";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 
@@ -41,10 +41,22 @@ function setupDatabase() {
     process.env.SQLITE_PATH ?? "storage/data/ai-job-agent.sqlite",
   );
   mkdirSync(path.dirname(sqlitePath), { recursive: true });
-  const ok = run(["--filter", "@workspace/db", "run", "push"], {}, true);
-  if (!ok) {
+
+  const prepareScript = path.resolve(root, "artifacts/api-server/dist/prepare-db.mjs");
+  if (!existsSync(prepareScript)) {
+    run(["--filter", "@workspace/api-server", "run", "build"]);
+  }
+
+  const result = spawnSync(process.execPath, [prepareScript], {
+    cwd: root,
+    env: process.env,
+    stdio: "inherit",
+    shell: false,
+  });
+
+  if (result.status !== 0) {
     console.warn(
-      "[Database Setup] Note: drizzle-kit push completed with warnings (e.g. existing indexes). Continuing startup using verified database.",
+      "[Database Setup] Note: Pre-startup sync encountered a notice. Continuing with runtime dynamic initialization.",
     );
   }
 }
@@ -74,10 +86,11 @@ if (command === "db:setup") {
 } else if (command === "build") {
   run(["run", "typecheck"]);
   run(["--filter", "@workspace/api-server", "run", "build"]);
+  setupDatabase();
   buildWeb();
 } else if (command === "dev") {
-  setupDatabase();
   run(["--filter", "@workspace/api-server", "run", "build"]);
+  setupDatabase();
   buildWeb();
   startLocalApp("development");
 } else if (command === "start") {

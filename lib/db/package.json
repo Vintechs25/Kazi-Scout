@@ -12,6 +12,7 @@
     "push-force": "drizzle-kit push --force --config ./drizzle.config.ts"
   },
   "dependencies": {
+    "@libsql/client": "^0.18.0",
     "better-sqlite3": "^12.2.0",
     "drizzle-orm": "catalog:",
     "drizzle-zod": "^0.8.3",

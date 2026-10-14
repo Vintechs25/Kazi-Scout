@@ -11,6 +11,7 @@
     "typecheck": "tsc -p tsconfig.json --noEmit"
   },
   "dependencies": {
+    "@libsql/client": "^0.18.0",
     "@workspace/api-zod": "workspace:*",
     "@workspace/db": "workspace:*",
     "better-sqlite3": "^12.2.0",

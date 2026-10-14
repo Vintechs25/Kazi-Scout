@@ -19,6 +19,7 @@ async function buildAll() {
     entryPoints: [
       path.resolve(artifactDir, "src/index.ts"),
       path.resolve(artifactDir, "src/app.ts"),
+      path.resolve(artifactDir, "src/prepare-db.ts"),
     ],
     platform: "node",
     bundle: true,
@@ -30,6 +31,7 @@ async function buildAll() {
       "*.node",
       "sharp",
       "better-sqlite3",
+      "libsql",
       "pdfjs-dist/*",
       "sqlite3",
       "canvas",
@@ -119,6 +121,7 @@ globalThis.__dirname = __bannerPath.dirname(globalThis.__filename);
 
   await copyFile(path.resolve(distDir, "app.mjs"), path.resolve(distDir, "app.js"));
   await copyFile(path.resolve(distDir, "index.mjs"), path.resolve(distDir, "index.js"));
+  await copyFile(path.resolve(distDir, "prepare-db.mjs"), path.resolve(distDir, "prepare-db.js"));
 
   // Ensure dist is explicitly marked as ESM
   await writeFile(
@@ -143,6 +146,27 @@ globalThis.__dirname = __bannerPath.dirname(globalThis.__filename);
     path.resolve(artifactDir, "index.mjs"),
     'export * from "./dist/index.mjs";\n'
   );
+  await writeFile(
+    path.resolve(artifactDir, "prepare-db.js"),
+    'export * from "./dist/prepare-db.js";\n'
+  );
+  await writeFile(
+    path.resolve(artifactDir, "prepare-db.mjs"),
+    'export * from "./dist/prepare-db.mjs";\n'
+  );
+
+  // If production database credentials exist at build time, run database preparation
+  if (process.env.TURSO_DATABASE_URL || process.env.DATABASE_URL) {
+    try {
+      console.log("[Build] Detected production database configuration. Initializing database schema...");
+      const { ensureDatabaseReady } = await import(path.resolve(distDir, "index.mjs"));
+      const res = await ensureDatabaseReady();
+      console.log(`[Build] Database ready (created ${res.tablesCreated.length} tables, ${res.columnsAdded.length} columns, ${res.indexesCreated.length} indexes).`);
+    } catch (err) {
+      console.warn("[Build] Database synchronization note during build:", err.message);
+      console.warn("[Build] Database will complete synchronization on application startup.");
+    }
+  }
 
   // Dereference native SQLite dependencies into real folders
   async function copyFolderSafely(src, dest) {

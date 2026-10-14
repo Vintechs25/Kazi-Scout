@@ -5,8 +5,8 @@ import pinoHttp from "pino-http";
 import router from "./routes/index";
 import { logger } from "./lib/logger";
 import type { ErrorRequestHandler } from "express";
-
 import fs from "node:fs";
+import { ensureDatabaseReady } from "@workspace/db";
 
 const app: Express = express();
 const serveWeb = process.env.SERVE_WEB === "true";
@@ -64,6 +64,16 @@ app.get(["/healthz", "/api/healthz"], (_req, res) => {
 if (serveWeb) {
   app.use(express.static(webDist, { index: false }));
 }
+
+// Ensure database schema is ready before running any database-backed API routes
+app.use("/api", async (_req, _res, next) => {
+  try {
+    await ensureDatabaseReady();
+    next();
+  } catch (err) {
+    next(err);
+  }
+});
 
 app.use("/api", router);
 app.use("/", router);
