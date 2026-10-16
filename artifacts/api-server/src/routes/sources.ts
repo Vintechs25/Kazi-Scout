@@ -2,10 +2,12 @@ import { Router, type IRouter } from "express";
 import { SourceService } from "../lib/source-service";
 import { SourceDiscoveryEngine } from "../lib/source-discovery-engine";
 import { getConnectorForSource } from "../lib/connectors/registry";
-import { db, jobProvenanceTable, sourceRunLogTable, rejectedCandidatesTable, occupationTaxonomyTable, adminRegionsTable } from "@workspace/db";
+import { db, jobSourcesTable, jobProvenanceTable, sourceRunLogTable, rejectedCandidatesTable, occupationTaxonomyTable, adminRegionsTable } from "@workspace/db";
 import { eq, desc } from "drizzle-orm";
 import { logger } from "../lib/logger";
 import { SourceRouter } from "../lib/source-router";
+import { SourceProber } from "../lib/connectors/source-prober";
+import { probeAndRegisterAtsEmployers } from "../lib/connectors/ats-slug-prober";
 
 const router: IRouter = Router();
 
@@ -140,6 +142,61 @@ router.post("/sources/:id/test", async (req, res) => {
     res.json(testResult);
   } catch (error: any) {
     res.status(500).json({ error: error.message || "Failed to test source" });
+  }
+});
+
+// 5b. Probe source with 5-step universal protocol (JSON-LD, WP, RSS, API)
+router.post("/sources/:id/probe", async (req, res) => {
+  try {
+    const source = await SourceService.getSourceById(req.params.id);
+    if (!source) {
+      res.status(404).json({ error: "Source not found" });
+      return;
+    }
+    const report = await SourceProber.probeSource(source);
+    res.json(report);
+  } catch (error: any) {
+    res.status(500).json({ error: error.message || "Failed to probe source" });
+  }
+});
+
+// 5c. Batch probe sources
+router.post("/sources/probe-all", async (req, res) => {
+  try {
+    const { category, limit = 20 } = req.body || {};
+    const sourcesRes = await SourceService.listSources({ category, limit: Number(limit) });
+    const reports = [];
+    for (const src of sourcesRes.sources) {
+      const rep = await SourceProber.probeSource(src);
+      reports.push(rep);
+    }
+    res.json({
+      total: reports.length,
+      passed: reports.filter(r => r.passed).length,
+      failed: reports.filter(r => !r.passed).length,
+      reports,
+    });
+  } catch (error: any) {
+    res.status(500).json({ error: error.message || "Failed to batch probe sources" });
+  }
+});
+
+// 5d. ATS Slug Discovery: probe employer names against public ATS APIs with zero API keys
+router.post("/sources/discover-ats", async (req, res) => {
+  try {
+    const { employers } = req.body || {};
+    const defaultEmployers = [
+      "Safaricom", "Equity Bank", "KCB Group", "Aga Khan University Hospital",
+      "Nairobi Hospital", "M-KOPA", "Andela", "Tala", "Branch International",
+      "Twiga Foods", "Copia Global", "Britam", "Old Mutual", "Stanbic Bank",
+      "NCBA Group", "One Acre Fund", "GiveDirectly", "Pathfinder International",
+      "Sanlam", "Centum Investment"
+    ];
+    const candidateList = Array.isArray(employers) && employers.length > 0 ? employers : defaultEmployers;
+    const discoveryResult = await probeAndRegisterAtsEmployers(candidateList);
+    res.json(discoveryResult);
+  } catch (error: any) {
+    res.status(500).json({ error: error.message || "Failed ATS slug discovery" });
   }
 });
 

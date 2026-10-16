@@ -3,23 +3,41 @@ import { RssFeedAdapter } from "./rss-feed-adapter";
 import { JsonApiAdapter } from "./json-api-adapter";
 import { AtsRegistryAdapter } from "./ats-registry-adapter";
 import { StructuredHtmlAdapter } from "./structured-html-adapter";
+import { SitemapJsonLdAdapter } from "./sitemap-jsonld-adapter";
+import { WordPressAdapter } from "./wordpress-adapter";
+import { RemoteFeedsAdapter } from "./remote-feeds-adapter";
+import { JoobleAdapter, ReliefWebAdapter } from "./tier-b-aggregators";
 import { SearchOnlyAdapter } from "./search-only-adapter";
 import { ManualUrlAdapter } from "./manual-url-adapter";
 import { CommunityAnnouncementAdapter } from "./community-announcement-adapter";
-import { GoogleJobsConnector } from "./google-jobs-scraper";
 import type { JobSourceRecord } from "@workspace/db";
 import type { SourceDefinition } from "../source-registry-data";
 
+const sitemapJsonLd = new SitemapJsonLdAdapter();
+const wordPress = new WordPressAdapter();
+const remoteFeeds = new RemoteFeedsAdapter();
+const jooble = new JoobleAdapter();
+const reliefWeb = new ReliefWebAdapter();
+const atsRegistry = new AtsRegistryAdapter();
+const rssFeed = new RssFeedAdapter();
+const jsonApi = new JsonApiAdapter();
+const structuredHtml = new StructuredHtmlAdapter();
+
 const connectors = new Map<string, IJobConnector>([
-  ["FEED", new RssFeedAdapter()],
-  ["RSS_FEED", new RssFeedAdapter()],
-  ["JSON_API", new JsonApiAdapter()],
-  ["ATS_REGISTRY", new AtsRegistryAdapter()],
-  ["STRUCTURED_HTML", new StructuredHtmlAdapter()],
+  ["FEED", rssFeed],
+  ["RSS_FEED", rssFeed],
+  ["JSON_API", jsonApi],
+  ["ATS_REGISTRY", atsRegistry],
+  ["STRUCTURED_HTML", sitemapJsonLd],
+  ["JSON_LD", sitemapJsonLd],
+  ["SITEMAP_JSONLD", sitemapJsonLd],
+  ["WORDPRESS", wordPress],
+  ["REMOTE_FEED", remoteFeeds],
+  ["JOOBLE", jooble],
+  ["RELIEFWEB", reliefWeb],
   ["SEARCH_ONLY", new SearchOnlyAdapter()],
   ["MANUAL_URL", new ManualUrlAdapter()],
   ["COMMUNITY_ANNOUNCEMENT", new CommunityAnnouncementAdapter()],
-  ["GOOGLE_JOBS", new GoogleJobsConnector()],
 ]);
 
 export function getConnectorForSource(source: JobSourceRecord | SourceDefinition): IJobConnector {

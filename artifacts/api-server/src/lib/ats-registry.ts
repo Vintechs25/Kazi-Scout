@@ -6,33 +6,42 @@
 
 export interface AtsCompany {
   name: string;
-  ats: "greenhouse" | "lever" | "ashby" | "recruitee";
+  ats: "greenhouse" | "lever" | "ashby" | "recruitee" | "smartrecruiters" | "workable" | "personio" | "workday";
   token: string;
+  subdomain?: string;
+  tenant?: string;
+  site?: string;
   isKenyanLocal: boolean;
+  category?: string;
 }
 
 export const KENYA_AND_AFRICA_ATS_REGISTRY: AtsCompany[] = [
-  // Leading Kenyan & East African tech employers & NGOs
-  { name: "KoboToolbox", ats: "greenhouse", token: "kobotoolbox", isKenyanLocal: true },
-  { name: "GiveDirectly", ats: "greenhouse", token: "givedirectly", isKenyanLocal: true },
-  { name: "Ona Systems", ats: "lever", token: "ona", isKenyanLocal: true },
-  { name: "Andela", ats: "lever", token: "andela", isKenyanLocal: true },
-  { name: "M-KOPA", ats: "lever", token: "m-kopa", isKenyanLocal: true },
-  { name: "Bboxx", ats: "lever", token: "bboxx", isKenyanLocal: true },
-  { name: "SunCulture", ats: "lever", token: "sunculture", isKenyanLocal: true },
-  { name: "Apollo Agriculture", ats: "greenhouse", token: "apolloagriculture", isKenyanLocal: true },
-  { name: "Turaco", ats: "ashby", token: "turaco", isKenyanLocal: true },
-  { name: "Wave", ats: "greenhouse", token: "wave", isKenyanLocal: true },
-  { name: "Chipper Cash", ats: "lever", token: "chippercash", isKenyanLocal: true },
-  { name: "Flutterwave", ats: "lever", token: "flutterwave", isKenyanLocal: true },
-  { name: "Paystack", ats: "lever", token: "paystack", isKenyanLocal: true },
-  { name: "Water Mission", ats: "greenhouse", token: "watermission", isKenyanLocal: true },
-  { name: "One Acre Fund", ats: "greenhouse", token: "oneacrefund", isKenyanLocal: true },
-  { name: "Komaza", ats: "lever", token: "komaza", isKenyanLocal: true },
-  { name: "Lwala Community Alliance", ats: "greenhouse", token: "lwalacommunityalliance", isKenyanLocal: true },
-  { name: "Mercy Corps", ats: "greenhouse", token: "mercycorps", isKenyanLocal: true },
-  { name: "Sanergy", ats: "lever", token: "sanergy", isKenyanLocal: true },
-  { name: "Cellulant", ats: "lever", token: "cellulant", isKenyanLocal: true },
+  // Health & Medical Employers & International NGOs
+  { name: "GiveDirectly", ats: "greenhouse", token: "givedirectly", isKenyanLocal: true, category: "NGO_INTERNATIONAL" },
+  { name: "Water Mission", ats: "greenhouse", token: "watermission", isKenyanLocal: true, category: "HEALTHCARE" },
+  { name: "One Acre Fund", ats: "greenhouse", token: "oneacrefund", isKenyanLocal: true, category: "NGO_INTERNATIONAL" },
+  { name: "Lwala Community Alliance", ats: "greenhouse", token: "lwalacommunityalliance", isKenyanLocal: true, category: "HEALTHCARE" },
+  { name: "Mercy Corps", ats: "greenhouse", token: "mercycorps", isKenyanLocal: true, category: "NGO_INTERNATIONAL" },
+  { name: "Sanergy / Regen", ats: "lever", token: "sanergy", isKenyanLocal: true, category: "HEALTHCARE" },
+  { name: "Turaco Health", ats: "ashby", token: "turaco", isKenyanLocal: true, category: "HEALTHCARE" },
+  { name: "KoboToolbox", ats: "greenhouse", token: "kobotoolbox", isKenyanLocal: true, category: "NGO_INTERNATIONAL" },
+
+  // Commercial, Enterprise & Tech Employers
+  { name: "Ona Systems", ats: "lever", token: "ona", isKenyanLocal: true, category: "TECH_EMPLOYER" },
+  { name: "Andela", ats: "lever", token: "andela", isKenyanLocal: true, category: "TECH_EMPLOYER" },
+  { name: "M-KOPA", ats: "lever", token: "m-kopa", isKenyanLocal: true, category: "BANK_FINTECH" },
+  { name: "Bboxx", ats: "lever", token: "bboxx", isKenyanLocal: true, category: "TECH_EMPLOYER" },
+  { name: "SunCulture", ats: "lever", token: "sunculture", isKenyanLocal: true, category: "TECH_EMPLOYER" },
+  { name: "Apollo Agriculture", ats: "greenhouse", token: "apolloagriculture", isKenyanLocal: true, category: "BANK_FINTECH" },
+  { name: "Wave", ats: "greenhouse", token: "wave", isKenyanLocal: true, category: "BANK_FINTECH" },
+  { name: "Chipper Cash", ats: "lever", token: "chippercash", isKenyanLocal: true, category: "BANK_FINTECH" },
+  { name: "Flutterwave", ats: "lever", token: "flutterwave", isKenyanLocal: true, category: "BANK_FINTECH" },
+  { name: "Paystack", ats: "lever", token: "paystack", isKenyanLocal: true, category: "BANK_FINTECH" },
+  { name: "Komaza", ats: "lever", token: "komaza", isKenyanLocal: true, category: "TECH_EMPLOYER" },
+  { name: "Cellulant", ats: "lever", token: "cellulant", isKenyanLocal: true, category: "BANK_FINTECH" },
+  { name: "Twiga Foods", ats: "workable", token: "twigafoods", subdomain: "twigafoods", isKenyanLocal: true, category: "TECH_EMPLOYER" },
+  { name: "Copia Global", ats: "greenhouse", token: "copiaglobal", isKenyanLocal: true, category: "TECH_EMPLOYER" },
+  { name: "Wasoko", ats: "lever", token: "wasoko", isKenyanLocal: true, category: "TECH_EMPLOYER" },
 ];
 
 export interface RawAtsJob {
@@ -47,11 +56,12 @@ export interface RawAtsJob {
   isKenyanMarket: boolean;
 }
 
-export async function fetchFromAtsCompany(comp: AtsCompany, timeoutMs = 4000): Promise<RawAtsJob[]> {
+export async function fetchFromAtsCompany(comp: AtsCompany, timeoutMs = 6000): Promise<RawAtsJob[]> {
   const controller = new AbortController();
   const id = setTimeout(() => controller.abort(), timeoutMs);
 
   try {
+    // 1. Greenhouse
     if (comp.ats === "greenhouse") {
       const url = `https://boards-api.greenhouse.io/v1/boards/${encodeURIComponent(comp.token)}/jobs?content=true`;
       const res = await fetch(url, { signal: controller.signal, headers: { Accept: "application/json" } });
@@ -77,6 +87,7 @@ export async function fetchFromAtsCompany(comp: AtsCompany, timeoutMs = 4000): P
       });
     }
 
+    // 2. Lever
     if (comp.ats === "lever") {
       const url = `https://api.lever.co/v0/postings/${encodeURIComponent(comp.token)}?mode=json`;
       const res = await fetch(url, { signal: controller.signal, headers: { Accept: "application/json" } });
@@ -102,6 +113,7 @@ export async function fetchFromAtsCompany(comp: AtsCompany, timeoutMs = 4000): P
       });
     }
 
+    // 3. Ashby
     if (comp.ats === "ashby") {
       const url = `https://api.ashbyhq.com/posting-api/job-board/${encodeURIComponent(comp.token)}`;
       const res = await fetch(url, { signal: controller.signal, headers: { Accept: "application/json" } });
@@ -122,6 +134,82 @@ export async function fetchFromAtsCompany(comp: AtsCompany, timeoutMs = 4000): P
           externalId: `ashby-${comp.token}-${j.id}`,
           description: desc,
           postedDate: j.publishedAt ? new Date(j.publishedAt) : new Date(),
+          isKenyanMarket: isKenya,
+        };
+      });
+    }
+
+    // 4. SmartRecruiters
+    if (comp.ats === "smartrecruiters") {
+      const url = `https://api.smartrecruiters.com/v1/companies/${encodeURIComponent(comp.token)}/postings`;
+      const res = await fetch(url, { signal: controller.signal, headers: { Accept: "application/json" } });
+      if (!res.ok) return [];
+      const data = (await res.json()) as { content?: any[] };
+      const postings = data.content || [];
+      return postings.map((p: any) => {
+        const loc = [p.location?.city, p.location?.region, p.location?.country].filter(Boolean).join(", ") || (comp.isKenyanLocal ? "Nairobi, Kenya" : "Worldwide");
+        const title = p.name || "";
+        const isKenya = loc.toLowerCase().includes("kenya") || loc.toLowerCase().includes("nairobi") || comp.isKenyanLocal;
+        return {
+          title,
+          company: comp.name,
+          location: loc,
+          remote: Boolean(p.location?.remote),
+          url: `https://jobs.smartrecruiters.com/${comp.token}/${p.id}`,
+          externalId: `sr-${comp.token}-${p.id}`,
+          description: `Posting at ${comp.name} for ${title} (${loc})`,
+          postedDate: p.releasedDate ? new Date(p.releasedDate) : new Date(),
+          isKenyanMarket: isKenya,
+        };
+      });
+    }
+
+    // 5. Workable
+    if (comp.ats === "workable") {
+      const subdomain = comp.subdomain || comp.token;
+      const url = `https://apply.workable.com/api/v1/widget/accounts/${encodeURIComponent(subdomain)}`;
+      const res = await fetch(url, { signal: controller.signal, headers: { Accept: "application/json" } });
+      if (!res.ok) return [];
+      const data = (await res.json()) as { jobs?: any[] };
+      const jobs = data.jobs || [];
+      return jobs.map((j: any) => {
+        const loc = [j.city, j.country].filter(Boolean).join(", ") || (comp.isKenyanLocal ? "Nairobi, Kenya" : "Worldwide");
+        const title = j.title || "";
+        const isKenya = loc.toLowerCase().includes("kenya") || loc.toLowerCase().includes("nairobi") || comp.isKenyanLocal;
+        return {
+          title,
+          company: comp.name,
+          location: loc,
+          remote: Boolean(j.telecommuting || loc.toLowerCase().includes("remote")),
+          url: j.url || `https://apply.workable.com/${subdomain}/j/${j.shortcode}/`,
+          externalId: `workable-${subdomain}-${j.shortcode || j.id}`,
+          description: `Role at ${comp.name}: ${title}. Location: ${loc}`,
+          postedDate: j.published ? new Date(j.published) : new Date(),
+          isKenyanMarket: isKenya,
+        };
+      });
+    }
+
+    // 6. Recruitee
+    if (comp.ats === "recruitee") {
+      const url = `https://${encodeURIComponent(comp.token)}.recruitee.com/api/offers/`;
+      const res = await fetch(url, { signal: controller.signal, headers: { Accept: "application/json" } });
+      if (!res.ok) return [];
+      const data = (await res.json()) as { offers?: any[] };
+      const offers = data.offers || [];
+      return offers.map((o: any) => {
+        const loc = [o.city, o.country].filter(Boolean).join(", ") || (comp.isKenyanLocal ? "Nairobi, Kenya" : "Worldwide");
+        const title = o.title || "";
+        const isKenya = loc.toLowerCase().includes("kenya") || loc.toLowerCase().includes("nairobi") || comp.isKenyanLocal;
+        return {
+          title,
+          company: comp.name,
+          location: loc,
+          remote: Boolean(o.remote),
+          url: o.careers_url || `https://${comp.token}.recruitee.com/o/${o.slug || o.id}`,
+          externalId: `recruitee-${comp.token}-${o.id}`,
+          description: o.description || `Position at ${comp.name}: ${title}`,
+          postedDate: o.published_at ? new Date(o.published_at) : new Date(),
           isKenyanMarket: isKenya,
         };
       });

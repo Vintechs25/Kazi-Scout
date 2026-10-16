@@ -2,6 +2,8 @@ import dns from "node:dns/promises";
 import net from "node:net";
 
 export interface HttpClientOptions {
+  method?: string;
+  body?: string;
   timeoutMs?: number;
   maxResponseBytes?: number;
   retries?: number;
@@ -144,8 +146,9 @@ export async function secureFetch(url: string, options: HttpClientOptions = {}):
       }
 
       const res = await fetch(url, {
-        method: "GET",
+        method: options.method || "GET",
         headers,
+        body: options.body,
         signal: controller.signal,
         redirect: "follow",
       });
