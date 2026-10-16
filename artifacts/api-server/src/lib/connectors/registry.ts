@@ -10,6 +10,7 @@ import { JoobleAdapter, ReliefWebAdapter } from "./tier-b-aggregators";
 import { SearchOnlyAdapter } from "./search-only-adapter";
 import { ManualUrlAdapter } from "./manual-url-adapter";
 import { CommunityAnnouncementAdapter } from "./community-announcement-adapter";
+import { GoogleJobsAdapter } from "./google-jobs-adapter";
 import type { JobSourceRecord } from "@workspace/db";
 import type { SourceDefinition } from "../source-registry-data";
 
@@ -22,6 +23,7 @@ const atsRegistry = new AtsRegistryAdapter();
 const rssFeed = new RssFeedAdapter();
 const jsonApi = new JsonApiAdapter();
 const structuredHtml = new StructuredHtmlAdapter();
+const googleJobs = new GoogleJobsAdapter();
 
 const connectors = new Map<string, IJobConnector>([
   ["FEED", rssFeed],
@@ -35,7 +37,8 @@ const connectors = new Map<string, IJobConnector>([
   ["REMOTE_FEED", remoteFeeds],
   ["JOOBLE", jooble],
   ["RELIEFWEB", reliefWeb],
-  ["SEARCH_ONLY", new SearchOnlyAdapter()],
+  ["SEARCH_ONLY", googleJobs],
+  ["GOOGLE_JOBS", googleJobs],
   ["MANUAL_URL", new ManualUrlAdapter()],
   ["COMMUNITY_ANNOUNCEMENT", new CommunityAnnouncementAdapter()],
 ]);

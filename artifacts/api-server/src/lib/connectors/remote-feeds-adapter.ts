@@ -185,6 +185,97 @@ export class RemoteFeedsAdapter implements IJobConnector {
         }));
       }
 
+      // 5. WeWorkRemotely RSS feeds
+      if (url.includes("weworkremotely.com")) {
+        const categories = [
+          "remote-programming-jobs.rss",
+          "remote-customer-support-jobs.rss",
+          "remote-devops-sysadmin-jobs.rss",
+          "remote-management-and-finance-jobs.rss",
+        ];
+        const allListings: NormalizedListing[] = [];
+        for (const cat of categories) {
+          if (allListings.length >= limit) break;
+          try {
+            const feedUrl = `https://weworkremotely.com/categories/${cat}`;
+            const res = await secureFetch(feedUrl, { timeoutMs: 7000 });
+            if (!res.ok) continue;
+            const itemMatches = [...res.text.matchAll(/<item[\s>]([\s\S]*?)<\/item>/gi)];
+            for (const m of itemMatches) {
+              if (allListings.length >= limit) break;
+              const content = m[1];
+              const titleM = content.match(/<title>(?:<!\[CDATA\[([\s\S]*?)\]\]>|([\s\S]*?))<\/title>/i);
+              const linkM = content.match(/<link>(?:<!\[CDATA\[([\s\S]*?)\]\]>|([\s\S]*?))<\/link>/i);
+              const descM = content.match(/<description>(?:<!\[CDATA\[([\s\S]*?)\]\]>|([\s\S]*?))<\/description>/i);
+              const pubDateM = content.match(/<pubDate>([\s\S]*?)<\/pubDate>/i);
+
+              const rawTitle = (titleM ? (titleM[1] || titleM[2]) : "").trim();
+              const itemLink = (linkM ? (linkM[1] || linkM[2]) : "").trim();
+              const itemDesc = (descM ? (descM[1] || descM[2]) : "").replace(/<[^>]+>/g, " ").replace(/\s+/g, " ").trim();
+
+              if (!rawTitle || !itemLink) continue;
+
+              const parts = rawTitle.split(/:\s+/);
+              const company = parts.length > 1 ? parts[0].trim() : "WWR Remote Employer";
+              const title = parts.length > 1 ? parts.slice(1).join(": ").trim() : rawTitle;
+
+              allListings.push({
+                id: `wwr-${Buffer.from(itemLink).toString("base64").slice(0, 16)}`,
+                sourceId: source.id,
+                sourceName: "We Work Remotely",
+                externalJobId: itemLink,
+                title,
+                company,
+                location: "Worldwide Remote",
+                county: null,
+                country: "Worldwide",
+                remote: true,
+                salary: null,
+                description: itemDesc || `Remote position for ${title} at ${company}`,
+                url: itemLink,
+                sourceUrl: itemLink,
+                applicationUrl: itemLink,
+                postedDate: pubDateM ? new Date(pubDateM[1]) : new Date(),
+                jobType: "Full-time",
+                skills: [],
+                rawPayload: { title, company, url: itemLink },
+              });
+            }
+          } catch {}
+        }
+        if (allListings.length > 0) return allListings.slice(0, limit);
+      }
+
+      // 6. Himalayas API
+      if (url.includes("himalayas.app")) {
+        const res = await secureFetch("https://himalayas.app/jobs/api?limit=50", { timeoutMs: 8000 });
+        if (res.ok) {
+          const data = JSON.parse(res.text);
+          const jobs = Array.isArray(data?.jobs) ? data.jobs : [];
+          return jobs.slice(0, limit).map((j: any) => ({
+            id: `himalayas-${j.id || Buffer.from(j.applicationLink || j.title).toString("base64").slice(0, 16)}`,
+            sourceId: source.id,
+            sourceName: "Himalayas",
+            externalJobId: String(j.id || ""),
+            title: j.title || "",
+            company: j.companyName || "Remote Employer",
+            location: j.location || "Worldwide Remote",
+            county: null,
+            country: "Worldwide",
+            remote: true,
+            salary: j.minSalary ? `${j.currency || "USD"} ${j.minSalary} - ${j.maxSalary}` : null,
+            description: (j.description || "").replace(/<[^>]+>/g, " ").replace(/\s+/g, " ").trim(),
+            url: j.applicationLink || j.url || `https://himalayas.app/jobs/${j.slug}`,
+            sourceUrl: j.url,
+            applicationUrl: j.applicationLink || j.url,
+            postedDate: j.pubDate ? new Date(j.pubDate) : new Date(),
+            jobType: "Full-time",
+            skills: Array.isArray(j.categories) ? j.categories : [],
+            rawPayload: j,
+          }));
+        }
+      }
+
       return [];
     } catch (err) {
       console.warn(`[RemoteFeedsAdapter] Error fetching ${source.id}:`, err);

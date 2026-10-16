@@ -629,6 +629,19 @@ export async function getUserEnabledRoles(
     console.warn("[Role Approval] Error checking candidate profile in getUserEnabledRoles:", err);
   }
   
+  if (enabledRoles.length === 0 && preferences.length > 0) {
+    enabledRoles = preferences.slice(0, 5);
+  }
+
+  if (enabledRoles.length === 0) {
+    const fallback = ["Software Developer", "IT Specialist", "Project Coordinator"];
+    return {
+      roles: fallback,
+      preferences: [],
+      searchQueries: generateSearchQueriesFromRoles(fallback),
+    };
+  }
+  
   const searchQueries = enabledRoles.flatMap(p => p.searchQueries);
   
   return {

@@ -217,12 +217,106 @@ export class SitemapJsonLdAdapter implements IJobConnector {
         }));
       }
 
-      // If no JSON-LD on main page, scan for vacancy links to parse
+      // If no JSON-LD on main page, scan for vacancy links and HTML listing cards
       const origin = new URL(targetUrl).origin;
-      const linkMatches = res.text.matchAll(/<a\b[^>]*href=["']([^"']*(?:job|vacanc|career|position)[^"']*)["'][^>]*>/gi);
-      const subUrls = Array.from(new Set(Array.from(linkMatches).map(m => m[1]))).slice(0, 8);
-
       const subListings: NormalizedListing[] = [];
+
+      // A. Extract directly from HTML listing cards if present (e.g. BrighterMonday, MyJobMag)
+      // Pattern 1: BrighterMonday listings (/listings/slug-id)
+      const bmMatches = [...res.text.matchAll(/<a[^>]+href=["'](https?:\/\/[^"']*\/listings\/[^"']+|(?:\/listings\/[^"']+))["'][^>]*>([\s\S]*?)<\/a>/gi)];
+      if (bmMatches.length > 0) {
+        const seenUrls = new Set<string>();
+        for (const m of bmMatches) {
+          if (subListings.length >= limit) break;
+          const fullUrl = m[1].startsWith("http") ? m[1] : `${origin}${m[1]}`;
+          if (seenUrls.has(fullUrl)) continue;
+          seenUrls.add(fullUrl);
+
+          const cardText = m[2].replace(/<[^>]+>/g, " ").replace(/\s+/g, " ").trim();
+          if (cardText.length < 3) continue;
+
+          // Attempt to extract title and company from text
+          const parts = cardText.split(/(?:at|•|\||-)\s+/i);
+          const title = parts[0]?.trim() || cardText;
+          const company = parts[1]?.trim() || source.name;
+
+          subListings.push({
+            id: `${source.id}-${Buffer.from(fullUrl).toString("base64").slice(0, 20)}`,
+            sourceId: source.id,
+            sourceName: source.name,
+            externalJobId: fullUrl,
+            title,
+            company,
+            location: "Nairobi, Kenya",
+            county: "Nairobi",
+            country: source.country || "Kenya",
+            remote: /remote/i.test(cardText),
+            salary: null,
+            description: `${cardText}. Full job application details available at ${fullUrl}`,
+            url: fullUrl,
+            sourceUrl: fullUrl,
+            applicationUrl: fullUrl,
+            postedDate: new Date(),
+            jobType: "Full-time",
+            skills: [],
+            rawPayload: { title, company, url: fullUrl },
+          });
+        }
+
+        if (subListings.length >= 5) {
+          return subListings;
+        }
+      }
+
+      // Pattern 2: MyJobMag (/job/slug)
+      const mjmMatches = [...res.text.matchAll(/<a[^>]+href=["'](\/job\/[^"']+)["'][^>]*>([\s\S]*?)<\/a>/gi)];
+      if (mjmMatches.length > 0) {
+        const seenUrls = new Set<string>();
+        for (const m of mjmMatches) {
+          if (subListings.length >= limit) break;
+          const fullUrl = `https://www.myjobmag.co.ke${m[1]}`;
+          if (seenUrls.has(fullUrl)) continue;
+          seenUrls.add(fullUrl);
+
+          const titleText = m[2].replace(/<[^>]+>/g, " ").replace(/\s+/g, " ").trim();
+          if (titleText.length < 3 || titleText.toLowerCase().includes("view details")) continue;
+
+          const atMatch = titleText.match(/(.*?)\s+at\s+(.*)/i);
+          const title = atMatch ? atMatch[1].trim() : titleText;
+          const company = atMatch ? atMatch[2].trim() : source.name;
+
+          subListings.push({
+            id: `${source.id}-${Buffer.from(fullUrl).toString("base64").slice(0, 20)}`,
+            sourceId: source.id,
+            sourceName: source.name,
+            externalJobId: fullUrl,
+            title,
+            company,
+            location: "Kenya",
+            county: null,
+            country: "Kenya",
+            remote: /remote/i.test(titleText),
+            salary: null,
+            description: `${titleText}. Active job opening in Kenya. View full job requirements, qualifications and apply directly.`,
+            url: fullUrl,
+            sourceUrl: fullUrl,
+            applicationUrl: fullUrl,
+            postedDate: new Date(),
+            jobType: "Full-time",
+            skills: [],
+            rawPayload: { title, company, url: fullUrl },
+          });
+        }
+
+        if (subListings.length >= 5) {
+          return subListings;
+        }
+      }
+
+      // B. General: scan for vacancy links to parse via JSON-LD
+      const linkMatches = res.text.matchAll(/<a\b[^>]*href=["']([^"']*(?:job|vacanc|career|position|listings)[^"']*)["'][^>]*>/gi);
+      const subUrls = Array.from(new Set(Array.from(linkMatches).map(m => m[1]))).slice(0, 12);
+
       for (const relUrl of subUrls) {
         if (subListings.length >= limit) break;
         const fullUrl = relUrl.startsWith("http") ? relUrl : relUrl.startsWith("/") ? `${origin}${relUrl}` : `${origin}/${relUrl}`;

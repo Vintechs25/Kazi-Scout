@@ -550,7 +550,7 @@ export async function discoverJobsWithCvGuidance(
           if (verifyRequirements) {
             const verificationResult = await verifyJobAgainstUserProfile(normalizedJob, accountId);
             
-            if (filters?.requireApplicationInstructions && (!verificationResult.requirementVerification || !verificationResult.requirementVerification.hasClearInstructions)) {
+            if (filters?.requireApplicationInstructions && (!verificationResult.requirementVerification || !verificationResult.requirementVerification.hasClearInstructions) && (!normalizedJob.sourceUrl || !normalizedJob.sourceUrl.startsWith("http"))) {
               jobsRejected++;
               continue;
             }
