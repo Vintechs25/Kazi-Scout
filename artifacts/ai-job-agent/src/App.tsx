@@ -2155,7 +2155,7 @@ function Cvs() {
 
             <Field
               label="Document Title / Label"
-              placeholder="e.g. Zetech University Diploma in Computer Science"
+              placeholder="e.g. Master CV 2026, Degree Certificate, Professional License"
               value={docTitle}
               onChange={(e: any) => setDocTitle(e.target.value)}
             />
@@ -2210,7 +2210,7 @@ function Cvs() {
         <span className="eyebrow">{docs.length} documents stored</span>
       </div>
       {q.isLoading ? <div className="panel-body"><Loading count={3}/></div> : q.isError ? <ErrorState error={q.error} retry={q.refetch}/> : docs.length === 0 ? (
-        <Empty icon={FileText} title="No credentials stored yet" copy="Upload your Master CV, Zetech Diploma Certificate, National ID, and CCNA/ITIL Certifications above so they can be automatically attached to your job applications."/>
+        <Empty icon={FileText} title="No credentials stored yet" copy="Upload your Master CV, Degree Certificate, National ID / Passport, and Professional Certifications above so they can be automatically attached to your job applications."/>
       ) : (
         <>
         <div className="table-wrap">

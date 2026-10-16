@@ -67,8 +67,13 @@ export async function loadAllCandidateDocumentContext(storageDir: string): Promi
 
     if (text) {
       docSnippets.push(`--- DOCUMENT: ${doc.fileName} (Category: ${cat.toUpperCase()}) ---\n${text.slice(0, 8000)}`);
-      if (text.includes("Zetech") || text.includes("Diploma") || text.includes("Computer Science")) {
-        educationFound = "Diploma in Computer Science - Zetech University";
+      if (!educationFound) {
+        const eduLine = text
+          .split("\n")
+          .find((l) => /diploma|bachelor|degree|master|doctor|phd|fellowship|mbbs|fwacs|university|college|academy/i.test(l) && l.trim().length > 5 && l.trim().length < 140);
+        if (eduLine) {
+          educationFound = eduLine.trim();
+        }
       }
     }
   }
@@ -76,7 +81,7 @@ export async function loadAllCandidateDocumentContext(storageDir: string): Promi
   return {
     summaryText: docSnippets.join("\n\n"),
     documentCategories: Array.from(new Set(categories)),
-    educationText: educationFound || "Diploma in Computer Science - Zetech University",
+    educationText: educationFound || "",
     skillsText: skillsFound,
     experienceText: "",
   };

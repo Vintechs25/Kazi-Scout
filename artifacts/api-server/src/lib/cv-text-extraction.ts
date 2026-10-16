@@ -84,14 +84,44 @@ export async function extractCvText(
         for (let pageNumber = 1; pageNumber <= pageCount; pageNumber += 1) {
           const page = await document.getPage(pageNumber);
           const content = await page.getTextContent();
-          pages.push(
-            content.items
-              .map((item) => ("str" in item && typeof item.str === "string" ? item.str : ""))
-              .filter(Boolean)
-              .join(" "),
-          );
+          let pageText = "";
+          let lastItem: any = null;
+
+          for (const rawItem of content.items) {
+            if (!("str" in rawItem) || typeof rawItem.str !== "string") continue;
+            const item = rawItem as any;
+            if (!item.str && !item.hasEOL) continue;
+
+            if (lastItem) {
+              const transform = item.transform;
+              const lastTransform = lastItem.transform;
+              if (Array.isArray(transform) && Array.isArray(lastTransform)) {
+                const yDiff = Math.abs(transform[5] - lastTransform[5]);
+                if (yDiff > 4) {
+                  pageText += "\n";
+                } else {
+                  const xGap = transform[4] - (lastTransform[4] + (lastItem.width || 0));
+                  if (xGap > 2 && !pageText.endsWith(" ") && !item.str.startsWith(" ")) {
+                    pageText += " ";
+                  }
+                }
+              } else if (lastItem.hasEOL) {
+                pageText += "\n";
+              }
+            }
+
+            pageText += item.str;
+            if (item.hasEOL && !pageText.endsWith("\n")) {
+              pageText += "\n";
+            }
+            lastItem = item;
+          }
+
+          if (pageText.trim()) {
+            pages.push(pageText.trim());
+          }
         }
-        extracted = pages.join("\n");
+        extracted = pages.join("\n\n");
       } finally {
         await loadingTask.destroy().catch(() => {});
       }
@@ -109,7 +139,11 @@ export async function extractCvText(
     }
   }
 
-  const normalized = (extracted || "").replace(/\s+/g, " ").trim();
+  // Normalize spaces while preserving structural line breaks
+  const normalized = (extracted || "")
+    .replace(/[ \t]+/g, " ")
+    .replace(/\n{3,}/g, "\n\n")
+    .trim();
   if (!normalized) {
     return { text: "", truncated: false };
   }

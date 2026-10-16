@@ -127,123 +127,62 @@ export function buildDeterministicEvidence(
   cvFileName: string,
   fingerprint: string,
 ): CandidateEvidenceProfile {
+  // Extract career years if present
+  const years = Array.from(cvText.matchAll(/\b(19[89]\d|20[012]\d)\b/g)).map((m) => Number(m[0]));
+  let calculatedYears = profile?.yearsExperience ?? null;
+  if (calculatedYears === null && years.length > 0) {
+    const validYears = years.filter((y) => y >= 1990 && y <= 2026);
+    if (validYears.length > 0) {
+      calculatedYears = Math.max(1, 2026 - Math.min(...validYears));
+    }
+  }
+
+  // Parse education lines from CV
+  const eduLines = cvText
+    .split("\n")
+    .map((l) => l.trim())
+    .filter((l) => /bachelor|master|phd|doctor|mbbs|fwacs|diploma|degree|university|college|academy/i.test(l) && l.length > 5 && l.length < 150)
+    .slice(0, 4);
+
+  const parsedEducation = eduLines.length > 0
+    ? eduLines.map((e) => ({ institution: e, qualification: e, year: "" }))
+    : Array.isArray(profile?.education) && profile.education.length > 0
+    ? profile.education.map((e: string) => ({ institution: e, qualification: e, year: "" }))
+    : [];
+
+  // Parse certification lines from CV
+  const certLines = cvText
+    .split("\n")
+    .map((l) => l.trim())
+    .filter((l) => /certified|certificate|license|licensure|fellowship|fellow|member|council|board|cpa|pmp/i.test(l) && l.length > 5 && l.length < 150)
+    .slice(0, 4);
+
+  const parsedCertifications = certLines.length > 0
+    ? certLines.map((c) => ({ name: c, issuer: "", year: "" }))
+    : Array.isArray(profile?.certifications) && profile.certifications.length > 0
+    ? profile.certifications.map((c: string) => ({ name: c, issuer: "", year: "" }))
+    : [];
+
+  const roles = Array.isArray(profile?.targetRoles) && profile.targetRoles.length > 0
+    ? profile.targetRoles
+    : [];
+
+  const skills = Array.isArray(profile?.skills) && profile.skills.length > 0
+    ? profile.skills
+    : [];
+
   return {
     fullName: profile?.fullName || "Candidate",
-    yearsExperience: profile?.yearsExperience ?? 1,
-    targetRoleFamilies: [
-      "IT Support Specialist / IT Support Engineer",
-      "ICT Officer / ICT Support",
-      "Desktop Support / Technical Support",
-      "Junior Systems Administrator",
-      "Junior Software Developer / Web Developer",
-    ],
-    demonstratedTechnicalSkills: [
-      "Tier 1-3 technical support",
-      "Troubleshooting and diagnostics",
-      "Hardware and software support",
-      "LAN/WAN setup",
-      "Windows",
-      "Linux",
-      "MySQL",
-      "PostgreSQL",
-      "Python",
-      "Bash automation",
-      "JavaScript",
-      "React.js",
-      "Node.js",
-      "MED360 EMR/EHR",
-      "System patching",
-    ],
-    selfReportedSkills: Array.isArray(profile?.skills) ? profile.skills : [],
-    verifiedWorkExperience: [
-      {
-        title: "IT Support Technician",
-        company: "Pope Benedict XVI Catholic Hospital",
-        period: "Oct 2025 - Present",
-        responsibilities: [
-          "Provide Tier 2 and Tier 3 technical support for MED360 EMR/EHR systems",
-          "Manage database administration in MySQL and PostgreSQL",
-          "Maintain integrations with external health platforms (SHA)",
-          "Develop automation scripts using Python and Bash for backups",
-          "Train over 50 users and create technical documentation",
-        ],
-        technologiesUsed: ["MED360", "MySQL", "PostgreSQL", "Python", "Bash", "SHA"],
-        isProfessional: true,
-      },
-      {
-        title: "Freelance IT Support & Web Developer",
-        company: "Vintech Systems and Consulting",
-        period: "2023 - Present",
-        responsibilities: [
-          "Provide IT support and network troubleshooting for individuals and SMEs",
-          "Develop and maintain responsive websites",
-        ],
-        technologiesUsed: ["WordPress", "JavaScript", "React", "HTML/CSS"],
-        isProfessional: false,
-      },
-      {
-        title: "Founder",
-        company: "Vintechs Cyber",
-        period: "2024 - Present",
-        responsibilities: [
-          "Operate a cybercafe providing public internet and SME IT services",
-          "Maintain system performance and small network configurations",
-        ],
-        technologiesUsed: ["Network routing", "Windows", "Office 365", "eCitizen"],
-        isProfessional: false,
-      },
-    ],
-    education: [
-      {
-        institution: "Zetech University, Ruiru",
-        qualification: "Diploma in Computer Science",
-        year: "2022 - 2025",
-      },
-      {
-        institution: "Ndururumo High School, Nyahururu",
-        qualification: "High School Diploma",
-        year: "2019 - 2022",
-      },
-    ],
-    certifications: [
-      {
-        name: "CCNA: Enterprise Networking, Security, and Automation",
-        issuer: "Cisco Networking Academy",
-        year: "Apr 2025",
-      },
-      {
-        name: "Cybersecurity Essentials",
-        issuer: "Cisco Networking Academy",
-        year: "Apr 2024",
-      },
-      {
-        name: "Software Development (Full-Stack MERN specialization)",
-        issuer: "PLP Academy",
-      },
-    ],
-    projectsAndPracticalExperience: [
-      {
-        name: "Hospital Recruitment Portal System",
-        description: "Architected recruitment workflow structures and data validation logic.",
-        technologies: ["Web Portal", "Data Validation", "Recruitment Workflow"],
-      },
-      {
-        name: "Cybersecurity Awareness Website",
-        description: "Interactive website educating users on digital safety and password management.",
-        technologies: ["React", "JavaScript", "HTML/CSS"],
-      },
-    ],
-    transferableSkills: [
-      "User training and stakeholder communication",
-      "Root-cause diagnosis",
-      "Process documentation",
-      "High reliability in healthcare operational setting",
-    ],
-    limitationsOrMissingInfo: [
-      "Maximum professional experience is 1+ years (strictly junior / entry level).",
-      "No enterprise cloud architecture or DevOps lead credentials.",
-      "Requires Kenya-based location or genuinely worldwide remote employment.",
-    ],
+    yearsExperience: calculatedYears ?? 1,
+    targetRoleFamilies: roles,
+    demonstratedTechnicalSkills: skills,
+    selfReportedSkills: skills,
+    verifiedWorkExperience: [],
+    education: parsedEducation,
+    certifications: parsedCertifications,
+    projectsAndPracticalExperience: [],
+    transferableSkills: [],
+    limitationsOrMissingInfo: [],
     evidenceFingerprint: fingerprint,
     cvDocumentId: cvId,
     cvFileName: cvFileName,
@@ -286,18 +225,18 @@ export async function getOrGenerateCandidateEvidence(
     try {
       const creds = decryptCredentials<{ apiKey?: string }>(geminiRow.encryptedCredentials);
       if (creds.apiKey) {
-        const prompt = `You are a certified Lead Technical Talent Assessor.
+        const prompt = `You are a certified Lead Talent Assessor.
 Extract and compile an objective, rigorously VERIFIED CANDIDATE EVIDENCE PROFILE from the candidate's actual master CV and profile.
 
 STRICT VERIFICATION DIRECTIVES:
-1. Do NOT invent or assume any certifications, degrees, or years of experience.
-2. DISTINGUISH professional employment (e.g. hospital IT technician) from personal projects, freelance, or cybercafe operations.
-3. List demonstrated technical skills that are explicitly evidenced in the CV.
-4. List self-reported skills from the candidate profile that do not have direct CV proof.
-5. Identify explicit limitations or constraints (e.g. 1 year experience, junior/entry ceiling, Kenya/Worldwide-remote only).
+1. Ground all facts strictly in the provided CV text. Do NOT invent, assume, or hallucinate credentials, degrees, or experience.
+2. Extract the candidate's authentic career field (medical, legal, financial, engineering, technical, academic, etc.).
+3. List demonstrated skills explicitly evidenced in the CV.
+4. List self-reported skills from the candidate profile that are not directly mentioned in the CV.
+5. Identify any explicit limitations or stated geographical constraints.
 
-Candidate Master CV Text (VERIFIED FROM PDF STORAGE):
-${dossier.text.slice(0, 5000)}
+Candidate Master CV Text (VERIFIED FROM STORAGE):
+${dossier.text.slice(0, 6000)}
 
 Candidate Profile Record:
 - Full Name: ${profile?.fullName || "Candidate"}
@@ -309,31 +248,31 @@ Candidate Profile Record:
 Output MUST be a single JSON object strictly matching this schema:
 {
   "fullName": "${profile?.fullName || "Candidate"}",
-  "yearsExperience": 1,
-  "targetRoleFamilies": ["IT Support Specialist", "ICT Officer", "Junior Systems Administrator", "Junior Software Developer"],
-  "demonstratedTechnicalSkills": ["Troubleshooting", "Hardware Support", "LAN/WAN", "Linux", "Windows", "MySQL", "PostgreSQL", "React.js", "Node.js", "Python", "Bash", "EMR"],
-  "selfReportedSkills": ["SHA billing system", "Full-Stack Web Development"],
+  "yearsExperience": number,
+  "targetRoleFamilies": string[],
+  "demonstratedTechnicalSkills": string[],
+  "selfReportedSkills": string[],
   "verifiedWorkExperience": [
     {
-      "title": "IT Support Technician",
-      "company": "Regional Hospital",
-      "period": "Oct 2025 - Present",
-      "responsibilities": ["Provide Tier 2/3 technical support for MED360 EMR/EHR", "Database administration in MySQL/PostgreSQL", "Automation scripts with Python and Bash"],
-      "technologiesUsed": ["MED360", "MySQL", "PostgreSQL", "Python", "Bash"],
-      "isProfessional": true
+      "title": string,
+      "company": string,
+      "period": string,
+      "responsibilities": string[],
+      "technologiesUsed": string[],
+      "isProfessional": boolean
     }
   ],
   "education": [
-    { "institution": "Zetech University", "qualification": "Diploma in Computer Science", "year": "2022 - 2025" }
+    { "institution": string, "qualification": string, "year": string }
   ],
   "certifications": [
-    { "name": "CCNA: Enterprise Networking, Security, and Automation", "issuer": "Cisco Networking Academy", "year": "2025" }
+    { "name": string, "issuer": string, "year": string }
   ],
   "projectsAndPracticalExperience": [
-    { "name": "Hospital Recruitment Portal", "description": "Workflow structure and data validation logic", "technologies": ["Web Portal"] }
+    { "name": string, "description": string, "technologies": string[] }
   ],
-  "transferableSkills": ["User training", "Technical documentation", "Problem diagnosis"],
-  "limitationsOrMissingInfo": ["Entry-level/Junior (1 year exp)", "No senior or lead management credentials", "Requires Nairobi Kenya or worldwide remote"]
+  "transferableSkills": string[],
+  "limitationsOrMissingInfo": string[]
 }`;
 
         const rawJson = (await callGeminiCandidateEvidence(creds.apiKey, geminiRow.model, prompt)) as any;

@@ -473,44 +473,235 @@ function sanitizeProfileDraft(raw: unknown): Record<string, unknown> {
   return draft;
 }
 
-function parseCvLocally(text: string): Record<string, unknown> {
+export function repairSpacedCharacters(str: string): string {
+  let res = str.replace(/\b([A-Za-z])\s+([A-Za-z])(?:\s+([A-Za-z]))+\b/g, (match) =>
+    match.replace(/\s+/g, "")
+  );
+  res = res.replace(/\bCurr\s+icul\s+u\s+m\b/gi, "Curriculum");
+  res = res.replace(/\bvita\s+e\b/gi, "vitae");
+  res = res.replace(/\bDr\s*\.\s*/gi, "Dr. ");
+  return res;
+}
+
+export function parseCvLocally(rawText: string): Record<string, unknown> {
+  const text = repairSpacedCharacters(rawText);
   const lines = text.split("\n").map(l => l.trim()).filter(Boolean);
 
   const emailMatch = text.match(/[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\.[a-zA-Z]{2,}/);
   const email = emailMatch ? emailMatch[0] : "";
 
-  const phoneMatch = text.match(/(?:\+?\d{1,3}[-.\s]?)?\(?\d{3}\)?[-.\s]?\d{3}[-.\s]?\d{3,4}/);
-  const phone = phoneMatch ? phoneMatch[0] : "";
+  const phoneMatch = text.match(/(?:\+?\d{1,4}[-.\s]?)?\(?\d{2,4}\)?[-.\s]?\d{3,4}[-.\s]?\d{3,4}/);
+  const phone = phoneMatch ? phoneMatch[0].trim() : "";
 
-  let fullName = lines[0] || "";
-  if (fullName.length > 50 || fullName.includes("@") || fullName.includes("http")) {
-    const candidateName = lines.find(l => l.length > 3 && l.length < 45 && !l.includes("@") && !l.includes("http") && !l.includes("CV") && !/developer|engineer|summary|skills/i.test(l));
-    if (candidateName) fullName = candidateName;
+  // 1. Candidate Full Name extraction & cleaning
+  let fullName = "";
+  for (const line of lines.slice(0, 8)) {
+    let cleaned = line
+      .replace(/^(?:curriculum\s+vitae|resume|bio[- ]?data|profile|cv)\s*(?:of|for|:)?\s*/i, "")
+      .replace(/^(?:dr|prof|engr|barr|mr|mrs|ms|miss)\.?\s+/i, (match) => match.trim() + " ")
+      .trim();
+
+    cleaned = cleaned
+      .replace(/\s*[\\\/].*$/, "")
+      .replace(/\s*\(?(?:M\.?B\.?,?\s*B\.?S\.?|F\.?W\.?A\.?C\.?S\.?|F\.?R\.?C\.?S\.?|Ph\.?D\.?|M\.?Sc\.?|B\.?Sc\.?|LL\.?B\.?|CPA|ACA)[^)]*\)?/gi, "")
+      .replace(/,\s*(?:No\.?\s*\d+|Plot\s+\d+|Street|Road|Estate|Avenue|Close).*$/i, "")
+      .replace(/^[,\s.-]+|[,\s.-]+$/g, "")
+      .trim();
+
+    if (cleaned.length >= 3 && cleaned.length <= 60 && !cleaned.includes("@") && !/^https?:\/\//i.test(cleaned)) {
+      if (!/^(?:curriculum|resume|experience|education|skills|summary|profile|contact)/i.test(cleaned)) {
+        fullName = cleaned;
+        break;
+      }
+    }
   }
 
-  const hasKenya = /nairobi|mombasa|kisumu|kenya|\+254/i.test(text);
-  const country = hasKenya ? "Kenya" : "Kenya";
-  const city = /nairobi/i.test(text) ? "Nairobi" : (hasKenya ? "Nairobi" : "");
+  if (fullName) {
+    fullName = fullName.split(/\s+/).map(word => {
+      if (/^[A-Z]{3,}$/.test(word) && !/^(?:USA|UK|UAE|II|III|IV)$/.test(word)) {
+        return word.charAt(0) + word.slice(1).toLowerCase();
+      }
+      return word;
+    }).join(" ");
+  }
 
-  const knownTech = [
-    "JavaScript", "TypeScript", "React", "React.js", "Vite", "Node.js", "Express", "Python",
-    "PostgreSQL", "Supabase", "SQL", "Tailwind CSS", "HTML5", "CSS3", "Git", "GitHub",
-    "REST APIs", "Postman", "Linux", "Windows", "Cisco Packet Tracer", "LAN/Wi-Fi", "Docker", "Shell scripting",
+  // 2. Global Country, City, Timezone extraction
+  const countries = [
+    { name: "Nigeria", rx: /\bnigeria\b|\bnigerian\b|\+234\b|\blagos\b|\bibadan\b|\babuja\b|\bport\s+harcourt\b|\benugu\b|\boyo\s+state\b|\bogun\s+state\b/i, tz: "Africa/Lagos", cities: ["Ibadan", "Lagos", "Abuja", "Port Harcourt", "Enugu", "Kano", "Benin City"] },
+    { name: "Kenya", rx: /\bkenya\b|\bkenyan\b|\+254\b|\bnairobi\b|\bmombasa\b|\bkisumu\b|\bnakuru\b|\beldoret\b/i, tz: "Africa/Nairobi", cities: ["Nairobi", "Mombasa", "Kisumu", "Nakuru", "Eldoret"] },
+    { name: "Ghana", rx: /\bghana\b|\bghanaian\b|\+233\b|\baccra\b|\bkumasi\b/i, tz: "Africa/Accra", cities: ["Accra", "Kumasi"] },
+    { name: "South Africa", rx: /\bsouth\s+africa\b|\b\+27\b|\bjohannesburg\b|\bcape\s+town\b|\bdurban\b|\bpretoria\b/i, tz: "Africa/Johannesburg", cities: ["Johannesburg", "Cape Town", "Durban", "Pretoria"] },
+    { name: "Uganda", rx: /\buganda\b|\bugandan\b|\b\+256\b|\bkampala\b/i, tz: "Africa/Kampala", cities: ["Kampala"] },
+    { name: "Tanzania", rx: /\btanzania\b|\b\+255\b|\bdar\s+es\s+salaam\b|\bdodoma\b/i, tz: "Africa/Dar_es_Salaam", cities: ["Dar es Salaam", "Dodoma"] },
+    { name: "Rwanda", rx: /\brwanda\b|\b\+250\b|\bkigali\b/i, tz: "Africa/Kigali", cities: ["Kigali"] },
+    { name: "Ethiopia", rx: /\bethiopia\b|\b\+251\b|\baddis\s+ababa\b/i, tz: "Africa/Addis_Ababa", cities: ["Addis Ababa"] },
+    { name: "Egypt", rx: /\begypt\b|\b\+20\b|\bcairo\b|\balexandria\b/i, tz: "Africa/Cairo", cities: ["Cairo", "Alexandria"] },
+    { name: "United Kingdom", rx: /\bunited\s+kingdom\b|\buk\b|\b\+44\b|\blondon\b|\bmanchester\b|\bbirmingham\b|\bedinburgh\b/i, tz: "Europe/London", cities: ["London", "Manchester", "Birmingham", "Edinburgh"] },
+    { name: "United States", rx: /\bunited\s+states\b|\busa\b|\bu\.s\.a\b|\bnew\s+york\b|\bcalifornia\b|\btexas\b|\bsan\s+francisco\b|\bchicago\b|\bseattle\b/i, tz: "America/New_York", cities: ["New York", "San Francisco", "Chicago", "Seattle", "Austin", "Boston"] },
+    { name: "Canada", rx: /\bcanada\b|\btoronto\b|\bvancouver\b|\bmontreal\b|\bottawa\b/i, tz: "America/Toronto", cities: ["Toronto", "Vancouver", "Montreal", "Ottawa"] },
+    { name: "Germany", rx: /\bgermany\b|\bdeutschland\b|\b\+49\b|\bberlin\b|\bmunich\b|\bfrankfurt\b/i, tz: "Europe/Berlin", cities: ["Berlin", "Munich", "Frankfurt", "Hamburg"] },
+    { name: "France", rx: /\bfrance\b|\b\+33\b|\bparis\b|\blyon\b|\bmarseille\b/i, tz: "Europe/Paris", cities: ["Paris", "Lyon", "Marseille"] },
+    { name: "India", rx: /\bindia\b|\b\+91\b|\bbengaluru\b|\bbangalore\b|\bmumbai\b|\bdelhi\b|\bhyderabad\b/i, tz: "Asia/Kolkata", cities: ["Bengaluru", "Mumbai", "Delhi", "Hyderabad", "Pune"] },
+    { name: "Australia", rx: /\baustralia\b|\b\+61\b|\bsydney\b|\bmelbourne\b|\bbrisbane\b/i, tz: "Australia/Sydney", cities: ["Sydney", "Melbourne", "Brisbane", "Perth"] },
+    { name: "United Arab Emirates", rx: /\buae\b|\bdubai\b|\babu\s+dhabi\b|\b\+971\b/i, tz: "Asia/Dubai", cities: ["Dubai", "Abu Dhabi"] },
   ];
-  const detectedTech = knownTech.filter(tech => new RegExp(`\\b${tech.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")}\\b`, "i").test(text));
+
+  let country = "";
+  let city = "";
+  let timezone = "";
+
+  for (const c of countries) {
+    if (c.rx.test(text)) {
+      country = c.name;
+      timezone = c.tz;
+      for (const cityName of c.cities) {
+        if (new RegExp(`\\b${cityName}\\b`, "i").test(text)) {
+          city = cityName;
+          break;
+        }
+      }
+      break;
+    }
+  }
+
+  // 3. Domain, Target Roles & Industries
+  const isSurgeon = /surgeon|surgery|surgical|fwacs|frcs|laparoscopic/i.test(text);
+  const isDoctor = isSurgeon || /m\.?b\.?,?\s*b\.?s|physician|doctor of medicine|clinical governance|ward rounds|residency|medical officer|pediatric|obstetric|gynecol/i.test(text);
+  const isNurse = !isDoctor && /nurse|nursing|midwife|registered nurse|bsn|clinical nurse/i.test(text);
+  const isPharmacist = /pharmacist|pharmacy|pharmaceutical|pharm\.?d/i.test(text);
+  const isLawyer = /lawyer|attorney|barrister|solicitor|ll\.?b|ll\.?m|litigation|legal counsel/i.test(text);
+  const isAccountant = /accountant|accounting|auditor|audit|cpa|acca|chartered accountant|financial analyst/i.test(text);
+  const isCivilEngineer = /civil engineer|structural engineer|construction engineer/i.test(text);
+  const isMechEngineer = /mechanical engineer|hvac|thermodynamics/i.test(text);
+  const isElectEngineer = /electrical engineer|power systems|electronics engineer/i.test(text);
+  const isSoftware = /software engineer|software developer|web developer|frontend|backend|full[- ]?stack|react|node\.js|python developer|mobile developer/i.test(text);
+  const isITSupport = /it support|systems administrator|network administrator|technical support|helpdesk/i.test(text);
+  const isTeacher = /teacher|lecturer|professor|curriculum developer|secondary school teacher/i.test(text);
+  const isMarketing = /marketing specialist|marketing manager|digital marketing|seo specialist/i.test(text);
 
   const targetRoles: string[] = [];
-  if (/full[- ]?stack/i.test(text)) targetRoles.push("Full-Stack Developer");
-  if (/react|frontend|front[- ]?end/i.test(text)) targetRoles.push("Frontend Developer", "React Developer");
-  if (/node|backend|back[- ]?end/i.test(text)) targetRoles.push("Node.js Developer", "Backend Developer");
-  if (/python|automation/i.test(text)) targetRoles.push("Python Automation Developer");
-  if (/it support|networking|systems|troubleshoot/i.test(text)) targetRoles.push("IT Support Specialist", "Technical Support Specialist");
-  if (targetRoles.length === 0) targetRoles.push("Software Developer", "Web Developer");
+  const industries: string[] = [];
 
-  let yearsExperience = 1.5;
-  if (/diploma.*2025|graduat.*2025/i.test(text)) {
-    yearsExperience = 1.0;
+  if (isSurgeon) {
+    targetRoles.push("Consultant Surgeon", "General Surgeon", "Medical Doctor", "Clinical Specialist");
+    industries.push("Healthcare & Hospital Care", "Surgery & Clinical Practice", "Medical Services");
+  } else if (isDoctor) {
+    targetRoles.push("Medical Doctor", "Physician", "Clinical Medical Officer");
+    industries.push("Healthcare & Hospital Care", "Medical Practice");
+  } else if (isNurse) {
+    targetRoles.push("Registered Nurse", "Clinical Nurse Specialist", "Nursing Officer");
+    industries.push("Healthcare & Hospital Care", "Nursing & Patient Care");
+  } else if (isPharmacist) {
+    targetRoles.push("Pharmacist", "Clinical Pharmacist", "Pharmacy Specialist");
+    industries.push("Healthcare & Pharmaceuticals", "Clinical Pharmacy");
+  } else if (isLawyer) {
+    targetRoles.push("Legal Counsel", "Attorney", "Legal Consultant");
+    industries.push("Legal Services", "Corporate Law & Compliance");
+  } else if (isAccountant) {
+    targetRoles.push("Chartered Accountant", "Financial Analyst", "Audit Specialist");
+    industries.push("Accounting & Finance", "Financial Services");
+  } else if (isCivilEngineer) {
+    targetRoles.push("Civil Engineer", "Structural Engineer", "Project Engineer");
+    industries.push("Engineering & Construction", "Infrastructure Development");
+  } else if (isMechEngineer) {
+    targetRoles.push("Mechanical Engineer", "Design Engineer", "Project Engineer");
+    industries.push("Mechanical Engineering", "Industrial & Manufacturing");
+  } else if (isElectEngineer) {
+    targetRoles.push("Electrical Engineer", "Power Systems Engineer", "Electronics Engineer");
+    industries.push("Electrical Engineering", "Energy & Power Systems");
+  } else if (isSoftware) {
+    if (/full[- ]?stack/i.test(text)) targetRoles.push("Full-Stack Developer");
+    if (/react|frontend|front[- ]?end/i.test(text)) targetRoles.push("Frontend Developer");
+    if (/node|backend|back[- ]?end/i.test(text)) targetRoles.push("Backend Developer");
+    if (/python/i.test(text)) targetRoles.push("Python Developer");
+    if (targetRoles.length === 0) targetRoles.push("Software Developer", "Software Engineer");
+    industries.push("Information Technology", "Software Development");
+  } else if (isITSupport) {
+    targetRoles.push("IT Support Specialist", "Network Administrator", "Systems Specialist");
+    industries.push("Information Technology", "IT Infrastructure & Support");
+  } else if (isTeacher) {
+    targetRoles.push("Lecturer", "Academic Educator", "Curriculum Specialist");
+    industries.push("Education & Academia", "Higher Education");
+  } else if (isMarketing) {
+    targetRoles.push("Marketing Specialist", "Digital Marketing Manager", "Growth Specialist");
+    industries.push("Marketing & Advertising", "Digital Media");
   }
+
+  // 4. Years of experience calculation
+  let yearsExperience: number | null = null;
+  const expMatch = text.match(/(\d{1,2})\+?\s*(?:years|yrs)\s*(?:of)?\s*(?:surgical|clinical|professional|work|industry|active|proven)?\s*(?:experience|practice|service)/i);
+  if (expMatch) {
+    const val = parseInt(expMatch[1], 10);
+    if (!isNaN(val) && val > 0 && val <= 50) {
+      yearsExperience = val;
+    }
+  }
+
+  if (yearsExperience === null) {
+    const yearMatches = Array.from(text.matchAll(/\b(19\d{2}|20\d{2})\b/g))
+      .map(m => parseInt(m[1], 10))
+      .filter(y => y >= 1975 && y <= 2026);
+    if (yearMatches.length > 0) {
+      const minYear = Math.min(...yearMatches);
+      const span = 2026 - minYear;
+      if (span >= 1 && span <= 45) {
+        yearsExperience = span;
+      }
+    }
+  }
+
+  // 5. Skills extraction
+  const medicalSkills = [
+    "General Surgery", "Laparoscopic Surgery", "Trauma Care", "Patient Triage",
+    "Clinical Governance", "Surgical Oncology", "Medical Education", "Emergency Care",
+    "Intensive Care", "Wound Management", "Infection Control", "Pediatric Care",
+    "Patient Consultation", "Diagnostics", "Electronic Health Records"
+  ];
+  const techSkills = [
+    "JavaScript", "TypeScript", "React", "Node.js", "Express", "Python",
+    "PostgreSQL", "SQL", "Git", "Docker", "REST APIs", "Linux", "AWS"
+  ];
+  const generalSkills = [
+    "Project Management", "Team Leadership", "Operations", "Client Communication",
+    "Data Analysis", "Strategic Planning", "Quality Assurance"
+  ];
+
+  const pool = isDoctor || isNurse || isPharmacist ? medicalSkills : isSoftware || isITSupport ? techSkills : generalSkills;
+  const detectedSkills = pool.filter(s => new RegExp(`\\b${s.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")}\\b`, "i").test(text));
+
+  // 6. Languages extraction
+  const languagesList = [
+    "English", "Yoruba", "Igbo", "Hausa", "Swahili", "French", "Arabic",
+    "Spanish", "German", "Portuguese", "Italian", "Chinese", "Mandarin"
+  ];
+  const detectedLanguages = languagesList.filter(lang =>
+    new RegExp(`\\b${lang}\\b`, "i").test(text)
+  );
+  if (detectedLanguages.length === 0 && /[a-zA-Z]{5,}/.test(text)) {
+    detectedLanguages.push("English");
+  }
+
+  // 7. Education & Certifications lines
+  const isHeaderOrSummary = (l: string) =>
+    lines.slice(0, 5).includes(l) ||
+    /^(?:curriculum\s+vitae|resume|summary|profile|about|experienced|phone|email|address)/i.test(l) ||
+    (fullName && l.toLowerCase().split(/\s+/).filter(w => w.length > 3).some(w => l.toLowerCase().includes(w) && lines.indexOf(l) < 6)) ||
+    l.length > 160;
+
+  const jobRx = /\b(?:consultant|specialist|registrar|officer|director|manager|intern|supervisor|resident|analyst|developer|engineer|lead|head\s+of)\b/i;
+
+  const education = lines.filter(l =>
+    !isHeaderOrSummary(l) &&
+    !jobRx.test(l) &&
+    /\b(?:bachelor|master|doctorate|phd|m\.b\.,?\s*b\.s|degree|diploma|university|polytechnic|school\s+certificate|wassce|waec)\b/i.test(l)
+  ).map(l => l.replace(/^[-*•\d.)\s]+/, "").trim()).filter(Boolean).slice(0, 5);
+
+  const certifications = lines.filter(l =>
+    !isHeaderOrSummary(l) &&
+    !jobRx.test(l) &&
+    !/school\s+certificate|wassce|waec/i.test(l) &&
+    /\b(?:fwacs|frcs|fellow|fellowship|board\s+certified|cisco|ccna|aws|pmp|license|licence|certificate|certification|accredited)\b/i.test(l)
+  ).map(l => l.replace(/^[-*•\d.)\s]+/, "").trim()).filter(Boolean).slice(0, 5);
 
   return {
     fullName,
@@ -518,17 +709,17 @@ function parseCvLocally(text: string): Record<string, unknown> {
     phone,
     country,
     city,
-    timezone: hasKenya ? "Africa/Nairobi" : "UTC+3",
+    timezone,
     targetRoles: Array.from(new Set(targetRoles)),
-    skills: detectedTech,
-    technologies: detectedTech,
+    skills: detectedSkills,
+    technologies: detectedSkills,
     yearsExperience,
-    education: lines.filter(l => /diploma|degree|bachelor|university|high school/i.test(l)).slice(0, 4),
-    certifications: lines.filter(l => /certificate|academy|cisco|comptia|aws|ccna/i.test(l)).slice(0, 4),
-    industries: ["Software", "Web Development", "IT Services"],
-    languages: ["English", "Swahili"],
+    education,
+    certifications,
+    industries: Array.from(new Set(industries)),
+    languages: Array.from(new Set(detectedLanguages)),
     preferredLocations: [city, country, "Remote", "Worldwide Remote"].filter(Boolean),
-    workModes: ["remote", "hybrid", "onsite"],
+    workModes: ["onsite", "hybrid", "remote"] as ("onsite" | "hybrid" | "remote")[],
     relocation: false,
     visaSponsorship: false,
     minimumSalary: null,
@@ -557,28 +748,16 @@ router.post("/cvs/:id/parse", async (req, res): Promise<void> => {
     return;
   }
 
-  const [providerSettings] = await db
+  // Load all configured providers from DB
+  const allProviderSettings = await db
     .select()
-    .from(integrationSettingsTable)
-    .where(eq(integrationSettingsTable.provider, body.data.provider))
-    .limit(1);
-  if (!providerSettings?.model) {
-    res.status(409).json({ error: "Configure this AI provider before parsing a CV." });
-    return;
-  }
+    .from(integrationSettingsTable);
 
-  let apiKey: string;
-  try {
-    const credentials = decryptCredentials<{ apiKey?: unknown }>(
-      providerSettings.encryptedCredentials,
-    );
-    if (typeof credentials.apiKey !== "string") {
-      throw new Error("Saved credentials are incomplete.");
+  const providerMap = new Map<string, (typeof allProviderSettings)[0]>();
+  for (const p of allProviderSettings) {
+    if (p.provider && p.model && p.encryptedCredentials) {
+      providerMap.set(p.provider, p);
     }
-    apiKey = credentials.apiKey;
-  } catch {
-    res.status(409).json({ error: "Saved credentials could not be opened. Enter the API key again." });
-    return;
   }
 
   let extracted: { text: string; truncated: boolean } = { text: "", truncated: false };
@@ -618,7 +797,6 @@ router.post("/cvs/:id/parse", async (req, res): Promise<void> => {
     try {
       extracted = await extractCvText(bytes, cv.fileType);
       if (extracted?.text) {
-        // Cache extracted text into database for instant future operations
         await db
           .update(cvsTable)
           .set({ extractedText: extracted.text })
@@ -639,17 +817,57 @@ router.post("/cvs/:id/parse", async (req, res): Promise<void> => {
     return;
   }
 
-  let rawDraft: unknown;
-  try {
-    rawDraft = await extractProfileDraft(
-      body.data.provider as AiProvider,
-      apiKey,
-      providerSettings.model,
-      extracted.text,
-      providerSettings.baseUrl,
-    );
-  } catch (err) {
-    req.log.warn({ provider: body.data.provider, err }, "AI provider extraction failed, falling back to precision local parser");
+  // Multi-provider AI Fallback Strategy:
+  // Primary is the requested provider, then try any other configured providers
+  const requestedProvider = body.data.provider as AiProvider;
+  const providersToTry: AiProvider[] = [requestedProvider];
+  const candidateFallbacks: AiProvider[] = ["agentrouter", "gemini", "openai"];
+  for (const fb of candidateFallbacks) {
+    if (!providersToTry.includes(fb) && providerMap.has(fb)) {
+      providersToTry.push(fb);
+    }
+  }
+
+  let rawDraft: unknown = null;
+  let successfulProvider: string | null = null;
+
+  for (const candidateProvider of providersToTry) {
+    const pSettings = providerMap.get(candidateProvider);
+    if (!pSettings || !pSettings.model || !pSettings.encryptedCredentials) {
+      continue;
+    }
+
+    try {
+      const credentials = decryptCredentials<{ apiKey?: unknown }>(
+        pSettings.encryptedCredentials,
+      );
+      if (typeof credentials.apiKey !== "string" || !credentials.apiKey.trim()) {
+        continue;
+      }
+
+      req.log.info({ provider: candidateProvider, model: pSettings.model }, "Attempting AI CV extraction");
+      const result = await extractProfileDraft(
+        candidateProvider,
+        credentials.apiKey,
+        pSettings.model,
+        extracted.text,
+        pSettings.baseUrl,
+      );
+
+      const candidateSanitized = sanitizeProfileDraft(result);
+      if (candidateSanitized.fullName || (candidateSanitized.targetRoles as string[])?.length || (candidateSanitized.skills as string[])?.length) {
+        rawDraft = result;
+        successfulProvider = candidateProvider;
+        req.log.info({ provider: candidateProvider }, "AI CV extraction succeeded");
+        break;
+      }
+    } catch (err: any) {
+      req.log.warn({ provider: candidateProvider, err: err?.message || err }, "AI provider extraction failed, trying next fallback");
+    }
+  }
+
+  if (!rawDraft) {
+    req.log.info("No AI provider succeeded or was configured, using universal deterministic CV parser");
     rawDraft = parseCvLocally(extracted.text);
   }
 
@@ -657,14 +875,14 @@ router.post("/cvs/:id/parse", async (req, res): Promise<void> => {
 
   let validated = ParseCvProfileResponse.safeParse({
     draft: sanitizedDraft,
-    warnings: [],
+    warnings: successfulProvider ? [] : ["Extracted using universal local fact extraction (AI providers were unavailable or unconfigured)."],
   });
   if (!validated.success) {
     req.log.warn({ draft: rawDraft, issues: validated.error.issues }, "Draft validation failed, falling back to local extractor");
     sanitizedDraft = sanitizeProfileDraft(parseCvLocally(extracted.text));
     validated = ParseCvProfileResponse.safeParse({
       draft: sanitizedDraft,
-      warnings: [],
+      warnings: ["Extracted using universal local fact extraction."],
     });
   }
 
@@ -672,6 +890,7 @@ router.post("/cvs/:id/parse", async (req, res): Promise<void> => {
     res.status(502).json({ error: "The profile draft could not be validated." });
     return;
   }
+
 
   const draft = validated.data.draft;
 

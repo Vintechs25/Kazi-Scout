@@ -705,8 +705,17 @@ function extractJsonText(value: unknown): string | null {
 
   const choices = Array.isArray(body.choices) ? body.choices : [];
   const firstChoice = record(choices[0]);
-  const message = record(firstChoice?.message);
-  if (typeof message?.content === "string") return message.content;
+  if (firstChoice) {
+    const message = record(firstChoice.message);
+    if (typeof message?.content === "string") return message.content;
+    if (Array.isArray(message?.content)) {
+      const textBlock = message.content.find(
+        (c: any) => c?.type === "text" || typeof c?.text === "string",
+      );
+      if (typeof textBlock?.text === "string") return textBlock.text;
+    }
+    if (typeof firstChoice.text === "string") return firstChoice.text;
+  }
 
   const candidates = Array.isArray(body.candidates) ? body.candidates : [];
   const firstCandidate = record(candidates[0]);
@@ -716,7 +725,12 @@ function extractJsonText(value: unknown): string | null {
     .map((part) => record(part)?.text)
     .filter((part): part is string => typeof part === "string")
     .join("");
-  return text || null;
+  if (text) return text;
+
+  if (typeof (body as any).text === "string") return (body as any).text;
+  if (typeof (body as any).content === "string") return (body as any).content;
+
+  return null;
 }
 
 export async function extractProfileDraft(
@@ -750,6 +764,7 @@ export async function extractProfileDraft(
           },
         ],
         temperature: 0,
+        max_tokens: 2500,
       }),
       signal: AbortSignal.timeout(45_000),
     });
@@ -922,7 +937,7 @@ export async function extractProfileDraft(
   }
 }
 
-const coverLetterInstructions = `You are an expert career consultant and professional job application writer for the Kenyan and international tech markets.
+const coverLetterInstructions = `You are an expert career consultant and professional job application writer for global and regional job markets across all professions (medical, legal, financial, engineering, technology, administrative, and more).
 Your goal is to write a highly compelling, tailored, and factual job application package for the candidate based on ALL provided candidate documents.
 
 CRITICAL PRIVACY & ZERO BRANDING MANDATE:
@@ -933,7 +948,7 @@ CRITICAL PRIVACY & ZERO BRANDING MANDATE:
 REQUIREMENTS:
 1. SUBJECT LINE: Must explicitly state the position being applied for, company name, and candidate full name. Format:
    "Application for [Job Title] - [Company Name] - [Candidate Full Name]" or "Application for [Job Title] (Ref: [Code]) - [Candidate Full Name]".
-2. COVER LETTER: Must be formal, persuasive, and grounded strictly in the candidate's actual credentials (e.g. Diploma in Computer Science from Zetech University, IT systems administration, Cisco/networking principles, React/Node/Python development, incident resolution). Do not invent credentials not in the dossier.
+2. COVER LETTER: Must be formal, persuasive, and grounded strictly in the candidate's actual credentials, degrees, licenses, skills, and verified experience provided in the dossier. Do not invent credentials not in the dossier.
 3. ATTACHMENT CHECKLIST: Explicitly mention attached documents in the closing paragraph and return matching document category keys.
 4. Return pure JSON only with keys:
 {
