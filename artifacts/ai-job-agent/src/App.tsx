@@ -761,7 +761,7 @@ function CandidateEvidenceDrawer({ onClose }: { onClose: () => void }) {
             <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(280px, 1fr))', gap: 14 }}>
               <div>
                 <div style={{ fontWeight: 700, fontSize: 13, marginBottom: 8, color: '#34d399' }}>
-                  🛠️ Demonstrated Technical Skills (Evidenced in CV)
+                  🛠️ Demonstrated Core & Domain Skills (Evidenced in CV)
                 </div>
                 <div style={{ display: 'flex', flexWrap: 'wrap', gap: 4 }}>
                   {data.demonstratedTechnicalSkills?.map((s: string, i: number) => (
@@ -858,7 +858,7 @@ function SearchDirectiveBanner({ directiveData, onRefresh, isRefreshing, onViewE
           <span className={`badge ${providerBadge}`} style={{ fontSize: 11 }}>
             {providerLabel}
           </span>
-          <span className="field-hint" style={{ margin: 0 }}>Max Experience: {directive.maxExperienceYears ?? 2} yrs · Junior / Entry</span>
+          <span className="field-hint" style={{ margin: 0 }}>Experience: {directive.maxExperienceYears ? `up to ${directive.maxExperienceYears} yrs` : 'Candidate Aligned'}</span>
         </div>
         <div style={{ display: 'flex', gap: 8, alignItems: 'center' }}>
           {onViewEvidence && (
@@ -1165,7 +1165,7 @@ function Jobs() {
   };
 
   return <main className="page-wrap">
-    <PageHead eyebrow="Workspace / records" title="Job records" sub="Targeted opportunities verified against your exact CV, technical skills, and junior career ceiling.">
+    <PageHead eyebrow="Workspace / records" title="Job records" sub="Targeted opportunities verified against your verified CV facts, qualifications, and career preferences.">
       <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
         <Button onClick={bulkPrepare} disabled={preparing || strongCount === 0} title={`Generate tailored cover letters for all ${minScore}%+ AI strong matches`} style={{ background: '#2563eb', color: '#fff', borderColor: '#3b82f6' }}>
           <Sparkles size={14}/>{preparing ? 'Preparing Applications…' : `⚡ Bulk Prepare Strong Matches (${strongCount})`}
@@ -1406,7 +1406,7 @@ function JobDetails({ job, onPrepare, preparing, onTrack, pending, onStatus, onD
   if (/cover letter|application letter|motivational letter/i.test(text)) attachments.push('📝 Cover / Application Letter');
   if (/academic (?:certificates|transcripts)|diploma|degree|kcse|copies of certificates/i.test(text)) attachments.push('🎓 Academic Certificates & Transcripts (Diploma/KCSE)');
   if (/national id|id card|copy of id/i.test(text)) attachments.push('🪪 Copy of National ID');
-  if (/ccna|itil|cisco|microsoft certificate|certifications/i.test(text)) attachments.push('🏆 Certifications (CCNA / ITIL / Tech)');
+  if (/certificat|license|board|accreditation|fellowship/i.test(text)) attachments.push('🏆 Professional Certifications & Licenses');
   if (/portfolio|github|projects/i.test(text)) attachments.push('🌐 Portfolio & GitHub Links');
 
   const profileQ = useGetCandidateProfile();
@@ -2115,7 +2115,7 @@ function Cvs() {
     cv: '📄 Master CV / Resume',
     academic_diploma: '🎓 Academic Diploma & Transcripts',
     national_id: '🪪 Copy of National ID / Passport',
-    professional_certification: '🏆 Professional Certifications (CCNA/ITIL)',
+    professional_certification: '🏆 Professional Certifications & Licenses',
     kcse_certificate: '📜 KCSE High School Certificate',
     recommendation_letter: '📝 Recommendation Letters',
     other: '📁 Other Supporting Document',
@@ -2162,7 +2162,7 @@ function Cvs() {
   };
 
   return <main className="page-wrap">
-    <PageHead eyebrow="Workspace / credentials" title="Credentials & Document Vault" sub="Store your Master CV, Academic Diploma, National ID, and CCNA/ITIL Certifications. The AI automatically selects and attaches them when you prepare job applications."/>
+    <PageHead eyebrow="Workspace / credentials" title="Credentials & Document Vault" sub="Store your Master CV, Academic Degrees, National ID, and Professional Certifications or Licenses. The AI automatically selects and attaches them when you prepare job applications."/>
 
     {/* Upload Form */}
     <section className="panel" style={{ marginBottom: 16 }}>

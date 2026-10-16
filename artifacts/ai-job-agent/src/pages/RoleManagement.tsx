@@ -154,7 +154,7 @@ const addCustomRole = async (roleTitle: string): Promise<{ success: boolean; rol
       maxSalary: null,
       locationPreferences: ['Kenya', 'Nairobi', 'Remote'],
       remoteOnly: false,
-      experienceLevel: ['Entry Level', 'Junior'],
+      experienceLevel: ['All Levels', 'Mid-Level', 'Senior'],
       industryPreferences: [],
       companySize: [],
       createdAt: new Date().toISOString(),
@@ -312,6 +312,29 @@ export function RoleManagement() {
     }
   };
 
+  const handleClearAllRoles = async () => {
+    if (!window.confirm(`Are you sure you want to remove all ${preferences.length} roles from your discovery queue?`)) return;
+    try {
+      setBulkProcessing(true);
+      const res = await fetch('/api/user/roles', {
+        method: 'DELETE',
+        credentials: 'include',
+      });
+      if (res.ok) {
+        setSelectedRoleIds([]);
+        refetchRoles();
+        setBanner('All role preferences removed from discovery queue.');
+        setTimeout(() => setBanner(null), 3500);
+      } else {
+        alert('Failed to clear roles. Please try again.');
+      }
+    } catch (e: any) {
+      alert(e.message || 'Failed to clear roles.');
+    } finally {
+      setBulkProcessing(false);
+    }
+  };
+
   if (rolesLoading) {
     return (
       <main className="page-wrap">
@@ -445,7 +468,20 @@ export function RoleManagement() {
             </div>
             <div className="field-hint" style={{ marginTop: 2 }}>Enabled roles are included whenever job discovery executes.</div>
           </div>
-          <span className="badge badge-green">{enabledRoles.length} Active in Discovery</span>
+          <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
+            <span className="badge badge-green">{enabledRoles.length} Active in Discovery</span>
+            {preferences.length > 0 && (
+              <button
+                className="btn btn-sm btn-danger"
+                onClick={handleClearAllRoles}
+                disabled={bulkProcessing}
+                title="Remove all current roles from queue to restart or resync with your CV"
+                style={{ padding: '4px 10px', fontSize: 11 }}
+              >
+                <Trash2 size={12}/> Clear All Roles
+              </button>
+            )}
+          </div>
         </div>
 
         <div className="table-wrap">
@@ -583,7 +619,7 @@ export function RoleManagement() {
           </div>
           <div className="panel-body">
             <p style={{ margin: '0 0 12px', fontSize: 12, color: 'hsl(var(--muted-foreground))' }}>
-              We detected additional career titles that strongly match your technical certifications, Linux, and hardware experience:
+              We detected additional career titles that match your verified credentials, domain skills, and professional experience:
             </p>
             <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
               {suggestions.primary.map((sug: string) => (

@@ -5,8 +5,8 @@
 
 import { Router, type IRouter } from "express";
 import { z } from "zod";
-import { db, jobsTable } from "@workspace/db";
-import { eq, and } from "drizzle-orm";
+import { db, jobsTable, userRolePreferencesTable } from "@workspace/db";
+import { eq, and, or } from "drizzle-orm";
 import { requireAuth } from "../lib/auth";
 
 import {
@@ -165,6 +165,32 @@ router.put("/user/roles/:roleId", requireAuth, async (req, res) => {
     return res.status(500).json({
       success: false,
       error: err instanceof Error ? err.message : "Failed to update role",
+    });
+  }
+});
+
+/**
+ * DELETE /api/user/roles - Clear all role preferences for the user
+ */
+router.delete("/user/roles", requireAuth, async (req, res) => {
+  try {
+    const accountId = res.locals.accountId;
+    await db
+      .delete(userRolePreferencesTable)
+      .where(or(
+        eq(userRolePreferencesTable.accountId, accountId),
+        eq(userRolePreferencesTable.accountId, "primary"),
+        eq(userRolePreferencesTable.accountId, "system")
+      ));
+    return res.json({
+      success: true,
+      message: "All role preferences cleared",
+    });
+  } catch (err) {
+    console.error("[Discovery] Error clearing all roles:", err);
+    return res.status(500).json({
+      success: false,
+      error: err instanceof Error ? err.message : "Failed to clear roles",
     });
   }
 });

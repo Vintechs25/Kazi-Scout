@@ -124,9 +124,9 @@ export function extractApplicationDetails(
     attachments.push("Copy of National ID Card");
   }
 
-  // Certifications (CCNA, ITIL, etc.)
-  if (/professional certificate|ccna|itil|cisco|microsoft certificate|relevant certifications/i.test(textLower)) {
-    attachments.push("Professional Certifications (CCNA, ITIL, Microsoft, etc.)");
+  // Certifications & Licensures
+  if (/professional certificate|ccna|itil|cisco|microsoft certificate|relevant certifications|practicing license|board certification|cpa|bar admission/i.test(textLower)) {
+    attachments.push("Professional Certifications & Practicing Licenses");
   }
 
   // Testimonials / Letters of Recommendation
@@ -134,9 +134,9 @@ export function extractApplicationDetails(
     attachments.push("Testimonials / Recommendation Letters");
   }
 
-  // Portfolio / GitHub Link
-  if (/portfolio|github|code sample|gitlab|live project/i.test(textLower)) {
-    attachments.push("Portfolio / GitHub Profile Link");
+  // Portfolio / Work Samples
+  if (/portfolio|github|code sample|gitlab|live project|writing sample|dossier/i.test(textLower)) {
+    attachments.push("Work Portfolio / Sample Projects");
   }
 
   // 5. Extract Application Deadline

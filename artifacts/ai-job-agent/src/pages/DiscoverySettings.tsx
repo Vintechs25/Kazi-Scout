@@ -778,7 +778,7 @@ export function DiscoverySettings() {
                 <input
                   type="text"
                   className="field"
-                  placeholder="Entry Level, Junior, 0-2 years"
+                  placeholder="All Levels, Junior, Mid-Level, Senior, Lead"
                   value={(settings?.defaultFilters?.experienceLevels || []).join(', ')}
                   onChange={e => updateSettingsMutation.mutate({
                     defaultFilters: { 
@@ -787,7 +787,7 @@ export function DiscoverySettings() {
                     }
                   })}
                 />
-                <span className="field-hint">Filters out senior/lead roles that exceed career ceiling.</span>
+                <span className="field-hint">Specify target experience ranges or leave blank to match your CV.</span>
               </div>
 
               <div className="form-item">
