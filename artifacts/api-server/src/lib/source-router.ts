@@ -40,7 +40,7 @@ export class SourceRouter {
   /**
    * Resolve a candidate profile into a structured profile object
    */
-  static async resolveStructuredProfile(profileId: string = "primary"): Promise<StructuredProfile> {
+  static async resolveStructuredProfile(profileId: string = "primary", activeRoles?: string[]): Promise<StructuredProfile> {
     const [profile] = await db
       .select()
       .from(candidateProfilesTable)
@@ -51,7 +51,10 @@ export class SourceRouter {
       ))
       .limit(1);
 
-    const targetRoles = Array.isArray(profile?.targetRoles) ? profile.targetRoles : [];
+    const targetRoles = [
+      ...(Array.isArray(activeRoles) && activeRoles.length > 0 ? activeRoles : []),
+      ...(Array.isArray(profile?.targetRoles) ? profile.targetRoles : []),
+    ];
     const industries = Array.isArray(profile?.industries) ? profile.industries.map(i => i.toLowerCase()) : [];
     const country = (profile?.country || "KE").toUpperCase();
     const city = (profile?.city || "").toLowerCase();
@@ -103,9 +106,10 @@ export class SourceRouter {
    */
   static async routeSourcesForProfile(
     profileInput: StructuredProfile | string,
+    activeRoles?: string[],
   ): Promise<RoutedSourceItem[]> {
     const profile = typeof profileInput === "string"
-      ? await this.resolveStructuredProfile(profileInput)
+      ? await this.resolveStructuredProfile(profileInput, activeRoles)
       : profileInput;
 
     // 1. Fetch user PINNED and EXCLUDED overrides from profile_source_selection

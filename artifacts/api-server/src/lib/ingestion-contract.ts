@@ -95,24 +95,16 @@ export function validateListing(
     return { valid: false, reason: "MISSING_EMPLOYER" };
   }
 
-  // 3. Search or listing index URLs are NOT jobs
-  const lowerUrl = url.toLowerCase();
-  if (
-    !url ||
-    lowerUrl.includes("?q=") ||
-    lowerUrl.includes("/search?") ||
-    lowerUrl.includes("&q=") ||
-    lowerUrl.includes("?query=") ||
-    lowerUrl.endsWith("/search") ||
-    lowerUrl.endsWith("/jobs") ||
-    lowerUrl.endsWith("/vacancies") ||
-    lowerUrl.endsWith("/careers")
-  ) {
-    return { valid: false, reason: "SEARCH_OR_INDEX_URL" };
+  // 3. Reject pure search query stubs
+  if (/^search\s*(query|results?|jobs?)?\s*:/i.test(title) || /^(all\s+jobs|job\s+vacancies|career\s+opportunities)$/i.test(title)) {
+    return { valid: false, reason: "SEARCH_QUERY_STUB" };
+  }
+  if (!url || url.length < 5) {
+    return { valid: false, reason: "MISSING_URL" };
   }
 
-  // 4. Description length gate (must be informative, at least 150 characters)
-  if (!desc || desc.length < 150) {
+  // 4. Description length gate (must have descriptive content, at least 25 characters)
+  if (!desc || desc.length < 25) {
     return { valid: false, reason: "SHORT_DESCRIPTION" };
   }
 

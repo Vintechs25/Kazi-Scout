@@ -212,10 +212,9 @@ export async function discoverAndMatchJobsEnhanced(
   return {
     ...discoveryResult,
     cvMatched: discoveryResult.highMatches.length + discoveryResult.mediumMatches.length,
-    requirementVerified: discoveryResult.highMatches.filter(j => j.isRequirementVerified).length,
-    canApply: discoveryResult.highMatches.filter(j => {
-      // Check if job can be applied to (has clear instructions)
-      return j.requirementVerification?.hasClearInstructions &&
+    requirementVerified: [...discoveryResult.highMatches, ...discoveryResult.mediumMatches].filter(j => j.isRequirementVerified || Boolean(j.sourceUrl)).length,
+    canApply: [...discoveryResult.highMatches, ...discoveryResult.mediumMatches].filter(j => {
+      return (j.requirementVerification?.hasClearInstructions || Boolean(j.sourceUrl)) &&
              !((j.requirementVerification as any)?.doNotApplyConditions?.length);
     }).length,
   };

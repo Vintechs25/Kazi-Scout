@@ -120,13 +120,17 @@ export class RssFeedAdapter implements IJobConnector {
 
   async discoverListings(source: JobSourceRecord, filter?: ConnectorFilter): Promise<NormalizedListing[]> {
     const config = (source.config as any) || {};
+    const isSearchingIt = (filter?.keywords || []).some(k =>
+      /\b(it|ict|tech|software|developer|programmer|engineer|network|cloud|sysadmin|cyber)\b/i.test(k)
+    );
+
     const feedUrls: string[] = Array.from(new Set([
-      config.itFeed,
       config.feedUrl,
       (source as any).feedUrl,
       source.canonicalUrl.endsWith("/feed") || source.canonicalUrl.endsWith("/feed/") ? source.canonicalUrl : null,
       source.canonicalUrl.replace(/\/+$/, "") + "/feed/",
       source.canonicalUrl,
+      ...(isSearchingIt ? [config.itFeed] : []),
     ].filter(Boolean) as string[]));
 
     let rawItems: Array<Record<string, string>> = [];

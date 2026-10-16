@@ -60,14 +60,17 @@ export class StructuredHtmlAdapter implements IJobConnector {
 
   async discoverListings(source: JobSourceRecord, filter?: ConnectorFilter): Promise<NormalizedListing[]> {
     const config = (source.config as any) || {};
+    const isSearchingIt = (filter?.keywords || []).some(k =>
+      /\b(it|ict|tech|software|developer|programmer|engineer|network|cloud|sysadmin|cyber)\b/i.test(k)
+    );
+
     const candidateUrls: string[] = Array.from(new Set([
-      config.itVacancies,
-      config.searchUrl,
       config.vacanciesUrl,
       config.careersUrl,
       config.allJobs,
-      config.itFeed,
+      config.searchUrl,
       source.canonicalUrl,
+      ...(isSearchingIt ? [config.itVacancies, config.itFeed] : []),
     ].filter(Boolean) as string[]));
 
     const items: NormalizedListing[] = [];

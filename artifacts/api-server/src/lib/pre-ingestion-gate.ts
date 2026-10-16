@@ -89,8 +89,14 @@ export function evaluatePreIngestionGate(
   }
 
   // 3. Experience Ceilings & Seniority (Derived strictly from candidate's verified profile)
+  const candidateTargetsSeniorOrSpecialist = (directive.targetRoleFamilies || []).some(r =>
+    /director|head|lead|chief|consultant|manager|executive|principal|surgeon|doctor|specialist/i.test(r)
+  );
+
   const candidateYears = directive.candidateSummary?.yearsExperience ?? 1;
-  const maxAllowedYears = directive.maxExperienceYears ?? Math.max(candidateYears + 3, 3);
+  const maxAllowedYears = candidateTargetsSeniorOrSpecialist
+    ? Math.max(directive.maxExperienceYears ?? 20, 20)
+    : (directive.maxExperienceYears ?? Math.max(candidateYears + 3, 3));
   const minYears = extractMinYearsRequired(desc);
 
   if (minYears !== null && minYears > maxAllowedYears) {
@@ -102,11 +108,7 @@ export function evaluatePreIngestionGate(
   }
 
   // Executive filter: Only reject if candidate experience is junior (<=3 yrs) and target roles don't include leadership
-  const candidateTargetsLeadership = (directive.targetRoleFamilies || []).some(r =>
-    /director|head|lead|chief|consultant|manager|executive|principal/i.test(r)
-  );
-
-  if (candidateYears <= 3 && !candidateTargetsLeadership && EXECUTIVE_REGEX.test(title)) {
+  if (candidateYears <= 3 && !candidateTargetsSeniorOrSpecialist && EXECUTIVE_REGEX.test(title)) {
     return {
       qualified: false,
       isExpired: false,
@@ -116,22 +118,41 @@ export function evaluatePreIngestionGate(
 
   // 4. Role & Domain Relevance Gate
   // Grounded in candidate's actual target role families, search queries, and skills
-  const candidateKeywords = [
+  const rawKeywords = [
     ...(directive.targetRoleFamilies || []),
     ...(directive.alternativeJobTitles || []),
-    ...(directive.requiredSkills || []).slice(0, 15),
-    ...(directive.preferredSkills || []).slice(0, 15),
+    ...(directive.requiredSkills || []).slice(0, 30),
+    ...(directive.preferredSkills || []).slice(0, 30),
+    ...(directive.searchQueries || []).slice(0, 15),
   ].map(k => k.toLowerCase().trim()).filter(Boolean);
 
-  if (candidateKeywords.length > 0) {
+  if (rawKeywords.length > 0) {
     const titleLower = title.toLowerCase();
-    const matchesTarget = candidateKeywords.some(kw => {
+    
+    // Substantive words extracted from target roles & skills
+    const substantiveWords: string[] = [];
+    for (const kw of rawKeywords) {
+      for (const w of kw.split(/[^a-z0-9]+/)) {
+        if (w.length >= 4 && !["with", "from", "that", "this", "have", "been", "only", "also", "role", "work", "jobs"].includes(w)) {
+          substantiveWords.push(w);
+        }
+      }
+    }
+
+    // Direct match against full keyword phrases
+    const matchesPhrase = rawKeywords.some(kw => {
       if (kw.length < 3) return false;
       const cleanKw = kw.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
       return new RegExp(`\\b${cleanKw}\\b`, "i").test(titleLower) || fullText.includes(kw);
     });
 
-    if (!matchesTarget) {
+    // Match against substantive role keywords in title
+    const matchesSubstantiveTitle = substantiveWords.some(w => {
+      const cleanW = w.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+      return new RegExp(`\\b${cleanW}\\b`, "i").test(titleLower);
+    });
+
+    if (!matchesPhrase && !matchesSubstantiveTitle) {
       return {
         qualified: false,
         isExpired: false,

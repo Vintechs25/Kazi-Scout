@@ -40,6 +40,8 @@ export interface DiscoveryResult {
   mediumMatches: EnrichedJob[];
   lowMatches: EnrichedJob[];
   rejected: number;
+  gateRejected?: number;
+  validationRejected?: number;
   errors: string[];
   sourcesScraped: string[];
   executionTime: number;
@@ -371,7 +373,7 @@ export async function discoverJobsWithCvGuidance(
       if (overrideSources && overrideSources.length > 0) {
         sourcesToScrape = overrideSources.map(id => SOURCE_BY_ID[id]).filter(Boolean);
       } else {
-        const routed: any = await SourceRouter.routeSourcesForProfile(accountId || "primary");
+        const routed: any = await SourceRouter.routeSourcesForProfile(accountId || "primary", rolesToSearch);
         sourcesToScrape = Array.isArray(routed) ? routed.map((r: any) => r.source) : [];
       }
     } catch {
@@ -416,9 +418,12 @@ export async function discoverJobsWithCvGuidance(
     let mediumMatches: EnrichedJob[] = [];
     let lowMatches: EnrichedJob[] = [];
     let jobsRejected = 0;
+    let duplicateCount = 0;
+    let gateRejectedCount = 0;
+    let validationRejectedCount = 0;
 
-    // Fetch directive once before loop
-    const directive = await getOrGenerateSearchDirective();
+    // Fetch directive dynamically tailored to active searched roles
+    const directive = await getOrGenerateSearchDirective(false, rolesToSearch);
     
     // Scrape each source
     for (const source of sourcesToScrape) {
@@ -490,6 +495,7 @@ export async function discoverJobsWithCvGuidance(
             deadline: job.deadline,
           });
           if (!validation.valid) {
+            validationRejectedCount++;
             jobsRejected++;
             continue;
           }
@@ -502,6 +508,7 @@ export async function discoverJobsWithCvGuidance(
             description: job.description,
           });
           if (duplicateFingerprints.has(fingerprint)) {
+            duplicateCount++;
             jobsRejected++;
             continue;
           }
@@ -515,12 +522,9 @@ export async function discoverJobsWithCvGuidance(
           }, directive);
           
           if (!gateResult.qualified) {
+            gateRejectedCount++;
             jobsRejected++;
-            
-            // Log rejection reason
-            if (gateResult.rejectionReason) {
-              // In production, log to database
-            }
+            console.log(`[Discovery Gate] Disqualified "${job.title}" (${job.company}): ${gateResult.rejectionReason}`);
             continue;
           }
 
@@ -585,24 +589,66 @@ export async function discoverJobsWithCvGuidance(
       }
     }
     
-    // Match discovered jobs against user's profile
+    // Match discovered jobs against searched roles & candidate profile
     const candidateEvidence = await getOrGenerateCandidateEvidence();
     
     for (const job of discoveredJobs) {
-      // Calculate match score based on CV
+      // 1. Calculate role match against active search roles
+      const titleLower = (job.title || "").toLowerCase();
+      const descLower = (job.description || "").toLowerCase();
+      
+      let roleMatchPct = 0;
+      for (const r of rolesToSearch) {
+        const rLower = r.toLowerCase();
+        if (titleLower.includes(rLower)) {
+          roleMatchPct = Math.max(roleMatchPct, 95);
+        } else {
+          const words = rLower.split(/\s+/).filter(w => w.length >= 4);
+          if (words.length > 0 && words.some(w => titleLower.includes(w))) {
+            roleMatchPct = Math.max(roleMatchPct, 85);
+          } else if (words.length > 0 && words.some(w => descLower.includes(w))) {
+            roleMatchPct = Math.max(roleMatchPct, 65);
+          }
+        }
+      }
+
+      // 2. Extract and match skills
       const jobSkills = extractSkillsFromText(
         `${job.title} ${job.description} ${job.company} ${job.location || ''}`
       );
       
+      const candidateSkills = [
+        ...candidateEvidence.demonstratedTechnicalSkills,
+        ...candidateEvidence.selfReportedSkills,
+        ...(directive.requiredSkills || []),
+      ];
+
       const matchedSkills = jobSkills.filter(skill => 
-        candidateEvidence.demonstratedTechnicalSkills.includes(skill) ||
-        candidateEvidence.selfReportedSkills.includes(skill)
+        candidateSkills.some(cs => cs.toLowerCase() === skill.toLowerCase())
       );
       
-      const cvMatchScore = Math.round(
-        (matchedSkills.length / Math.max(jobSkills.length, 1)) * 100 * 0.7 +
-        (job.remote ? 15 : 0) +
-        (job.location?.toLowerCase().includes("kenya") ? 10 : 0)
+      const skillMatchPct = jobSkills.length > 0
+        ? Math.round((matchedSkills.length / Math.min(jobSkills.length, 5)) * 100)
+        : (roleMatchPct > 0 ? 80 : 50);
+
+      // 3. Combined Score: 60% role match + 20% skills + 10% location + 10% verified instructions
+      const hasInstructions = Boolean(
+        job.requirementVerification?.hasClearInstructions ||
+        job.sourceUrl?.startsWith("http") ||
+        /apply|cv|email|portal|deadline/i.test(job.description || "")
+      );
+
+      const cvMatchScore = Math.min(
+        100,
+        Math.max(
+          50,
+          Math.round(
+            (roleMatchPct > 0 ? roleMatchPct : 70) * 0.6 +
+            skillMatchPct * 0.2 +
+            (job.location?.toLowerCase().includes("kenya") ? 10 : 5) +
+            (hasInstructions ? 10 : 5)
+          )
+        )
       );
       
       const enrichedJob: Partial<EnrichedJob> & { matchScore?: number } = {
@@ -729,12 +775,14 @@ export async function discoverJobsWithCvGuidance(
     
     return {
       discovered: jobsDiscovered,
-      duplicates: jobsRejected,
+      duplicates: duplicateCount,
       matched: jobsMatched,
       highMatches,
       mediumMatches,
       lowMatches,
       rejected: jobsRejected,
+      gateRejected: gateRejectedCount,
+      validationRejected: validationRejectedCount,
       errors,
       sourcesScraped,
       executionTime: Date.now() - startTime,

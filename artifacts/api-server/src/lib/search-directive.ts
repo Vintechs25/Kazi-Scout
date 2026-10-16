@@ -94,15 +94,22 @@ export function generateDeterministicDirective(
   searchProfiles: any[] = [],
   cacheKey = "default",
   cvVerified = false,
+  activeRoles?: string[],
 ): SearchDirective {
   const roles: string[] = [];
-  if (profile?.targetRoles && Array.isArray(profile.targetRoles)) {
-    roles.push(...profile.targetRoles.filter(Boolean));
-  }
-  for (const sp of searchProfiles) {
-    if (sp.name && !roles.includes(sp.name)) roles.push(sp.name);
-    for (const kw of sp.keywords || []) {
-      if (kw && !roles.includes(kw)) roles.push(kw);
+  if (activeRoles && Array.isArray(activeRoles) && activeRoles.length > 0) {
+    roles.push(...activeRoles.filter(Boolean));
+  } else {
+    if (profile?.targetRoles && Array.isArray(profile.targetRoles)) {
+      for (const r of profile.targetRoles) {
+        if (r && !roles.includes(r)) roles.push(r);
+      }
+    }
+    for (const sp of searchProfiles) {
+      if (sp.name && !roles.includes(sp.name)) roles.push(sp.name);
+      for (const kw of sp.keywords || []) {
+        if (kw && !roles.includes(kw)) roles.push(kw);
+      }
     }
   }
 
@@ -111,29 +118,67 @@ export function generateDeterministicDirective(
     roles.push("Professional Specialist");
   }
 
-  const targetRoleFamilies = Array.from(new Set(roles)).slice(0, 8);
-  const yearsExp = typeof profile?.yearsExperience === "number" ? profile.yearsExperience : 3;
-  const maxYears = Math.max(yearsExp + 3, 3);
+  const targetRoleFamilies = Array.from(new Set(roles)).slice(0, 10);
+  
+  // Detect seniority from active requested roles
+  const isSeniorRequested = targetRoleFamilies.some(r =>
+    /consultant|surgeon|specialist|senior|lead|director|chief|head|doctor|physician|principal/i.test(r)
+  );
+
+  let yearsExp = typeof profile?.yearsExperience === "number" ? profile.yearsExperience : 3;
+  if (isSeniorRequested && yearsExp < 8) {
+    yearsExp = 10;
+  }
+  const maxYears = Math.max(yearsExp + 5, isSeniorRequested ? 25 : 5);
 
   const skills: string[] = Array.isArray(profile?.skills) ? profile.skills : [];
   const techs: string[] = Array.isArray(profile?.technologies) ? profile.technologies : [];
-  const combinedSkills = Array.from(new Set([...skills, ...techs]));
 
-  // Seniority levels tailored to candidate's genuine years of experience
+  // Derive contextual domain skills and keywords from requested roles
+  const domainSkills: string[] = [];
+  for (const r of targetRoleFamilies) {
+    const rLower = r.toLowerCase();
+    // Healthcare & Medical
+    if (/surgeon|surgery/i.test(rLower)) {
+      domainSkills.push("surgery", "surgeon", "surgical procedures", "patient care", "clinical consultation", "theatre", "general surgery", "operating room");
+    }
+    if (/doctor|physician|medical|clinical/i.test(rLower)) {
+      domainSkills.push("clinical medicine", "diagnosis", "medical practice", "healthcare", "patient management", "medical doctor", "physician");
+    }
+    // Finance & Accounting
+    if (/account|finance|audit|tax/i.test(rLower)) {
+      domainSkills.push("financial reporting", "accounting", "auditing", "taxation", "budgeting", "compliance", "financial analysis");
+    }
+    // Legal
+    if (/legal|advocate|lawyer|counsel/i.test(rLower)) {
+      domainSkills.push("legal research", "litigation", "compliance", "contract drafting", "advocacy", "corporate law");
+    }
+    // Engineering
+    if (/engineer|civil|mechanical|electrical/i.test(rLower)) {
+      domainSkills.push("engineering design", "project supervision", "technical specifications", "quality assurance", "infrastructure");
+    }
+    // Add individual substantive role tokens (e.g. "surgeon", "doctor", "specialist")
+    const words = rLower.split(/\s+/).filter(w => w.length >= 4);
+    domainSkills.push(...words);
+  }
+
+  const combinedSkills = (activeRoles && activeRoles.length > 0 && domainSkills.length > 0)
+    ? Array.from(new Set(domainSkills))
+    : Array.from(new Set([...domainSkills, ...skills, ...techs]));
+
+  // Seniority levels tailored to candidate's genuine years of experience or requested seniority
   const suitableLevels: string[] = [];
   const seniorityExclusions: string[] = [];
 
-  if (yearsExp >= 10) {
-    suitableLevels.push("Consultant", "Director", "Lead", "Senior", "10+ years");
-  } else if (yearsExp >= 6) {
-    suitableLevels.push("Senior", "Lead", "Specialist", "5-8 years");
-    seniorityExclusions.push("chief executive officer", "managing director");
+  if (isSeniorRequested || yearsExp >= 8) {
+    suitableLevels.push("Consultant", "Specialist", "Senior", "Lead", "Director", "5-8 years", "10+ years");
+    // Do NOT exclude consultant, senior, lead, director
   } else if (yearsExp >= 3) {
     suitableLevels.push("Mid-Level", "Intermediate", "Experienced", "3-5 years");
-    seniorityExclusions.push("principal", "director", "head of", "chief");
+    seniorityExclusions.push("managing director", "chief executive officer");
   } else {
     suitableLevels.push("Entry Level", "Junior", "Associate", "0-2 years");
-    seniorityExclusions.push("senior", "lead", "principal", "director", "head of", "chief", "manager");
+    seniorityExclusions.push("managing director", "chief executive officer");
   }
 
   // Generate high-intent queries from candidate's actual roles and skills
@@ -345,7 +390,10 @@ async function callOpenAiDirective(
  * Main entry point: Get cached or generate fresh CV-aware Search Directive (Phase 3 AI Search Planner)
  * Works for ANY profession (Healthcare, Medicine, Law, Finance, Engineering, Technology, Education, etc.)
  */
-export async function getOrGenerateSearchDirective(forceRefresh = false): Promise<SearchDirective> {
+export async function getOrGenerateSearchDirective(
+  forceRefresh = false,
+  activeRoles?: string[],
+): Promise<SearchDirective> {
   const [profile] = await db
     .select()
     .from(candidateProfilesTable)
@@ -362,10 +410,11 @@ export async function getOrGenerateSearchDirective(forceRefresh = false): Promis
     .where(eq(searchProfilesTable.enabled, true));
 
   const spHash = searchProfiles.map((p) => `${p.id}-${p.name}`).join(",");
+  const rolesHash = Array.isArray(activeRoles) && activeRoles.length > 0 ? activeRoles.join(",") : "";
   const cacheKey = computeCacheKey(
     profile?.updatedAt || null,
     evidence.evidenceFingerprint,
-    spHash,
+    `${spHash}__roles:${rolesHash}`,
   );
 
   if (!forceRefresh && inMemoryCachedDirective && inMemoryCachedDirective.cacheKey === cacheKey) {
@@ -540,6 +589,7 @@ Output MUST be a single JSON object strictly matching this schema:
     searchProfiles,
     cacheKey,
     cvDossier.loaded,
+    activeRoles,
   );
   inMemoryCachedDirective = deterministic;
   return deterministic;
