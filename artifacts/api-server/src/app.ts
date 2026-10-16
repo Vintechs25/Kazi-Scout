@@ -53,15 +53,29 @@ app.use(cookieParser());
 app.use(express.json({ limit: "1mb" }));
 app.use(express.urlencoded({ extended: true }));
 
+if (process.env.VERCEL) {
+  if (!process.env.SQLITE_PATH) {
+    process.env.SQLITE_PATH = "/tmp/ai-job-agent.sqlite";
+  }
+  if (!process.env.CV_STORAGE_PATH) {
+    process.env.CV_STORAGE_PATH = "/tmp/cvs";
+  }
+}
+
 // Dedicated standalone health check endpoint that does not depend on
 // database, external services, or heavy middleware
 app.get(["/healthz", "/api/healthz"], (_req, res) => {
   res.setHeader("Content-Type", "application/json");
   res.setHeader("Cache-Control", "no-store");
+  const isTurso = isTursoConfigured();
+  const isVercel = Boolean(process.env.VERCEL);
   res.status(200).json({
     status: "ok",
     ok: true,
-    database: isTursoConfigured() ? "turso" : "sqlite-local",
+    database: isTurso ? "turso" : "sqlite-local",
+    isTurso,
+    isVercel,
+    storageStatus: isTurso ? "persistent" : isVercel ? "ephemeral" : "persistent-local",
   });
 });
 

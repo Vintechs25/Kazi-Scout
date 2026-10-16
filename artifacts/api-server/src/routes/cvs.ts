@@ -36,7 +36,7 @@ import fs from "node:fs";
 const router: IRouter = Router();
 
 function getStorageDir(): string {
-  const custom = process.env.CV_STORAGE_PATH ?? "storage/cvs";
+  const custom = process.env.CV_STORAGE_PATH ?? (process.env.VERCEL ? "/tmp/cvs" : "storage/cvs");
   if (path.isAbsolute(custom)) return custom;
   const candidates = [
     path.resolve(process.cwd(), custom),

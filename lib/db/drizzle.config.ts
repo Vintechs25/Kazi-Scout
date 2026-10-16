@@ -6,6 +6,8 @@ const tursoUrl = (
   process.env.TURSO_DATABASE_URL ||
   process.env.TURSO_URL ||
   process.env.TURSO_DB_URL ||
+  process.env.TURSO_CONNECTION_URL ||
+  process.env.LIBSQL_DATABASE_URL ||
   process.env.LIBSQL_URL ||
   process.env.DATABASE_URL ||
   ""
@@ -15,7 +17,9 @@ const tursoToken = (
   process.env.TURSO_AUTH_TOKEN ||
   process.env.TURSO_TOKEN ||
   process.env.LIBSQL_AUTH_TOKEN ||
+  process.env.LIBSQL_TOKEN ||
   process.env.DATABASE_AUTH_TOKEN ||
+  process.env.DATABASE_TOKEN ||
   ""
 ).replace(/^["']|["']$/g, "").trim();
 

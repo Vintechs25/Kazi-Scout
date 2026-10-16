@@ -57,8 +57,29 @@ Requirements: Node.js 20+ and pnpm (`corepack enable`).
    Open your browser to <http://localhost:5000>.
 
 ## Privacy and Data Storage
-
+ 
 - On your first visit, KaziScout prompts you to create a secure local master password.
 - Your password is stored as a salted hash.
 - The local database defaults to `storage/data/ai-job-agent.sqlite`, and uploaded CVs default to `storage/cvs/`.
 - All credentials, API keys, and personal candidate facts remain strictly local.
+
+## Deploying to Vercel (Persistent Cloud Storage)
+
+Vercel serverless functions have an ephemeral filesystem (`/tmp`), which wipes local SQLite data when serverless instances restart or scale down.
+
+To ensure your **auth credentials, OpenAI/Gemini API keys, search profiles, and job records** persist permanently in production on Vercel:
+
+1. **Create a Free Turso Database:**
+   - Sign up at [turso.tech](https://turso.tech)
+   - Create a database: `turso db create kazi-scout`
+   - Generate an auth token: `turso db tokens create kazi-scout`
+
+2. **Add Environment Variables in Vercel:**
+   In your Vercel Project Dashboard (`Settings` > `Environment Variables`), configure:
+   - `TURSO_DATABASE_URL`: `libsql://kazi-scout-[your-username].turso.io`
+   - `TURSO_AUTH_TOKEN`: your generated Turso token
+   - `SESSION_SECRET`: a secure random string of 32+ characters
+
+3. **Redeploy:**
+   Go to **Deployments** in your Vercel project, click the three dots (`...`) on your latest deployment, and click **Redeploy**. KaziScout will automatically initialize and synchronize the entire schema to Turso on startup.
+

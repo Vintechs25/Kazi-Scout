@@ -247,7 +247,7 @@ router.post("/settings/wipe-data", async (_req, res): Promise<void> => {
 
     // 1. Delete all CVs and remove physical files from storage
     const allCvs = await db.select().from(cvsTable);
-    const custom = process.env.CV_STORAGE_PATH ?? "storage/cvs";
+    const custom = process.env.CV_STORAGE_PATH ?? (process.env.VERCEL ? "/tmp/cvs" : "storage/cvs");
     const storageDirCandidates = [
       path.resolve(process.cwd(), custom),
       path.resolve(process.cwd(), "..", custom),

@@ -307,16 +307,95 @@ function AppShell({ children, health }: { children: React.ReactNode; health: any
           </div>
 
           <div className="top-meta" style={{ display: 'flex', alignItems: 'center', gap: 14 }}>
-            <div style={{ display: 'flex', alignItems: 'center', gap: 8, background: 'hsl(var(--muted))', padding: '4px 10px', borderRadius: 20, border: '1px solid hsl(var(--border))' }}>
-              <span className={`status-dot ${health.isError ? '' : 'status-pulse'}`} style={{ background: health.isError ? '#ef4444' : '#10b981', width: 8, height: 8 }}/>
-              <span style={{ fontWeight: 600, fontSize: 11, color: health.isError ? '#ef4444' : 'hsl(var(--foreground))' }}>
-                {health.isLoading ? 'Checking API…' : health.isError ? 'API Disconnected' : 'Local Engine Online'}
-              </span>
-              <span className="mono" style={{ color: 'hsl(var(--muted-foreground))' }}>·</span>
-              <span style={{ color: 'hsl(var(--muted-foreground))', fontSize: 11 }}>Private by default</span>
-            </div>
+            {(() => {
+              const healthData = health.data as any;
+              const isTurso = healthData?.database === 'turso';
+              const isVercelHost = typeof window !== 'undefined' && !['localhost', '127.0.0.1'].includes(window.location.hostname);
+              const isEphemeral = Boolean(healthData?.isVercel || (!isTurso && isVercelHost));
+
+              return (
+                <div style={{
+                  display: 'flex',
+                  alignItems: 'center',
+                  gap: 8,
+                  background: isEphemeral ? 'rgba(245, 158, 11, 0.12)' : 'hsl(var(--muted))',
+                  padding: '4px 12px',
+                  borderRadius: 20,
+                  border: `1px solid ${isEphemeral ? 'rgba(245, 158, 11, 0.35)' : 'hsl(var(--border))'}`
+                }}>
+                  <span
+                    className={`status-dot ${health.isError ? '' : 'status-pulse'}`}
+                    style={{
+                      background: health.isError ? '#ef4444' : isTurso ? '#10b981' : isEphemeral ? '#f59e0b' : '#10b981',
+                      width: 8,
+                      height: 8
+                    }}
+                  />
+                  <span style={{
+                    fontWeight: 600,
+                    fontSize: 11,
+                    color: health.isError ? '#ef4444' : isTurso ? '#059669' : isEphemeral ? '#b45309' : 'hsl(var(--foreground))'
+                  }}>
+                    {health.isLoading
+                      ? 'Checking API…'
+                      : health.isError
+                        ? 'API Disconnected'
+                        : isTurso
+                          ? 'Turso Cloud DB Online'
+                          : isEphemeral
+                            ? 'Ephemeral Local Storage'
+                            : 'Local Engine Online'}
+                  </span>
+                  <span className="mono" style={{ color: 'hsl(var(--muted-foreground))' }}>·</span>
+                  <span style={{ color: isEphemeral ? '#b45309' : 'hsl(var(--muted-foreground))', fontSize: 11 }}>
+                    {isTurso ? 'Persistent' : isEphemeral ? 'Data resets on restart' : 'Private by default'}
+                  </span>
+                </div>
+              );
+            })()}
           </div>
         </header>
+
+        {(() => {
+          const healthData = health.data as any;
+          const isTurso = healthData?.database === 'turso';
+          const isVercelHost = typeof window !== 'undefined' && !['localhost', '127.0.0.1'].includes(window.location.hostname);
+          const isEphemeral = Boolean(healthData?.isVercel || (!isTurso && isVercelHost));
+
+          if (!isEphemeral) return null;
+          return (
+            <div style={{
+              background: 'rgba(245, 158, 11, 0.08)',
+              border: '1px solid rgba(245, 158, 11, 0.35)',
+              borderRadius: 10,
+              padding: '12px 18px',
+              margin: '16px 24px 0 24px',
+              display: 'flex',
+              alignItems: 'center',
+              justifyContent: 'space-between',
+              gap: 16,
+              boxShadow: '0 2px 8px rgba(245, 158, 11, 0.05)'
+            }}>
+              <div style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
+                <div style={{ width: 34, height: 34, borderRadius: 8, background: 'rgba(245, 158, 11, 0.15)', display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0 }}>
+                  <AlertCircle size={20} style={{ color: '#d97706' }} />
+                </div>
+                <div>
+                  <div style={{ fontWeight: 700, fontSize: 13, color: '#92400e' }}>
+                    Persistent Database Not Configured — Storage is Ephemeral
+                  </div>
+                  <div style={{ fontSize: 12, color: '#78350f', marginTop: 2, lineHeight: 1.4 }}>
+                    KaziScout is running on Vercel with ephemeral container storage. Accounts, API keys, and job records are lost whenever serverless lambdas restart.
+                    To persist your data permanently, configure <b>TURSO_DATABASE_URL</b> and <b>TURSO_AUTH_TOKEN</b> in Vercel, then <b>Redeploy</b>.
+                  </div>
+                </div>
+              </div>
+              <Link href="/settings" className="btn btn-primary" style={{ whiteSpace: 'nowrap', fontSize: 12, padding: '7px 14px', flexShrink: 0, textDecoration: 'none' }}>
+                Database Setup Guide →
+              </Link>
+            </div>
+          );
+        })()}
 
         {children}
       </div>
@@ -2253,7 +2332,7 @@ function Cvs() {
 }
 
 function Settings() {
-  const agentQ = useGetAgentStatus(); const settingsQ = useGetSettings(); const control = useControlAgent(); const qc = useQueryClient();
+  const agentQ = useGetAgentStatus(); const settingsQ = useGetSettings(); const healthQ = useHealthCheck(); const control = useControlAgent(); const qc = useQueryClient();
   const [wiping, setWiping] = useState(false);
   const act = (command: 'start' | 'pause' | 'resume' | 'stop' | 'runNow') => control.mutate({ data: { command } }, { onSuccess: () => { qc.invalidateQueries({ queryKey: getGetAgentStatusQueryKey() }); qc.invalidateQueries({ queryKey: getGetDashboardQueryKey() }); }, onError: err => alert(errText(err)) });
 
@@ -2281,6 +2360,11 @@ function Settings() {
       setWiping(false);
     }
   };
+
+  const healthData = healthQ.data as any;
+  const isTurso = healthData?.database === 'turso';
+  const isVercelHost = typeof window !== 'undefined' && !['localhost', '127.0.0.1'].includes(window.location.hostname);
+  const isEphemeral = Boolean(healthData?.isVercel || (!isTurso && isVercelHost));
 
   return <main className="page-wrap"><PageHead eyebrow="Workspace / controls" title="Agent & connections" sub="Review what is configured. You decide what runs and what gets sent."/>{agentQ.isLoading || settingsQ.isLoading ? <Loading count={3}/> : agentQ.isError ? <ErrorState error={agentQ.error} retry={agentQ.refetch}/> : settingsQ.isError ? <ErrorState error={settingsQ.error} retry={settingsQ.refetch}/> : <>
     {/* About KaziScout */}
@@ -2321,6 +2405,92 @@ function Settings() {
               Vintech Systems & Consulting
             </a>
           </div>
+        </div>
+      </div>
+    </section>
+
+    {/* Database & Storage Persistence Section */}
+    <section className="panel" style={{
+      marginBottom: 14,
+      border: isEphemeral ? '1px solid #f59e0b' : '1px solid hsl(var(--border))',
+      background: isEphemeral ? 'rgba(245, 158, 11, 0.02)' : undefined
+    }}>
+      <div className="panel-head" style={{ borderBottom: isEphemeral ? '1px solid rgba(245, 158, 11, 0.25)' : undefined }}>
+        <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+          <div className="panel-title">Cloud Database & Storage Persistence</div>
+        </div>
+        <span className={`badge ${isTurso ? 'badge-green' : isEphemeral ? 'badge-amber' : ''}`}>
+          {isTurso ? 'Turso Cloud DB (Persistent)' : isEphemeral ? '⚠️ Ephemeral on Vercel' : 'SQLite Local (Persistent)'}
+        </span>
+      </div>
+      <div className="panel-body">
+        <div style={{ display: 'flex', gap: 16, alignItems: 'flex-start', flexWrap: 'wrap', marginBottom: 16 }}>
+          <div style={{
+            flex: 1,
+            minWidth: 280,
+            padding: 14,
+            borderRadius: 8,
+            background: isEphemeral ? 'rgba(245, 158, 11, 0.06)' : 'hsl(var(--muted))',
+            border: `1px solid ${isEphemeral ? 'rgba(245, 158, 11, 0.25)' : 'hsl(var(--border))'}`
+          }}>
+            <div style={{ fontSize: 12, fontWeight: 700, color: 'hsl(var(--foreground))', marginBottom: 4 }}>
+              Active Database Engine
+            </div>
+            <div style={{ fontSize: 15, fontWeight: 800, color: isTurso ? '#10b981' : isEphemeral ? '#d97706' : 'hsl(var(--foreground))' }}>
+              {isTurso ? 'Turso / libSQL Cloud Database' : isEphemeral ? 'SQLite Local Container (/tmp)' : 'Local File SQLite'}
+            </div>
+            <div style={{ fontSize: 12, color: 'hsl(var(--muted-foreground))', marginTop: 6, lineHeight: 1.5 }}>
+              {isTurso
+                ? '✅ All accounts, passwords, API keys, CV data, and job records are permanently stored in your Turso cloud database and synchronized across all Vercel instances.'
+                : isEphemeral
+                  ? '⚠️ Warning: Vercel serverless functions are stateless. Any data written to local SQLite is lost when container instances recycle or cold start. To make your data permanent, add your Turso database credentials in Vercel.'
+                  : 'Running locally on your device. Data is stored persistently in storage/data/ai-job-agent.sqlite.'}
+            </div>
+          </div>
+
+          <div style={{ display: 'flex', gap: 8, alignItems: 'center' }}>
+            <Button
+              onClick={() => {
+                healthQ.refetch();
+                alert(`Database Engine Status:\n\nActive Engine: ${isTurso ? 'Turso libSQL Cloud Database' : 'SQLite Local'}\nPersistence: ${isTurso ? 'PERMANENT (Turso)' : isEphemeral ? 'EPHEMERAL (Vercel /tmp - Resets on cold start)' : 'PERMANENT (Local Disk)'}`);
+              }}
+              disabled={healthQ.isFetching}
+            >
+              <RotateCw size={13} className={healthQ.isFetching ? 'status-pulse' : ''} />
+              {healthQ.isFetching ? 'Testing…' : 'Check Status'}
+            </Button>
+          </div>
+        </div>
+
+        {/* Setup guide */}
+        <div style={{
+          borderTop: '1px solid hsl(var(--border))',
+          paddingTop: 14,
+          fontSize: 12,
+          color: 'hsl(var(--foreground))'
+        }}>
+          <div style={{ fontWeight: 700, marginBottom: 8 }}>
+            How to configure permanent storage for Vercel:
+          </div>
+          <ol style={{ paddingLeft: 20, margin: 0, lineHeight: 1.9, color: 'hsl(var(--muted-foreground))' }}>
+            <li>
+              Create a free database at <a href="https://turso.tech" target="_blank" rel="noopener noreferrer" style={{ color: '#10b981', fontWeight: 600, textDecoration: 'underline' }}>turso.tech</a> or run <code className="mono">turso db create kazi-scout</code> in CLI.
+            </li>
+            <li>
+              In your <b>Vercel Dashboard</b>, open project <b>Kazi-Scout</b> &gt; <b>Settings</b> &gt; <b>Environment Variables</b>.
+            </li>
+            <li>
+              Add the following 3 variables for <b>Production</b>, <b>Preview</b>, and <b>Development</b>:
+              <ul style={{ marginTop: 4, marginBottom: 4, lineHeight: 1.8 }}>
+                <li><code className="mono" style={{ color: '#10b981', fontWeight: 700 }}>TURSO_DATABASE_URL</code> = <code className="mono">libsql://kazi-scout-youruser.turso.io</code></li>
+                <li><code className="mono" style={{ color: '#10b981', fontWeight: 700 }}>TURSO_AUTH_TOKEN</code> = your database token from Turso</li>
+                <li><code className="mono" style={{ color: '#10b981', fontWeight: 700 }}>SESSION_SECRET</code> = a random secure string (at least 32 characters)</li>
+              </ul>
+            </li>
+            <li>
+              <b>Redeploy in Vercel:</b> Go to the <b>Deployments</b> tab, click the three dots on the latest deployment &gt; <b>Redeploy</b> (Vercel requires a redeploy to inject new environment variables).
+            </li>
+          </ol>
         </div>
       </div>
     </section>
