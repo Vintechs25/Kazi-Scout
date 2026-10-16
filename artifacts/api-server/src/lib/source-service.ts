@@ -6,6 +6,8 @@ import { ALL_47_KENYAN_COUNTIES, CountyDefinition } from "./county-registry-data
 import { getConnectorForSource } from "./connectors/registry";
 import { fingerprintJob, normalizeCompany, normalizeText } from "./job-deduplication";
 import { logger } from "./logger";
+import { runFullRegistryMigration } from "./registry-migration";
+import { processListingPipeline } from "./ingestion-contract";
 
 export interface SourceFilters {
   category?: string;
@@ -111,6 +113,9 @@ export class SourceService {
 
       // Reconcile and reflect true database job counts & provenance across all sources
       await this.reconcileAllSourceMetrics();
+
+      // Execute schema migration, stub cleanup, taxonomy seeding & admin regions migration
+      await runFullRegistryMigration();
     } catch (err) {
       logger.error("[SourceService] Failed to initialize catalog: " + (err instanceof Error ? err.message : String(err)));
     }
@@ -288,7 +293,7 @@ export class SourceService {
    * Sync a single source: crawl listings, ingest into jobsTable with deduplication,
    * record provenance, and update totalIndexed & totalDiscovered.
    */
-  public static async syncSource(id: string, options: { limit?: number; keywords?: string[] } = {}) {
+  public static async syncSource(id: string, options: { limit?: number; keywords?: string[]; profileId?: string } = {}) {
     const source = await this.getSourceById(id);
     if (!source) throw new Error(`Source not found: ${id}`);
 
@@ -301,137 +306,27 @@ export class SourceService {
 
     const discovered = await connector.discoverListings(source, { limit, keywords });
 
-    let indexedCount = 0;
-    const now = new Date();
-
-    for (const listing of discovered) {
-      try {
-        const title = listing.title;
-        if (!title || title.length < 3) continue;
-
-        const company = listing.company || source.name;
-        const location = listing.location || (source.country === "Kenya" ? "Nairobi, Kenya" : "Remote");
-        const remote = Boolean(listing.remote || source.category === "GLOBAL_REMOTE");
-
-        const fp = fingerprintJob({
-          company,
-          title,
-          location,
-          description: listing.description || "",
-        });
-
-        const jobId = listing.id || randomUUID();
-
-        // Calculate match score based on candidate keywords if available or universal relevance
-        const text = `${title} ${listing.description || ""} ${company}`.toLowerCase();
-        const searchTerms = (candidateKeywords.length > 0 ? candidateKeywords : keywords).map(k => k.toLowerCase());
-        const matches = searchTerms.filter(kw => text.includes(kw));
-        const matchScore = candidateKeywords.length > 0
-          ? Math.min(95, Math.max(40, (matches.length > 0 ? 60 + matches.length * 10 : 35) + (source.country === "Kenya" ? 15 : 10)))
-          : Math.min(85, Math.max(50, (matches.length > 0 ? 55 + matches.length * 5 : 45) + (source.country === "Kenya" ? 15 : 10)));
-        const status = matchScore >= 80 ? "MATCHED" : matchScore >= 50 ? "NEEDS_REVIEW" : "DISCOVERED";
-
-        // Check existing job by fingerprint, id, or (source, externalJobId)
-        const checkConditions = [
-          eq(jobsTable.fingerprint, fp),
-        ];
-        if (jobId) checkConditions.push(eq(jobsTable.id, jobId));
-        if (listing.externalJobId) {
-          checkConditions.push(and(eq(jobsTable.source, source.name), eq(jobsTable.externalJobId, listing.externalJobId)) as any);
-        }
-
-        const existingJobs = await db.select({ id: jobsTable.id }).from(jobsTable)
-          .where(or(...checkConditions))
-          .limit(1);
-
-        let finalJobId: string;
-        if (existingJobs.length > 0) {
-          finalJobId = existingJobs[0].id;
-          await db.update(jobsTable).set({
-            sourceUrl: listing.url || listing.sourceUrl || source.canonicalUrl,
-            status: status as any,
-            matchScore,
-          }).where(eq(jobsTable.id, finalJobId));
-        } else {
-          finalJobId = randomUUID();
-          await db.insert(jobsTable).values({
-            id: finalJobId,
-            title,
-            company,
-            normalizedCompany: normalizeCompany(company),
-            normalizedTitle: normalizeText(title),
-            location,
-            normalizedLocation: normalizeText(location),
-            remote,
-            salary: listing.salary || null,
-            source: source.name,
-            sourceUrl: listing.url || listing.sourceUrl || source.canonicalUrl,
-            externalJobId: listing.externalJobId || null,
-            description: listing.description || `Verified recruitment opportunity from ${company}: ${title}`,
-            fingerprint: fp,
-            matchScore,
-            status: status as any,
-            matchedSkills: listing.skills || [],
-            missingSkills: [],
-            isAiVerified: false,
-            discoveredAt: now,
-          });
-          indexedCount++;
-        }
-
-        // Record provenance
-        await db.insert(jobProvenanceTable).values({
-          id: randomUUID(),
-          jobId: finalJobId,
-          sourceId: source.id,
-          sourceName: source.name,
-          originalUrl: listing.url || listing.sourceUrl || source.canonicalUrl,
-          discoveredAt: now,
-          isPrimary: true,
-        }).catch(() => {});
-      } catch (e: any) {
-        logger.warn(`[SourceService] Error ingesting listing "${listing.title}": ${e?.message || e}`);
-      }
-    }
-
-    // Recalculate accurate metrics for this source
-    const provCountRes = await db.select({ c: sql<number>`count(*)` }).from(jobProvenanceTable)
-      .where(or(
-        eq(jobProvenanceTable.sourceId, source.id),
-        eq(jobProvenanceTable.sourceName, source.name),
-        like(jobProvenanceTable.sourceName, `%${source.name}%`)
-      ));
-    const totalProv = Number(provCountRes[0]?.c || 0);
-
-    const jobsCountRes = await db.select({ c: sql<number>`count(*)` }).from(jobsTable)
-      .where(or(
-        eq(jobsTable.source, source.name),
-        eq(jobsTable.source, source.id),
-        like(jobsTable.source, `%${source.name}%`)
-      ));
-    const totalJobs = Number(jobsCountRes[0]?.c || 0);
-
-    const newDiscovered = Math.max((source.totalDiscovered || 0) + discovered.length, totalProv);
-    const newIndexed = Math.max((source.totalIndexed || 0) + indexedCount, totalJobs);
-
-    await db.update(jobSourcesTable).set({
-      totalDiscovered: newDiscovered,
-      totalIndexed: newIndexed,
-      lastCheckedAt: now,
-      lastSuccessfulRunAt: now,
-      lastJobDiscoveredAt: discovered.length > 0 ? now : source.lastJobDiscoveredAt,
-      consecutiveFailures: 0,
-      status: discovered.length > 0 ? "ACTIVE" : source.status,
-      updatedAt: now,
-    }).where(eq(jobSourcesTable.id, source.id));
+    const runId = randomUUID();
+    const pipelineResult = await processListingPipeline(
+      discovered as any,
+      source,
+      runId,
+      options.profileId,
+    );
 
     return {
       sourceId: source.id,
       name: source.name,
-      discoveredCount: discovered.length,
-      indexedCount,
-      totalDiscovered: newDiscovered,
-      totalIndexed: newIndexed,
+      runId,
+      discoveredCount: pipelineResult.fetched,
+      parsedCount: pipelineResult.parsed,
+      validatedCount: pipelineResult.validated,
+      savedCount: pipelineResult.saved,
+      indexedCount: pipelineResult.saved,
+      totalDiscovered: pipelineResult.totalDiscovered,
+      totalIndexed: pipelineResult.totalIndexed,
+      yieldRate: pipelineResult.yieldRate,
+      rejectReasons: pipelineResult.rejectReasons,
       sampleListings: discovered.slice(0, 3),
     };
   }

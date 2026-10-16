@@ -25,6 +25,8 @@ import { getOrGenerateSearchDirective, type SearchDirective } from "./search-dir
 import { getOrGenerateCandidateEvidence } from "./candidate-evidence";
 import { verifyJobAgainstUserProfile } from "./requirement-verification-system";
 import type { NormalizedJob, JobSearchFilter } from "./job-search-service";
+import { validateListing } from "./ingestion-contract";
+import { SourceRouter } from "./source-router";
 
 // ============================================================================
 // TYPES
@@ -363,14 +365,27 @@ export async function discoverJobsWithCvGuidance(
       ? overrideRoles.flatMap(role => generateSearchQueriesForRole(role))
       : searchQueries;
     
-    // Get sources to scrape
-    const allEnabledSources = overrideSources
-      ? overrideSources.map(id => SOURCE_BY_ID[id]).filter(Boolean)
-      : getEnabledSources();
-    
-    // Filter sources based on settings
-    let sourcesToScrape = allEnabledSources;
-    
+    // 1. Route sources tailored to user's structured profile
+    let sourcesToScrape: any[] = [];
+    try {
+      if (overrideSources && overrideSources.length > 0) {
+        sourcesToScrape = overrideSources.map(id => SOURCE_BY_ID[id]).filter(Boolean);
+      } else {
+        const routed: any = await SourceRouter.routeSourcesForProfile(accountId || "primary");
+        sourcesToScrape = Array.isArray(routed) ? routed.map((r: any) => r.source) : [];
+      }
+    } catch {
+      sourcesToScrape = [];
+    }
+
+    if (!sourcesToScrape || sourcesToScrape.length === 0) {
+      const allEnabledSources = overrideSources
+        ? overrideSources.map(id => SOURCE_BY_ID[id]).filter(Boolean)
+        : getEnabledSources();
+      sourcesToScrape = allEnabledSources;
+    }
+
+    // Apply user discovery settings filters
     if (!settings.enableAllKenyaSources) {
       sourcesToScrape = sourcesToScrape.filter(s => s.country !== "Kenya");
     }
@@ -378,16 +393,7 @@ export async function discoverJobsWithCvGuidance(
       sourcesToScrape = sourcesToScrape.filter(s => s.country === "Kenya");
     }
     if (!settings.enableRecruitmentAgencies) {
-      sourcesToScrape = sourcesToScrape.filter(s => s.category !== "RECRUITMENT_AGENCY");
-    }
-    
-    // Apply source preferences
-    if (settings.preferredSourceIds.length > 0) {
-      const preferredIds = new Set(settings.preferredSourceIds);
-      sourcesToScrape = [
-        ...sourcesToScrape.filter(s => preferredIds.has(s.id)),
-        ...sourcesToScrape.filter(s => !preferredIds.has(s.id)),
-      ];
+      sourcesToScrape = sourcesToScrape.filter(s => s.category !== "RECRUITMENT_AGENCY" && s.sourceKind !== "RECRUITER");
     }
     
     // Apply excluded sources
@@ -395,38 +401,13 @@ export async function discoverJobsWithCvGuidance(
       const excludedIds = new Set(settings.excludedSourceIds);
       sourcesToScrape = sourcesToScrape.filter(s => !excludedIds.has(s.id));
     }
-    
-    // Prioritize Republic of Kenya sources at the front of the queue
-    const kenyaSources = sourcesToScrape.filter(s => s.country === "Kenya");
-    const otherSources = sourcesToScrape.filter(s => s.country !== "Kenya");
-    
-    // Order high-yield Kenyan job portals and verified national portals at the very front
-    const highYieldKenyaIds = [
-      "myjobmag-kenya", "myjobmag",
-      "brightermonday-kenya", "brightermonday",
-      "jobwebkenya",
-      "corporate-staffing-jobs", "corporatestaffing", "corporate-staffing",
-      "psck-jobs", "psck-jobs-portal", "public-service-commission",
-      "kenyajob", "jobs-in-kenya", "jobsinkenya",
-      "careerpoint-kenya", "careerpointkenya",
-    ];
-    const topKenya: typeof kenyaSources = [];
-    const seenTopIds = new Set<string>();
-    for (const id of highYieldKenyaIds) {
-      const match = kenyaSources.find(s => s.id === id);
-      if (match && !seenTopIds.has(match.id)) {
-        seenTopIds.add(match.id);
-        topKenya.push(match);
-      }
-    }
-    const restKenya = kenyaSources.filter(s => !seenTopIds.has(s.id));
 
-    // Allow crawling all active Kenyan sources plus top remote sources
-    const maxSources = aggressiveMode ? 100 : 60;
-    sourcesToScrape = [...topKenya, ...restKenya, ...otherSources].slice(0, maxSources);
+    // Limit active sources per run
+    const maxSources = aggressiveMode ? 35 : 25;
+    sourcesToScrape = sourcesToScrape.slice(0, maxSources);
     
-    // Generous per-source limit so rich Kenyan feeds yield full batches of listings
-    const perSourceLimit = Math.max(35, Math.ceil(maxJobs / Math.max(1, Math.min(sourcesToScrape.length, 8))));
+    // Generous per-source limit so rich feeds yield full batches of listings
+    const perSourceLimit = Math.max(30, Math.ceil(maxJobs / Math.max(1, Math.min(sourcesToScrape.length, 8))));
 
     // Track progress
     let jobsDiscovered = 0;
@@ -500,6 +481,19 @@ export async function discoverJobsWithCvGuidance(
         for (const job of sourceJobs) {
           if (jobsDiscovered >= maxJobs) break;
           
+          // 1. Hard validation gate: discard stub queries, search URLs, missing employer, or short stubs
+          const validation = validateListing({
+            title: job.title,
+            company: job.company,
+            url: job.sourceUrl || job.url || source.canonicalUrl,
+            description: job.description,
+            deadline: job.deadline,
+          });
+          if (!validation.valid) {
+            jobsRejected++;
+            continue;
+          }
+
           // Check for duplicates
           const fingerprint = fingerprintJob({
             company: job.company,

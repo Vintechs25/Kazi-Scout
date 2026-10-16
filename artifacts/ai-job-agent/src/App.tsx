@@ -1366,13 +1366,13 @@ function Jobs() {
                     <span className="badge" style={{ fontSize: 11, borderColor: '#60a5fa', color: '#60a5fa' }}>ℹ️ INSUFFICIENT</span>
                   ) : (
                     <span className={`badge ${((job.matchScore ?? 0) >= minScore) ? 'badge-green' : ((job.matchScore ?? 0) >= 50) ? 'badge-yellow' : ''}`}>
-                      {job.matchScore == null ? '—' : `${job.matchScore}%`}
+                      {job.matchScore == null || job.matchScore === 0 ? '—' : `${job.matchScore}%`}
                     </span>
                   )}
                 </div>
-                {job.isAiVerified && (
+                {Boolean(job.isAiVerified && job.aiProvider && job.aiDecision) && (
                   <div className="field-hint" style={{ fontSize: 10, marginTop: 2 }}>
-                    ✓ {job.aiProvider || 'Gemini'} verified
+                    ✓ {job.aiProvider} verified
                   </div>
                 )}
               </div>
@@ -1543,11 +1543,11 @@ function JobDetails({ job, onPrepare, preparing, onTrack, pending, onStatus, onD
       ) : job.aiDecision === 'NOT_A_MATCH' || job.aiDecision === 'INELIGIBLE' ? (
         <span className="badge badge-red">🚫 Disqualified by AI</span>
       ) : (
-        <span className={`badge ${((job.matchScore ?? 0) >= 70) ? 'badge-green' : ''}`}>{job.matchScore == null ? 'Match not scored' : `${job.matchScore}% match`}</span>
+        <span className={`badge ${((job.matchScore ?? 0) >= 70) ? 'badge-green' : ''}`}>{job.matchScore == null || job.matchScore === 0 ? 'Match not scored' : `${job.matchScore}% match`}</span>
       )}
-      {job.isAiVerified && (
+      {Boolean(job.isAiVerified && job.aiProvider && job.aiDecision) && (
         <span className="badge" style={{ borderColor: '#10b981', color: '#10b981' }}>
-          🛡️ AI-Verified ({job.aiProvider || 'Gemini'})
+          🛡️ AI-Verified ({job.aiProvider})
         </span>
       )}
       {deadline && <span className="badge" style={{ borderColor: '#e09f3e', color: '#e09f3e' }}><Calendar size={12} style={{ marginRight: 4 }}/> Deadline: {deadline}</span>}

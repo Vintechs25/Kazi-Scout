@@ -2,9 +2,10 @@ import { Router, type IRouter } from "express";
 import { SourceService } from "../lib/source-service";
 import { SourceDiscoveryEngine } from "../lib/source-discovery-engine";
 import { getConnectorForSource } from "../lib/connectors/registry";
-import { db, jobProvenanceTable } from "@workspace/db";
+import { db, jobProvenanceTable, sourceRunLogTable, rejectedCandidatesTable, occupationTaxonomyTable, adminRegionsTable } from "@workspace/db";
 import { eq, desc } from "drizzle-orm";
 import { logger } from "../lib/logger";
+import { SourceRouter } from "../lib/source-router";
 
 const router: IRouter = Router();
 
@@ -231,10 +232,88 @@ router.get("/jobs/:id/provenance", async (req, res) => {
     const records = await db.select()
       .from(jobProvenanceTable)
       .where(eq(jobProvenanceTable.jobId, req.params.id))
-      .orderBy(desc(jobProvenanceTable.discoveredAt));
     res.json({ provenance: records });
   } catch (error: any) {
     res.status(500).json({ error: error.message || "Failed to get job provenance" });
+  }
+});
+
+// 14. Get routed/selected sources for profile
+router.get("/sources-selected", async (req, res) => {
+  try {
+    const profileId = (req.query.profileId as string) || "primary";
+    const selected = await SourceRouter.routeSourcesForProfile(profileId);
+    res.json({
+      profileId,
+      count: selected.length,
+      sources: selected,
+    });
+  } catch (error: any) {
+    logger.error("[SourcesRouter] Error routing sources for profile: " + (error?.message || error));
+    res.status(500).json({ error: error.message || "Failed to route sources for profile" });
+  }
+});
+
+// 15. Set source mode (AUTO, PINNED, EXCLUDED) for profile
+router.post("/sources/:id/mode", async (req, res) => {
+  try {
+    const { mode, profileId = "primary", reason } = req.body || {};
+    if (!["AUTO", "PINNED", "EXCLUDED"].includes(mode)) {
+      res.status(400).json({ error: "mode must be AUTO, PINNED, or EXCLUDED" });
+      return;
+    }
+    await SourceRouter.setSourceMode(profileId, req.params.id, mode, reason);
+    res.json({ success: true, sourceId: req.params.id, mode, profileId });
+  } catch (error: any) {
+    res.status(500).json({ error: error.message || "Failed to update source mode" });
+  }
+});
+
+// 16. Get source run logs
+router.get("/sources/runs", async (req, res) => {
+  try {
+    const limit = req.query.limit ? parseInt(req.query.limit as string, 10) : 50;
+    const runs = await db.select()
+      .from(sourceRunLogTable)
+      .orderBy(desc(sourceRunLogTable.startedAt))
+      .limit(limit);
+    res.json({ runs, count: runs.length });
+  } catch (error: any) {
+    res.status(500).json({ error: error.message || "Failed to get run logs" });
+  }
+});
+
+// 17. Get rejected candidates discard log
+router.get("/sources/rejected", async (req, res) => {
+  try {
+    const limit = req.query.limit ? parseInt(req.query.limit as string, 10) : 100;
+    const rejected = await db.select()
+      .from(rejectedCandidatesTable)
+      .orderBy(desc(rejectedCandidatesTable.createdAt))
+      .limit(limit);
+    res.json({ rejected, count: rejected.length });
+  } catch (error: any) {
+    res.status(500).json({ error: error.message || "Failed to get rejected candidates" });
+  }
+});
+
+// 18. Get occupation taxonomy
+router.get("/sources/taxonomy", async (req, res) => {
+  try {
+    const taxonomy = await db.select().from(occupationTaxonomyTable);
+    res.json({ taxonomy, count: taxonomy.length });
+  } catch (error: any) {
+    res.status(500).json({ error: error.message || "Failed to get occupation taxonomy" });
+  }
+});
+
+// 19. Get admin regions
+router.get("/admin-regions", async (req, res) => {
+  try {
+    const regions = await db.select().from(adminRegionsTable);
+    res.json({ regions, count: regions.length });
+  } catch (error: any) {
+    res.status(500).json({ error: error.message || "Failed to get admin regions" });
   }
 });
 

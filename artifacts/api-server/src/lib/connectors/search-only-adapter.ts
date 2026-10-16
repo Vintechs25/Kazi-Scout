@@ -1,6 +1,14 @@
 import type { IJobConnector, NormalizedListing, ConnectorFilter, ConnectorHealthReport, ConnectorCapabilities } from "./types";
 import type { JobSourceRecord } from "@workspace/db";
 
+/**
+ * SearchOnlyAdapter
+ * 
+ * Strict compliance adapter for sources that provide search-query endpoints.
+ * In accordance with the ingestion contract: A search URL is NEVER a job listing.
+ * This adapter validates connectivity and capability, but will never emit fake
+ * "Search Query: ..." stub records.
+ */
 export class SearchOnlyAdapter implements IJobConnector {
   readonly connectorType = "SEARCH_ONLY";
 
@@ -31,31 +39,10 @@ export class SearchOnlyAdapter implements IJobConnector {
     };
   }
 
-  async discoverListings(source: JobSourceRecord, filter?: ConnectorFilter): Promise<NormalizedListing[]> {
-    // Generates targeted deep-link search queries for user exploration and automated search agents
-    const keywords = filter?.keywords?.slice(0, 3).join("+") || "jobs";
-    const targetUrl = source.canonicalUrl.includes("{query}")
-      ? source.canonicalUrl.replace("{query}", encodeURIComponent(keywords))
-      : `${source.canonicalUrl}?q=${encodeURIComponent(keywords)}`;
-
-    return [
-      {
-        id: `${source.id}-${Date.now()}`,
-        sourceId: source.id,
-        sourceName: source.name,
-        title: `Search Query: ${keywords.replace(/\+/g, " ")}`,
-        company: source.name,
-        location: source.country === "Kenya" ? "Kenya" : "Remote",
-        country: source.country || "Kenya",
-        remote: source.category === "GLOBAL_REMOTE",
-        description: `Targeted search query generated for ${source.name}. Click to explore verified vacancies matching your candidate profile on ${source.name}.`,
-        url: targetUrl,
-        sourceUrl: targetUrl,
-        applicationUrl: targetUrl,
-        postedDate: new Date(),
-        jobType: "Full-time",
-        skills: filter?.keywords || [],
-      },
-    ];
+  async discoverListings(source: JobSourceRecord, _filter?: ConnectorFilter): Promise<NormalizedListing[]> {
+    // Contract rule: A search URL is NEVER a job listing.
+    // Unless an explicit search-results DOM parser resolves concrete vacancy links,
+    // we return empty array rather than injecting search query stubs.
+    return [];
   }
 }

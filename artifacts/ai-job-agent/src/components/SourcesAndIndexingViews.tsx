@@ -2,7 +2,8 @@ import React, { useState } from 'react';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
 import {
   Globe, CheckCircle2, AlertCircle, RefreshCw, Power, ExternalLink,
-  ShieldAlert, Play, MapPin, Database, Sparkles, Filter, Search, Layers, Clock
+  ShieldAlert, Play, MapPin, Database, Sparkles, Filter, Search, Layers, Clock,
+  Pin, EyeOff, ShieldCheck, XCircle, AlertTriangle, UserCheck, Check, Activity, Trash2
 } from 'lucide-react';
 
 export function SourcesManagement() {
@@ -13,7 +14,7 @@ export function SourcesManagement() {
   const [testingId, setTestingId] = useState<string | null>(null);
   const [syncingId, setSyncingId] = useState<string | null>(null);
   const [discoveringSources, setDiscoveringSources] = useState(false);
-  const [activeTab, setActiveTab] = useState<'sources' | 'proposals'>('sources');
+  const [activeTab, setActiveTab] = useState<'sources' | 'selected' | 'runs' | 'rejected' | 'proposals'>('sources');
   const [selectedSourceIds, setSelectedSourceIds] = useState<string[]>([]);
   const [bulkProcessing, setBulkProcessing] = useState(false);
 
@@ -43,7 +44,7 @@ export function SourcesManagement() {
     }
   };
 
-  // Query sources
+  // Query all sources
   const sourcesQ = useQuery({
     queryKey: ['sources', search, categoryFilter, statusFilter],
     queryFn: async () => {
@@ -57,6 +58,36 @@ export function SourcesManagement() {
     },
   });
 
+  // Query routed/selected sources for the profile
+  const selectedSourcesQ = useQuery({
+    queryKey: ['sources-selected'],
+    queryFn: async () => {
+      const res = await fetch('/api/sources-selected');
+      if (!res.ok) return { sources: [] };
+      return res.json();
+    },
+  });
+
+  // Query source run logs
+  const runsQ = useQuery({
+    queryKey: ['sources-runs'],
+    queryFn: async () => {
+      const res = await fetch('/api/sources/runs?limit=40');
+      if (!res.ok) return { runs: [] };
+      return res.json();
+    },
+  });
+
+  // Query rejected candidates audit log
+  const rejectedQ = useQuery({
+    queryKey: ['sources-rejected'],
+    queryFn: async () => {
+      const res = await fetch('/api/sources/rejected?limit=50');
+      if (!res.ok) return { rejected: [] };
+      return res.json();
+    },
+  });
+
   // Query discovered proposals
   const proposalsQ = useQuery({
     queryKey: ['discovered-sources'],
@@ -66,6 +97,21 @@ export function SourcesManagement() {
       return res.json();
     },
   });
+
+  const setSourceMode = async (id: string, mode: 'AUTO' | 'PINNED' | 'EXCLUDED') => {
+    try {
+      const res = await fetch(`/api/sources/${id}/mode`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ mode, profileId: 'primary' }),
+      });
+      if (!res.ok) throw new Error('Failed to update source mode');
+      qc.invalidateQueries({ queryKey: ['sources-selected'] });
+      qc.invalidateQueries({ queryKey: ['sources'] });
+    } catch (e: any) {
+      alert(e.message);
+    }
+  };
 
   const toggleSource = async (id: string, currentEnabled: boolean) => {
     try {
@@ -98,8 +144,10 @@ export function SourcesManagement() {
       const res = await fetch(`/api/sources/${id}/sync`, { method: 'POST' });
       const data = await res.json();
       if (!res.ok) throw new Error(data.error || 'Failed to sync source');
-      alert(`Sync completed for ${data.name}:\nDiscovered: ${data.discoveredCount} listings\nIndexed into Workspace: ${data.indexedCount ?? data.discoveredCount} jobs\nTotal in Registry: ${data.totalIndexed ?? data.totalDiscovered ?? 0} jobs.`);
+      alert(`Sync completed for ${data.name}:\nDiscovered: ${data.discoveredCount} listings\nValidated & Saved: ${data.savedCount ?? data.indexedCount ?? 0} jobs\nYield Rate: ${data.yieldRate ? Math.round(data.yieldRate * 100) + '%' : '100%'}\nTotal in Registry: ${data.totalIndexed ?? data.totalDiscovered ?? 0} jobs.`);
       qc.invalidateQueries({ queryKey: ['sources'] });
+      qc.invalidateQueries({ queryKey: ['sources-runs'] });
+      qc.invalidateQueries({ queryKey: ['sources-rejected'] });
       qc.invalidateQueries({ queryKey: ['indexing-overview'] });
     } catch (e: any) {
       alert(`Sync error: ${e.message}`);
@@ -139,16 +187,20 @@ export function SourcesManagement() {
   };
 
   const sourcesList = sourcesQ.data?.sources || [];
+  const selectedSourcesList = selectedSourcesQ.data?.sources || [];
+  const selectedMap = new Map<string, any>(selectedSourcesList.map((item: any) => [item.source.id, item]));
   const proposalsList = proposalsQ.data?.proposals || [];
+  const runsList = runsQ.data?.runs || [];
+  const rejectedList = rejectedQ.data?.rejected || [];
 
   return (
     <main className="page-wrap">
       <header className="page-head">
         <div>
           <div className="eyebrow">KaziScout Source Registry</div>
-          <h1 className="page-title">Source Management & Health</h1>
+          <h1 className="page-title">Source Management & Router</h1>
           <p className="page-sub">
-            Verified recruitment endpoints covering Kenyan job boards, PSC/GHRIS, 47 County Governments, NGOs, Tech employers, and Remote boards.
+            Verified recruitment endpoints covering Kenyan job boards, PSC/GHRIS, 47 County Governments, NGOs, Tech employers, and Remote boards with profile-adaptive routing.
           </p>
         </div>
         <div className="head-actions">
@@ -166,6 +218,24 @@ export function SourcesManagement() {
           onClick={() => setActiveTab('sources')}
         >
           <Globe size={14} /> Registered Sources ({sourcesQ.data?.total ?? sourcesList.length})
+        </button>
+        <button
+          className={`btn ${activeTab === 'selected' ? 'btn-primary' : 'btn-quiet'}`}
+          onClick={() => setActiveTab('selected')}
+        >
+          <UserCheck size={14} /> Selected For You ({selectedSourcesList.length})
+        </button>
+        <button
+          className={`btn ${activeTab === 'runs' ? 'btn-primary' : 'btn-quiet'}`}
+          onClick={() => setActiveTab('runs')}
+        >
+          <Activity size={14} /> Run Logs ({runsList.length})
+        </button>
+        <button
+          className={`btn ${activeTab === 'rejected' ? 'btn-primary' : 'btn-quiet'}`}
+          onClick={() => setActiveTab('rejected')}
+        >
+          <Trash2 size={14} /> Discard Audit Log ({rejectedList.length})
         </button>
         <button
           className={`btn ${activeTab === 'proposals' ? 'btn-primary' : 'btn-quiet'}`}
@@ -271,11 +341,10 @@ export function SourcesManagement() {
                         />
                       </th>
                       <th>Source Name</th>
-                      <th>Category</th>
-                      <th>Adapter</th>
-                      <th>Status</th>
-                      <th>Indexed</th>
-                      <th>Last Checked</th>
+                      <th>Kind & Scope</th>
+                      <th>Status & Health</th>
+                      <th>Quality & Yield</th>
+                      <th>Profile Mode</th>
                       <th>Actions</th>
                     </tr>
                   </thead>
@@ -285,9 +354,11 @@ export function SourcesManagement() {
                       const isDegraded = s.status === 'DEGRADED' || s.status === 'ERROR';
                       const isActive = s.status === 'ACTIVE' || s.status === 'READY';
                       const isSearchOnly = s.status === 'SEARCH_ONLY';
+                      const isDefunct = Boolean(s.isDefunct || s.status === 'UNSUPPORTED');
+                      const sel = selectedMap.get(s.id);
 
                       return (
-                        <tr key={s.id}>
+                        <tr key={s.id} style={{ opacity: isDefunct ? 0.6 : 1 }}>
                           <td style={{ width: 40 }}>
                             <input
                               type="checkbox"
@@ -299,7 +370,18 @@ export function SourcesManagement() {
                             />
                           </td>
                           <td>
-                            <div style={{ fontWeight: 600 }}>{s.name}</div>
+                            <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
+                              <span style={{ fontWeight: 600 }}>{s.name}</span>
+                              {isDefunct && (
+                                <span className="badge badge-red" style={{ fontSize: 9 }}>DEFUNCT</span>
+                              )}
+                              {sel?.mode === 'PINNED' && (
+                                <span className="badge badge-green" style={{ fontSize: 9 }} title="Pinned for candidate profile">PINNED</span>
+                              )}
+                              {sel?.mode === 'EXCLUDED' && (
+                                <span className="badge badge-amber" style={{ fontSize: 9 }} title="Excluded for candidate profile">EXCLUDED</span>
+                              )}
+                            </div>
                             <a
                               href={s.canonicalUrl}
                               target="_blank"
@@ -310,34 +392,63 @@ export function SourcesManagement() {
                               {s.canonicalUrl.replace(/^https?:\/\//, '').slice(0, 35)}
                               <ExternalLink size={10} />
                             </a>
+                            {sel?.reason && (
+                              <div className="field-hint" style={{ color: '#10b981', fontSize: 10, marginTop: 2 }}>
+                                Selected: {sel.reason}
+                              </div>
+                            )}
                           </td>
                           <td>
                             <span className="badge" style={{ fontSize: 10 }}>
-                              {s.category.replace(/_/g, ' ')}
+                              {(s.sourceKind || s.category || 'GENERAL_BOARD').replace(/_/g, ' ')}
                             </span>
-                          </td>
-                          <td className="mono" style={{ fontSize: 11 }}>
-                            {s.integrationType || s.connectorType}
+                            <div className="field-hint" style={{ fontSize: 10, marginTop: 2 }}>
+                              {Array.isArray(s.countries) ? s.countries.join(', ') : (s.country || 'KE')}
+                            </div>
                           </td>
                           <td>
                             <span
-                              className={`badge ${isActive ? 'badge-green' : isDegraded ? 'badge-red' : isSearchOnly ? 'badge-amber' : ''}`}
+                              className={`badge ${isDefunct ? 'badge-red' : isActive ? 'badge-green' : isDegraded ? 'badge-red' : isSearchOnly ? 'badge-amber' : ''}`}
                               style={{ fontSize: 10 }}
                             >
-                              {s.status}
+                              {isDefunct ? 'UNSUPPORTED' : s.status}
                             </span>
                             {s.lastErrorMessage && (
-                              <div className="field-hint" style={{ color: '#ef4444', fontSize: 10, maxWidth: 200, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }} title={s.lastErrorMessage}>
+                              <div className="field-hint" style={{ color: '#ef4444', fontSize: 10, maxWidth: 180, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }} title={s.lastErrorMessage}>
                                 {s.lastErrorMessage}
                               </div>
                             )}
                           </td>
-                          <td style={{ fontSize: 12 }}>
-                            <div><strong>{s.totalIndexed ?? s.total_indexed ?? 0}</strong> jobs</div>
-                            <span className="field-hint">({s.totalDiscovered ?? s.total_discovered ?? 0} found)</span>
+                          <td style={{ fontSize: 11 }}>
+                            <div>
+                              <strong>{s.yieldRate != null ? `${Math.round(s.yieldRate * 100)}%` : '—'}</strong> yield
+                            </div>
+                            <span className="field-hint">{s.totalIndexed ?? 0} saved / {s.totalDiscovered ?? 0} found</span>
+                            {s.rejectReasons && Object.keys(s.rejectReasons).length > 0 && (
+                              <div className="field-hint" style={{ color: '#f59e0b', fontSize: 10 }} title={JSON.stringify(s.rejectReasons)}>
+                                Rejects: {Object.entries(s.rejectReasons).map(([k, v]) => `${k}(${v})`).slice(0, 2).join(', ')}
+                              </div>
+                            )}
                           </td>
-                          <td className="muted" style={{ fontSize: 11 }}>
-                            {s.lastCheckedAt ? new Date(s.lastCheckedAt).toLocaleDateString() : 'Never'}
+                          <td>
+                            <div style={{ display: 'flex', gap: 4 }}>
+                              <button
+                                className={`btn ${sel?.mode === 'PINNED' ? 'btn-primary' : 'btn-quiet'}`}
+                                style={{ fontSize: 10, padding: '2px 6px' }}
+                                onClick={() => setSourceMode(s.id, sel?.mode === 'PINNED' ? 'AUTO' : 'PINNED')}
+                                title="Pin source for profile"
+                              >
+                                <Pin size={10} /> Pin
+                              </button>
+                              <button
+                                className={`btn ${sel?.mode === 'EXCLUDED' ? 'btn-danger' : 'btn-quiet'}`}
+                                style={{ fontSize: 10, padding: '2px 6px' }}
+                                onClick={() => setSourceMode(s.id, sel?.mode === 'EXCLUDED' ? 'AUTO' : 'EXCLUDED')}
+                                title="Exclude source for profile"
+                              >
+                                <EyeOff size={10} /> Exclude
+                              </button>
+                            </div>
                           </td>
                           <td>
                             <div style={{ display: 'flex', gap: 6, alignItems: 'center' }}>
@@ -379,6 +490,188 @@ export function SourcesManagement() {
             )}
           </section>
         </>
+      ) : activeTab === 'selected' ? (
+        /* Selected For You Tab */
+        <section className="panel" style={{ marginTop: 14 }}>
+          <div className="panel-head">
+            <span className="panel-title">Personalized Profile Source Selection</span>
+            <span className="field-hint">Automatically routed based on your occupation taxonomy, target industries, locations, and work arrangements</span>
+          </div>
+          <div className="panel-body">
+            {selectedSourcesList.length === 0 ? (
+              <div style={{ padding: 24, textAlign: 'center' }}>
+                <p>No sources routed yet. Configure your candidate profile or add skills to trigger personalized source routing.</p>
+              </div>
+            ) : (
+              <div className="table-wrap">
+                <table className="data-table">
+                  <thead>
+                    <tr>
+                      <th>Source Name</th>
+                      <th>Relevance Score</th>
+                      <th>Selection Reason</th>
+                      <th>Mode</th>
+                      <th>Actions</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {selectedSourcesList.map((item: any) => (
+                      <tr key={item.source.id}>
+                        <td>
+                          <strong>{item.source.name}</strong>
+                          <div className="field-hint">{item.source.canonicalUrl}</div>
+                        </td>
+                        <td>
+                          <span className="badge badge-green" style={{ fontSize: 11 }}>
+                            {Math.round(item.relevanceScore)} / 100
+                          </span>
+                        </td>
+                        <td style={{ maxWidth: 350, fontSize: 12 }}>
+                          {item.reason}
+                        </td>
+                        <td>
+                          <span className={`badge ${item.mode === 'PINNED' ? 'badge-green' : item.mode === 'EXCLUDED' ? 'badge-red' : ''}`}>
+                            {item.mode}
+                          </span>
+                        </td>
+                        <td>
+                          <div style={{ display: 'flex', gap: 6 }}>
+                            <button
+                              className={`btn ${item.mode === 'PINNED' ? 'btn-primary' : 'btn-quiet'}`}
+                              style={{ fontSize: 11, padding: '3px 8px' }}
+                              onClick={() => setSourceMode(item.source.id, item.mode === 'PINNED' ? 'AUTO' : 'PINNED')}
+                            >
+                              <Pin size={11} /> {item.mode === 'PINNED' ? 'Unpin' : 'Pin'}
+                            </button>
+                            <button
+                              className={`btn ${item.mode === 'EXCLUDED' ? 'btn-danger' : 'btn-quiet'}`}
+                              style={{ fontSize: 11, padding: '3px 8px' }}
+                              onClick={() => setSourceMode(item.source.id, item.mode === 'EXCLUDED' ? 'AUTO' : 'EXCLUDED')}
+                            >
+                              <EyeOff size={11} /> {item.mode === 'EXCLUDED' ? 'Restore' : 'Exclude'}
+                            </button>
+                          </div>
+                        </td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+            )}
+          </div>
+        </section>
+      ) : activeTab === 'runs' ? (
+        /* Source Run Logs Tab */
+        <section className="panel" style={{ marginTop: 14 }}>
+          <div className="panel-head">
+            <span className="panel-title">Source Crawl & Execution Logs</span>
+            <span className="field-hint">Granular audit log of fetched, parsed, validated, and saved jobs per run</span>
+          </div>
+          <div className="panel-body">
+            {runsList.length === 0 ? (
+              <div style={{ padding: 24, textAlign: 'center' }}>
+                <p>No recent source runs recorded. Click &quot;Sync&quot; on any source to trigger an execution.</p>
+              </div>
+            ) : (
+              <div className="table-wrap">
+                <table className="data-table">
+                  <thead>
+                    <tr>
+                      <th>Source ID</th>
+                      <th>Started</th>
+                      <th>Duration</th>
+                      <th>Fetched</th>
+                      <th>Parsed</th>
+                      <th>Validated</th>
+                      <th>Saved</th>
+                      <th>Reject Reasons</th>
+                      <th>Status / Error</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {runsList.map((r: any) => (
+                      <tr key={r.id}>
+                        <td><strong>{r.sourceId}</strong></td>
+                        <td className="muted" style={{ fontSize: 11 }}>
+                          {r.startedAt ? new Date(r.startedAt).toLocaleTimeString() : '—'}
+                        </td>
+                        <td style={{ fontSize: 11 }}>{r.durationMs ? `${r.durationMs}ms` : '—'}</td>
+                        <td>{r.fetched ?? 0}</td>
+                        <td>{r.parsed ?? 0}</td>
+                        <td><strong style={{ color: '#10b981' }}>{r.validated ?? 0}</strong></td>
+                        <td><strong>{r.saved ?? 0}</strong></td>
+                        <td style={{ fontSize: 11, maxWidth: 200 }}>
+                          {r.rejectReasons && Object.keys(r.rejectReasons).length > 0
+                            ? Object.entries(r.rejectReasons).map(([k, v]) => `${k}: ${v}`).join(', ')
+                            : 'None'}
+                        </td>
+                        <td>
+                          {r.error ? (
+                            <span className="badge badge-red" title={r.error}>ERROR</span>
+                          ) : (
+                            <span className="badge badge-green">SUCCESS</span>
+                          )}
+                        </td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+            )}
+          </div>
+        </section>
+      ) : activeTab === 'rejected' ? (
+        /* Discard Audit Log Tab */
+        <section className="panel" style={{ marginTop: 14 }}>
+          <div className="panel-head">
+            <span className="panel-title">Discard Audit Log (Hard Validation Gate)</span>
+            <span className="field-hint">Rejected candidates that failed gate criteria (stub queries, search URLs, missing employers, short descriptions, or expired posts)</span>
+          </div>
+          <div className="panel-body">
+            {rejectedList.length === 0 ? (
+              <div style={{ padding: 24, textAlign: 'center' }}>
+                <p>No discarded candidate records. All parsed jobs passed the hard gate.</p>
+              </div>
+            ) : (
+              <div className="table-wrap">
+                <table className="data-table">
+                  <thead>
+                    <tr>
+                      <th>Job Title</th>
+                      <th>Source</th>
+                      <th>Rejection Reason</th>
+                      <th>URL</th>
+                      <th>Discarded At</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {rejectedList.map((rec: any) => (
+                      <tr key={rec.id}>
+                        <td>
+                          <strong>{rec.title || 'Untitled Listing'}</strong>
+                        </td>
+                        <td><span className="badge">{rec.sourceId}</span></td>
+                        <td>
+                          <span className="badge badge-amber" style={{ fontSize: 11 }}>
+                            {rec.reason}
+                          </span>
+                        </td>
+                        <td style={{ fontSize: 11, maxWidth: 250, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                          <a href={rec.url} target="_blank" rel="noreferrer">
+                            {rec.url}
+                          </a>
+                        </td>
+                        <td className="muted" style={{ fontSize: 11 }}>
+                          {rec.createdAt ? new Date(rec.createdAt).toLocaleTimeString() : '—'}
+                        </td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+            )}
+          </div>
+        </section>
       ) : (
         /* Proposals Tab */
         <section className="panel" style={{ marginTop: 14 }}>
@@ -611,7 +904,7 @@ export function IndexingControl() {
 
 export function CountyRegistryView() {
   const [search, setSearch] = useState('');
-  const [editingCounty, setEditingCounty] = useState<any | null>(null);
+  const [viewMode, setViewMode] = useState<'counties' | 'adminRegions'>('counties');
 
   const countiesQ = useQuery({
     queryKey: ['counties'],
@@ -622,88 +915,150 @@ export function CountyRegistryView() {
     },
   });
 
+  const adminRegionsQ = useQuery({
+    queryKey: ['admin-regions'],
+    queryFn: async () => {
+      const res = await fetch('/api/admin-regions');
+      if (!res.ok) return { regions: [] };
+      return res.json();
+    },
+  });
+
   const countiesList = (countiesQ.data?.counties || []).filter((c: any) =>
     search ? c.name.toLowerCase().includes(search.toLowerCase()) || String(c.code).includes(search) : true
+  );
+
+  const adminRegionsList = (adminRegionsQ.data?.regions || []).filter((r: any) =>
+    search ? r.name.toLowerCase().includes(search.toLowerCase()) || String(r.code).includes(search) || r.countryCode.toLowerCase().includes(search.toLowerCase()) : true
   );
 
   return (
     <main className="page-wrap">
       <header className="page-head">
         <div>
-          <div className="eyebrow">Devolved Governance</div>
-          <h1 className="page-title">Kenyan 47 County Governments Registry</h1>
+          <div className="eyebrow">Public Sector Governance</div>
+          <h1 className="page-title">Administrative Regions & Devolved Portals</h1>
           <p className="page-sub">
-            Extensible recruitment portal coverage covering all 47 counties from County 001 (Mombasa) to County 047 (Nairobi City).
+            Global and devolved recruitment portal coverage spanning all 47 Kenyan Counties and generalized regional admin directories.
           </p>
         </div>
       </header>
 
-      <div className="toolbar">
+      <div className="toolbar" style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
         <div className="search-field" style={{ maxWidth: 350 }}>
           <Search size={14} />
           <input
-            placeholder="Search county name or code (001–047)…"
+            placeholder="Search region, county name or code…"
             value={search}
             onChange={e => setSearch(e.target.value)}
           />
+        </div>
+        <div style={{ display: 'flex', gap: 6 }}>
+          <button
+            className={`btn ${viewMode === 'counties' ? 'btn-primary' : 'btn-quiet'}`}
+            onClick={() => setViewMode('counties')}
+          >
+            Kenyan 47 Counties ({countiesList.length})
+          </button>
+          <button
+            className={`btn ${viewMode === 'adminRegions' ? 'btn-primary' : 'btn-quiet'}`}
+            onClick={() => setViewMode('adminRegions')}
+          >
+            Admin Regions ({adminRegionsList.length})
+          </button>
         </div>
       </div>
 
       <section className="panel" style={{ marginTop: 14 }}>
         <div className="table-wrap">
-          <table className="data-table">
-            <thead>
-              <tr>
-                <th>Code</th>
-                <th>County</th>
-                <th>Capital</th>
-                <th>Official Website</th>
-                <th>Recruitment / CPSB Portal</th>
-                <th>Status</th>
-              </tr>
-            </thead>
-            <tbody>
-              {countiesList.map((c: any) => (
-                <tr key={c.id}>
-                  <td className="mono" style={{ fontWeight: 700 }}>
-                    {String(c.code).padStart(3, '0')}
-                  </td>
-                  <td>
-                    <strong>{c.name}</strong>
-                  </td>
-                  <td className="muted">{c.capital || '—'}</td>
-                  <td>
-                    {c.officialWebsite ? (
-                      <a href={c.officialWebsite} target="_blank" rel="noreferrer" style={{ display: 'inline-flex', alignItems: 'center', gap: 4, textDecoration: 'none' }}>
-                        {c.officialWebsite.replace(/^https?:\/\//, '')}
-                        <ExternalLink size={10} />
-                      </a>
-                    ) : (
-                      '—'
-                    )}
-                  </td>
-                  <td>
-                    {c.recruitmentUrl || c.cpsbUrl ? (
-                      <a
-                        href={c.recruitmentUrl || c.cpsbUrl}
-                        target="_blank"
-                        rel="noreferrer"
-                        className="badge badge-green"
-                        style={{ display: 'inline-flex', alignItems: 'center', gap: 4, textDecoration: 'none' }}
-                      >
-                        Recruitment Endpoint <ExternalLink size={10} />
-                      </a>
-                    ) : (
-                      <span className="field-hint">Public Announcement Discovery</span>
-                    )}
-                  </td>
-                  <td>
-                    <span className="badge">{c.status}</span>
-                  </td>
+          {viewMode === 'counties' ? (
+            <table className="data-table">
+              <thead>
+                <tr>
+                  <th>Code</th>
+                  <th>County</th>
+                  <th>Capital</th>
+                  <th>Official Website</th>
+                  <th>Recruitment / CPSB Portal</th>
+                  <th>Status</th>
                 </tr>
-              ))}
-            </tbody>
-          </table>
+              </thead>
+              <tbody>
+                {countiesList.map((c: any) => (
+                  <tr key={c.id}>
+                    <td className="mono" style={{ fontWeight: 700 }}>
+                      {String(c.code).padStart(3, '0')}
+                    </td>
+                    <td>
+                      <strong>{c.name}</strong>
+                    </td>
+                    <td className="muted">{c.capital || '—'}</td>
+                    <td>
+                      {c.officialWebsite ? (
+                        <a href={c.officialWebsite} target="_blank" rel="noreferrer" style={{ display: 'inline-flex', alignItems: 'center', gap: 4, textDecoration: 'none' }}>
+                          {c.officialWebsite.replace(/^https?:\/\//, '')}
+                          <ExternalLink size={10} />
+                        </a>
+                      ) : (
+                        '—'
+                      )}
+                    </td>
+                    <td>
+                      {c.recruitmentUrl || c.cpsbUrl ? (
+                        <a
+                          href={c.recruitmentUrl || c.cpsbUrl}
+                          target="_blank"
+                          rel="noreferrer"
+                          className="badge badge-green"
+                          style={{ display: 'inline-flex', alignItems: 'center', gap: 4, textDecoration: 'none' }}
+                        >
+                          Recruitment Endpoint <ExternalLink size={10} />
+                        </a>
+                      ) : (
+                        <span className="field-hint">Public Announcement Discovery</span>
+                      )}
+                    </td>
+                    <td>
+                      <span className="badge">{c.status}</span>
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          ) : (
+            <table className="data-table">
+              <thead>
+                <tr>
+                  <th>Country</th>
+                  <th>Level</th>
+                  <th>Code</th>
+                  <th>Region Name</th>
+                  <th>Recruitment Endpoint</th>
+                  <th>Status</th>
+                </tr>
+              </thead>
+              <tbody>
+                {adminRegionsList.map((r: any) => (
+                  <tr key={r.id}>
+                    <td><span className="badge">{r.countryCode}</span></td>
+                    <td className="mono" style={{ fontSize: 11 }}>{r.level}</td>
+                    <td className="mono" style={{ fontWeight: 600 }}>{r.code}</td>
+                    <td><strong>{r.name}</strong></td>
+                    <td>
+                      {r.recruitmentUrl ? (
+                        <a href={r.recruitmentUrl} target="_blank" rel="noreferrer" className="badge badge-green" style={{ display: 'inline-flex', alignItems: 'center', gap: 4 }}>
+                          Portal <ExternalLink size={10} />
+                        </a>
+                      ) : (
+                        <span className="field-hint">—</span>
+                      )}
+                    </td>
+                    <td><span className="badge">{r.status}</span></td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          )}
         </div>
       </section>
     </main>
