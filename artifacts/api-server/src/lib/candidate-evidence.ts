@@ -120,6 +120,78 @@ export async function callGeminiCandidateEvidence(
   throw lastError || new Error("Failed to call Gemini for candidate evidence");
 }
 
+export async function callAgentRouterCandidateEvidence(
+  apiKey: string,
+  modelName: string,
+  prompt: string,
+  baseUrl?: string | null,
+): Promise<unknown> {
+  const cleanModel = normalizeModelName(modelName);
+  const rootUrl = (baseUrl?.trim() || "https://agentrouter.org/v1").replace(/\/$/, "");
+  const res = await fetch(`${rootUrl}/chat/completions`, {
+    method: "POST",
+    headers: {
+      Authorization: `Bearer ${apiKey.trim()}`,
+      "Content-Type": "application/json",
+    },
+    body: JSON.stringify({
+      model: cleanModel,
+      messages: [
+        { role: "system", content: "You are a certified Lead Talent Assessor. Respond with valid JSON matching the requested schema." },
+        { role: "user", content: prompt },
+      ],
+      temperature: 0.1,
+    }),
+    signal: AbortSignal.timeout(30_000),
+  });
+
+  if (!res.ok) throw new Error(`AgentRouter evidence error (${res.status}): ${await res.text()}`);
+  const data = (await res.json()) as any;
+  const rawText = data?.choices?.[0]?.message?.content;
+  if (!rawText) throw new Error("Empty response from AgentRouter");
+  const cleaned = rawText.replace(/^```json\s*/i, "").replace(/^```\s*/i, "").replace(/\s*```$/i, "").trim();
+  const parsed = JSON.parse(cleaned);
+  return { ...parsed, modelUsed: cleanModel };
+}
+
+export async function callOpenAiCandidateEvidence(
+  apiKey: string,
+  modelName: string,
+  prompt: string,
+): Promise<unknown> {
+  const cleanModel = normalizeModelName(modelName);
+  const isReasoning = cleanModel.startsWith("o1") || cleanModel.startsWith("o3");
+  const payload: any = {
+    model: cleanModel,
+    messages: [
+      { role: isReasoning ? "developer" : "system", content: "You are a certified Lead Talent Assessor. Respond with valid JSON matching the requested schema." },
+      { role: "user", content: prompt },
+    ],
+  };
+  if (!isReasoning) {
+    payload.temperature = 0.1;
+    payload.response_format = { type: "json_object" };
+  }
+
+  const res = await fetch("https://api.openai.com/v1/chat/completions", {
+    method: "POST",
+    headers: {
+      Authorization: `Bearer ${apiKey.trim()}`,
+      "Content-Type": "application/json",
+    },
+    body: JSON.stringify(payload),
+    signal: AbortSignal.timeout(30_000),
+  });
+
+  if (!res.ok) throw new Error(`OpenAI evidence error (${res.status}): ${await res.text()}`);
+  const data = (await res.json()) as any;
+  const rawText = data?.choices?.[0]?.message?.content;
+  if (!rawText) throw new Error("Empty response from OpenAI");
+  const cleaned = rawText.replace(/^```json\s*/i, "").replace(/^```\s*/i, "").replace(/\s*```$/i, "").trim();
+  const parsed = JSON.parse(cleaned);
+  return { ...parsed, modelUsed: cleanModel };
+}
+
 export function buildDeterministicEvidence(
   profile: any,
   cvText: string,
@@ -167,16 +239,16 @@ export function buildDeterministicEvidence(
     ? profile.targetRoles
     : [];
 
-  const skills = Array.isArray(profile?.skills) && profile.skills.length > 0
-    ? profile.skills
-    : [];
+  const skills = Array.isArray(profile?.skills) ? profile.skills : [];
+  const techs = Array.isArray(profile?.technologies) ? profile.technologies : [];
+  const combinedSkills = Array.from(new Set([...skills, ...techs]));
 
   return {
     fullName: profile?.fullName || "Candidate",
     yearsExperience: calculatedYears ?? 1,
     targetRoleFamilies: roles,
-    demonstratedTechnicalSkills: skills,
-    selfReportedSkills: skills,
+    demonstratedTechnicalSkills: combinedSkills,
+    selfReportedSkills: combinedSkills,
     verifiedWorkExperience: [],
     education: parsedEducation,
     certifications: parsedCertifications,
@@ -217,26 +289,21 @@ export async function getOrGenerateCandidateEvidence(
     return cachedEvidence.profile;
   }
 
-  // Check integration settings for Gemini
+  // Check all available AI integrations (AgentRouter, Gemini, OpenAI)
   const integrations = await db.select().from(integrationSettingsTable);
-  const geminiRow = integrations.find((i) => i.provider === "gemini" && i.model);
-
-  if (geminiRow?.encryptedCredentials && geminiRow?.model) {
-    try {
-      const creds = decryptCredentials<{ apiKey?: string }>(geminiRow.encryptedCredentials);
-      if (creds.apiKey) {
-        const prompt = `You are a certified Lead Talent Assessor.
+  const prompt = `You are a certified Lead Talent Assessor.
 Extract and compile an objective, rigorously VERIFIED CANDIDATE EVIDENCE PROFILE from the candidate's actual master CV and profile.
+The candidate can belong to ANY professional field (Medicine & Healthcare, Law, Finance, Engineering, Technology, Education, Trades, Operations, etc.).
 
 STRICT VERIFICATION DIRECTIVES:
 1. Ground all facts strictly in the provided CV text. Do NOT invent, assume, or hallucinate credentials, degrees, or experience.
-2. Extract the candidate's authentic career field (medical, legal, financial, engineering, technical, academic, etc.).
+2. Extract the candidate's authentic career field and genuine qualifications.
 3. List demonstrated skills explicitly evidenced in the CV.
 4. List self-reported skills from the candidate profile that are not directly mentioned in the CV.
 5. Identify any explicit limitations or stated geographical constraints.
 
 Candidate Master CV Text (VERIFIED FROM STORAGE):
-${dossier.text.slice(0, 6000)}
+${dossier.text.slice(0, 7000)}
 
 Candidate Profile Record:
 - Full Name: ${profile?.fullName || "Candidate"}
@@ -275,6 +342,41 @@ Output MUST be a single JSON object strictly matching this schema:
   "limitationsOrMissingInfo": string[]
 }`;
 
+  const agentRouterRow = integrations.find((i) => i.provider === "agentrouter" && i.model);
+  const geminiRow = integrations.find((i) => i.provider === "gemini" && i.model);
+  const openAiRow = integrations.find((i) => i.provider === "openai" && i.model);
+
+  // 1. Try Agent Router
+  if (agentRouterRow?.encryptedCredentials && agentRouterRow?.model) {
+    try {
+      const creds = decryptCredentials<{ apiKey?: string }>(agentRouterRow.encryptedCredentials);
+      if (creds.apiKey) {
+        const rawJson = (await callAgentRouterCandidateEvidence(creds.apiKey, agentRouterRow.model, prompt, agentRouterRow.baseUrl)) as any;
+        const parsed = candidateEvidenceProfileSchema.safeParse({
+          ...(typeof rawJson === "object" && rawJson !== null ? rawJson : {}),
+          evidenceFingerprint,
+          cvDocumentId: dossier.cvRecord.id,
+          cvFileName: dossier.cvRecord.fileName,
+          generatedAt: new Date().toISOString(),
+          source: "ai",
+          providerUsed: "agentrouter",
+          modelUsed: rawJson?.modelUsed || agentRouterRow.model,
+        });
+        if (parsed.success) {
+          cachedEvidence = { fingerprint: evidenceFingerprint, profile: parsed.data };
+          return parsed.data;
+        }
+      }
+    } catch (arErr) {
+      console.warn("[CandidateEvidence] AgentRouter note:", arErr);
+    }
+  }
+
+  // 2. Try Gemini
+  if (geminiRow?.encryptedCredentials && geminiRow?.model) {
+    try {
+      const creds = decryptCredentials<{ apiKey?: string }>(geminiRow.encryptedCredentials);
+      if (creds.apiKey) {
         const rawJson = (await callGeminiCandidateEvidence(creds.apiKey, geminiRow.model, prompt)) as any;
         const parsed = candidateEvidenceProfileSchema.safeParse({
           ...(typeof rawJson === "object" && rawJson !== null ? rawJson : {}),
@@ -290,12 +392,36 @@ Output MUST be a single JSON object strictly matching this schema:
         if (parsed.success) {
           cachedEvidence = { fingerprint: evidenceFingerprint, profile: parsed.data };
           return parsed.data;
-        } else {
-          console.warn("[CandidateEvidence] Schema validation error:", parsed.error.issues);
         }
       }
     } catch (geminiErr) {
-      console.warn("[CandidateEvidence] Gemini extraction note:", geminiErr);
+      console.warn("[CandidateEvidence] Gemini note:", geminiErr);
+    }
+  }
+
+  // 3. Try OpenAI
+  if (openAiRow?.encryptedCredentials && openAiRow?.model) {
+    try {
+      const creds = decryptCredentials<{ apiKey?: string }>(openAiRow.encryptedCredentials);
+      if (creds.apiKey) {
+        const rawJson = (await callOpenAiCandidateEvidence(creds.apiKey, openAiRow.model, prompt)) as any;
+        const parsed = candidateEvidenceProfileSchema.safeParse({
+          ...(typeof rawJson === "object" && rawJson !== null ? rawJson : {}),
+          evidenceFingerprint,
+          cvDocumentId: dossier.cvRecord.id,
+          cvFileName: dossier.cvRecord.fileName,
+          generatedAt: new Date().toISOString(),
+          source: "ai",
+          providerUsed: "openai",
+          modelUsed: rawJson?.modelUsed || openAiRow.model,
+        });
+        if (parsed.success) {
+          cachedEvidence = { fingerprint: evidenceFingerprint, profile: parsed.data };
+          return parsed.data;
+        }
+      }
+    } catch (openAiErr) {
+      console.warn("[CandidateEvidence] OpenAI note:", openAiErr);
     }
   }
 

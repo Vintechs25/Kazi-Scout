@@ -23,8 +23,8 @@ import { getVerifiedMasterCv } from "./cv-storage";
 import { getOrGenerateCandidateEvidence, type CandidateEvidenceProfile } from "./candidate-evidence";
 
 export const locationRestrictionsSchema = z.object({
-  allowedCountries: z.array(z.string()).default(["Kenya"]),
-  allowedCities: z.array(z.string()).default(["Nairobi"]),
+  allowedCountries: z.array(z.string()).default([]),
+  allowedCities: z.array(z.string()).default([]),
   allowWorldwideRemote: z.boolean().default(true),
   blockedRegions: z.array(z.string()).default([
     "US only",
@@ -41,21 +41,9 @@ export const searchDirectiveSchema = z.object({
   searchQueries: z.array(z.string()).min(1),
   requiredSkills: z.array(z.string()).default([]),
   preferredSkills: z.array(z.string()).default([]),
-  suitableExperienceLevels: z.array(z.string()).default(["Entry Level", "Junior", "0-2 years"]),
-  maxExperienceYears: z.number().int().min(0).max(30).default(2),
-  seniorityExclusions: z.array(z.string()).default([
-    "senior",
-    "lead",
-    "principal",
-    "staff",
-    "head of",
-    "director",
-    "vp",
-    "chief",
-    "cto",
-    "architect",
-    "manager",
-  ]),
+  suitableExperienceLevels: z.array(z.string()).default([]),
+  maxExperienceYears: z.number().int().min(0).max(50).default(10),
+  seniorityExclusions: z.array(z.string()).default([]),
   locationRestrictions: locationRestrictionsSchema,
   workAuthorizationNotes: z.string().nullable().default(null),
   disqualificationRules: z.array(z.string()).default([]),
@@ -98,17 +86,18 @@ function computeCacheKey(
 
 /**
  * Deterministic directive fallback when AI providers are unavailable
+ * Grounded 100% in candidate's actual profile, roles, and skills
  */
 export function generateDeterministicDirective(
   profile: any,
-  evidenceFingerprint: string,
-  searchProfiles: any[],
-  cacheKey: string,
+  evidenceFingerprint = "",
+  searchProfiles: any[] = [],
+  cacheKey = "default",
   cvVerified = false,
 ): SearchDirective {
   const roles: string[] = [];
   if (profile?.targetRoles && Array.isArray(profile.targetRoles)) {
-    roles.push(...profile.targetRoles);
+    roles.push(...profile.targetRoles.filter(Boolean));
   }
   for (const sp of searchProfiles) {
     if (sp.name && !roles.includes(sp.name)) roles.push(sp.name);
@@ -117,77 +106,78 @@ export function generateDeterministicDirective(
     }
   }
 
-  const initialRoleFamilies = [
-    "IT Support Specialist / IT Support Engineer",
-    "ICT Officer / ICT Support",
-    "Desktop Support / Technical Support",
-    "Junior Systems Administrator",
-    "Junior Software Developer / Web Developer / Full-Stack Developer",
-  ];
+  // If no target roles found anywhere, fallback to generic role title
+  if (roles.length === 0) {
+    roles.push("Professional Specialist");
+  }
 
-  const targetRoleFamilies = Array.from(new Set([...roles, ...initialRoleFamilies])).slice(0, 8);
-  const yearsExp = typeof profile?.yearsExperience === "number" ? profile.yearsExperience : 1;
-  const maxYears = Math.max(2, yearsExp + 1);
+  const targetRoleFamilies = Array.from(new Set(roles)).slice(0, 8);
+  const yearsExp = typeof profile?.yearsExperience === "number" ? profile.yearsExperience : 3;
+  const maxYears = Math.max(yearsExp + 3, 3);
 
   const skills: string[] = Array.isArray(profile?.skills) ? profile.skills : [];
   const techs: string[] = Array.isArray(profile?.technologies) ? profile.technologies : [];
   const combinedSkills = Array.from(new Set([...skills, ...techs]));
 
+  // Seniority levels tailored to candidate's genuine years of experience
+  const suitableLevels: string[] = [];
+  const seniorityExclusions: string[] = [];
+
+  if (yearsExp >= 10) {
+    suitableLevels.push("Consultant", "Director", "Lead", "Senior", "10+ years");
+  } else if (yearsExp >= 6) {
+    suitableLevels.push("Senior", "Lead", "Specialist", "5-8 years");
+    seniorityExclusions.push("chief executive officer", "managing director");
+  } else if (yearsExp >= 3) {
+    suitableLevels.push("Mid-Level", "Intermediate", "Experienced", "3-5 years");
+    seniorityExclusions.push("principal", "director", "head of", "chief");
+  } else {
+    suitableLevels.push("Entry Level", "Junior", "Associate", "0-2 years");
+    seniorityExclusions.push("senior", "lead", "principal", "director", "head of", "chief", "manager");
+  }
+
+  // Generate high-intent queries from candidate's actual roles and skills
+  const searchQueries: string[] = [];
+  for (const r of targetRoleFamilies.slice(0, 5)) {
+    searchQueries.push(r);
+    if (profile?.city) searchQueries.push(`${r} ${profile.city}`);
+    if (profile?.country) searchQueries.push(`${r} ${profile.country}`);
+  }
+  searchQueries.push(...targetRoleFamilies.slice(0, 3).map(r => `${r} Remote`));
+
+  const allowedCountries = [
+    profile?.country,
+    ...(profile?.preferredLocations || []).filter((l: string) => l && !/remote|worldwide|any/i.test(l)),
+  ].filter(Boolean);
+
+  const allowedCities = [
+    profile?.city,
+  ].filter(Boolean);
+
   return {
     targetRoleFamilies,
-    alternativeJobTitles: [
-      "Help Desk Specialist",
-      "Systems Support Specialist",
-      "Technical Solutions Associate",
-      "Junior Network Administrator",
-      "IT Operations Technician",
-      "Junior Web Developer",
-      "Junior Full-Stack Developer",
-    ],
-    searchQueries: [
-      "IT Support Technician",
-      "ICT Officer",
-      "Desktop Support Technician",
-      "Junior Systems Administrator",
-      "Junior Software Developer",
-      "Full Stack Developer Entry Level",
-      "Technical Support Specialist Nairobi",
-    ],
+    alternativeJobTitles: targetRoleFamilies.map(r => `${r} Specialist`),
+    searchQueries: Array.from(new Set(searchQueries)).slice(0, 8),
     requiredSkills: combinedSkills.slice(0, 10),
     preferredSkills: combinedSkills.slice(10, 25),
-    suitableExperienceLevels: ["Entry Level", "Junior", "0-2 years"],
+    suitableExperienceLevels: suitableLevels,
     maxExperienceYears: maxYears,
-    seniorityExclusions: [
-      "senior",
-      "sr",
-      "lead",
-      "principal",
-      "staff",
-      "head of",
-      "director",
-      "vp",
-      "chief",
-      "cto",
-      "architect",
-      "manager",
-    ],
+    seniorityExclusions,
     locationRestrictions: {
-      allowedCountries: ["Kenya"],
-      allowedCities: ["Nairobi"],
+      allowedCountries: allowedCountries.length > 0 ? Array.from(new Set(allowedCountries)) : ["Worldwide"],
+      allowedCities: allowedCities.length > 0 ? Array.from(new Set(allowedCities)) : [],
       allowWorldwideRemote: true,
       blockedRegions: ["US only", "USA only", "UK only", "EU only", "Canada only"],
     },
     workAuthorizationNotes: null,
     disqualificationRules: [
-      "Executive, director, or C-level positions (CTO, VP, Director)",
       `Positions requiring more than ${maxYears} years of experience`,
-      "Non-technology occupational families (sales, legal, healthcare/medical practice, finance/accounting, driving)",
-      "Strict geographic restrictions excluding Kenya (US-only, UK-only, EU-only, Canada-only)",
+      "Occupational families unrelated to candidate's target roles and verified qualifications",
+      "Strict geographic restrictions excluding candidate's location and worldwide remote",
     ],
     searchExpansionStrategies: [
-      "Target adjacent IT Operations, Junior DevOps, and Help Desk roles",
-      "Search entry-level web and full-stack development roles with React/Node/Python stack",
-      "Include hospital and enterprise ICT support vacancies with EMR/LAN requirements",
+      "Target adjacent titles directly utilizing verified skills and education",
+      "Search worldwide remote and country-wide opportunities matching target roles",
     ],
     source: "deterministic_fallback",
     generatedAt: new Date().toISOString(),
@@ -200,6 +190,49 @@ export function generateDeterministicDirective(
       primaryRoles: targetRoleFamilies.slice(0, 4),
     },
   };
+}
+
+/**
+ * Call AgentRouter to generate structured directive
+ */
+async function callAgentRouterDirective(
+  apiKey: string,
+  modelName: string,
+  prompt: string,
+  baseUrl?: string | null,
+): Promise<unknown> {
+  const cleanModel = normalizeModelName(modelName);
+  const rootUrl = (baseUrl?.trim() || "https://agentrouter.org/v1").replace(/\/$/, "");
+  const res = await fetch(`${rootUrl}/chat/completions`, {
+    method: "POST",
+    headers: {
+      Authorization: `Bearer ${apiKey.trim()}`,
+      "Content-Type": "application/json",
+    },
+    body: JSON.stringify({
+      model: cleanModel,
+      messages: [
+        {
+          role: "system",
+          content:
+            "You are a universal AI career and job search planner. Respond ONLY with a valid JSON object matching the requested schema.",
+        },
+        { role: "user", content: prompt },
+      ],
+      temperature: 0.1,
+    }),
+    signal: AbortSignal.timeout(30_000),
+  });
+
+  if (!res.ok) {
+    throw new Error(`AgentRouter error (${res.status}): ${await res.text()}`);
+  }
+
+  const data = (await res.json()) as any;
+  const rawText = data.choices?.[0]?.message?.content;
+  if (!rawText) throw new Error("Empty response from AgentRouter");
+  const cleaned = rawText.replace(/^```json\s*/i, "").replace(/^```\s*/i, "").replace(/\s*```$/i, "").trim();
+  return JSON.parse(cleaned);
 }
 
 /**
@@ -249,7 +282,8 @@ async function callGeminiDirective(
       const data = (await res.json()) as any;
       const rawText = data.candidates?.[0]?.content?.parts?.[0]?.text;
       if (!rawText) continue;
-      return JSON.parse(rawText);
+      const cleaned = rawText.replace(/^```json\s*/i, "").replace(/^```\s*/i, "").replace(/\s*```$/i, "").trim();
+      return JSON.parse(cleaned);
     } catch (err: any) {
       lastError = err;
     }
@@ -275,7 +309,7 @@ async function callOpenAiDirective(
       {
         role: isReasoning ? "developer" : "system",
         content:
-          "You are a precision AI job search agent. Respond ONLY with a valid JSON object matching the requested schema.",
+          "You are a universal AI career and job search planner. Respond ONLY with a valid JSON object matching the requested schema.",
       },
       { role: "user", content: prompt },
     ],
@@ -302,11 +336,14 @@ async function callOpenAiDirective(
 
   const data = (await res.json()) as any;
   const rawText = data.choices?.[0]?.message?.content;
-  return JSON.parse(rawText);
+  if (!rawText) throw new Error("Empty response from OpenAI");
+  const cleaned = rawText.replace(/^```json\s*/i, "").replace(/^```\s*/i, "").replace(/\s*```$/i, "").trim();
+  return JSON.parse(cleaned);
 }
 
 /**
  * Main entry point: Get cached or generate fresh CV-aware Search Directive (Phase 3 AI Search Planner)
+ * Works for ANY profession (Healthcare, Medicine, Law, Finance, Engineering, Technology, Education, etc.)
  */
 export async function getOrGenerateSearchDirective(forceRefresh = false): Promise<SearchDirective> {
   const [profile] = await db
@@ -335,42 +372,49 @@ export async function getOrGenerateSearchDirective(forceRefresh = false): Promis
     return inMemoryCachedDirective;
   }
 
-  // Check available AI integrations (Gemini preferred, OpenAI fallback)
+  // Load configured AI integrations
   const integrations = await db.select().from(integrationSettingsTable);
+  const agentRouterConfig = integrations.find((i) => i.provider === "agentrouter" && i.model);
   const geminiConfig = integrations.find((i) => i.provider === "gemini" && i.model);
   const openAiConfig = integrations.find((i) => i.provider === "openai" && i.model);
 
+  const candidateLocation = [profile?.city, profile?.country].filter(Boolean).join(", ") || "Worldwide";
+  const preferredLocs = Array.isArray(profile?.preferredLocations) && profile.preferredLocations.length > 0
+    ? profile.preferredLocations
+    : [candidateLocation, "Worldwide Remote"].filter(Boolean);
+
   const prompt = `You are a precision AI Career Matchmaker and Search Planner.
-Generate a comprehensive, targeted AI Search Plan based STRICTLY on the candidate's verified evidence profile and actual master CV.
+Generate a comprehensive, tailored AI Search Plan based STRICTLY on the candidate's verified evidence profile and actual master CV.
+The candidate can be from ANY career domain or profession (Healthcare, Medicine & Surgery, Law, Accounting & Finance, Engineering, Technology, Education, Trades, Operations, Creative, etc.).
 
 CANDIDATE EVIDENCE DOSSIER (VERIFIED FROM MASTER CV):
 - Full Name: ${evidence.fullName}
-- Verified Years of Experience: ${evidence.yearsExperience} year(s) (Junior / Entry-Level)
+- Verified Years of Experience: ${evidence.yearsExperience} year(s)
 - Target Role Families: ${JSON.stringify(evidence.targetRoleFamilies)}
-- Demonstrated Technical Skills: ${JSON.stringify(evidence.demonstratedTechnicalSkills)}
+- Demonstrated Skills & Competencies: ${JSON.stringify(evidence.demonstratedTechnicalSkills)}
 - Self-Reported Skills: ${JSON.stringify(evidence.selfReportedSkills)}
-- Verified Work Experience: ${JSON.stringify(evidence.verifiedWorkExperience)}
-- Education: ${JSON.stringify(evidence.education)}
-- Certifications: ${JSON.stringify(evidence.certifications)}
+- Verified Employment / Professional Background: ${JSON.stringify(evidence.verifiedWorkExperience)}
+- Education & Degrees: ${JSON.stringify(evidence.education)}
+- Certifications & Licensures: ${JSON.stringify(evidence.certifications)}
 - Known Limitations / Guardrails: ${JSON.stringify(evidence.limitationsOrMissingInfo)}
 
 CANDIDATE SEARCH PREFERENCES:
-- Candidate Location: ${profile?.city || "Nairobi"}, ${profile?.country || "Kenya"}
-- Preferred Locations: ${JSON.stringify(profile?.preferredLocations || ["Nairobi", "Kenya", "Worldwide Remote"])}
+- Candidate Location: ${candidateLocation}
+- Preferred Locations: ${JSON.stringify(preferredLocs)}
 
 PLANNING DIRECTIVES:
-1. Target Role Families: Encompass IT Support Specialist, ICT Officer, Desktop Support, Junior Systems Administrator, Junior Software / Full-Stack Developer.
-2. Alternative Job Titles: Identify suitable roles with different titles but compatible responsibilities (e.g. Help Desk Specialist, Systems Support Associate, Technical Support Engineer, Junior Network Administrator, IT Operations Assistant). Do NOT rely exclusively on fixed titles.
-3. Targeted Search Queries: Formulate high-precision queries for Kenya-based vacancies and genuinely worldwide-remote roles.
-4. Experience Bounds: Candidate has 1 year of experience. Set maxExperienceYears to 2. Suitable levels: ["Entry Level", "Junior", "0-2 years"].
-5. Seniority Exclusions: Disqualify senior, lead, principal, staff, head of, director, vp, chief, cto, architect, manager.
+1. Target Role Families: Formulate realistic target job titles that directly leverage the candidate's actual profession, credentials, degrees, and verified skills.
+2. Alternative Job Titles: Identify viable roles with alternative titles that match the candidate's genuine qualifications and seniority level.
+3. Targeted Search Queries: Formulate high-precision job search queries matching their roles, location, and remote opportunities.
+4. Experience Bounds: Reflect their verified experience (${evidence.yearsExperience} years). Allow an experience span appropriate to their background.
+5. Seniority Exclusions: Only exclude seniority levels that are genuinely incompatible with their background (do NOT exclude senior/consultant/director roles if the candidate has substantial or senior experience!).
 6. Geographic Restrictions:
-   - Allowed Countries: ["Kenya"]
-   - Allowed Cities: ["Nairobi"]
+   - Allowed Countries: ${JSON.stringify([profile?.country || "Any"].filter(Boolean))}
+   - Allowed Cities: ${JSON.stringify([profile?.city].filter(Boolean))}
    - Allow Worldwide Remote: true
    - Blocked Regions: ["US only", "USA only", "UK only", "EU only", "Canada only"]
-7. Disqualification Rules: Explicit rules to reject out-of-scope roles (seniority, non-IT domains, geographic locks).
-8. Search Expansion Strategies: Practical strategies for finding adjacent junior opportunities.
+7. Disqualification Rules: Explicit rules to reject roles that are completely off-domain or exceed their experience.
+8. Search Expansion Strategies: Practical strategies for discovering compatible opportunities across their field.
 
 Output MUST be a single JSON object strictly matching this schema:
 {
@@ -379,12 +423,12 @@ Output MUST be a single JSON object strictly matching this schema:
   "searchQueries": ["string"],
   "requiredSkills": ["string"],
   "preferredSkills": ["string"],
-  "suitableExperienceLevels": ["Entry Level", "Junior", "0-2 years"],
-  "maxExperienceYears": 2,
-  "seniorityExclusions": ["senior", "lead", "director", "manager", "cto", ...],
+  "suitableExperienceLevels": ["string"],
+  "maxExperienceYears": number,
+  "seniorityExclusions": ["string"],
   "locationRestrictions": {
-    "allowedCountries": ["Kenya"],
-    "allowedCities": ["Nairobi"],
+    "allowedCountries": ["string"],
+    "allowedCities": ["string"],
     "allowWorldwideRemote": true,
     "blockedRegions": ["US only", "USA only", "UK only", "EU only", "Canada only"]
   },
@@ -393,7 +437,39 @@ Output MUST be a single JSON object strictly matching this schema:
   "searchExpansionStrategies": ["string"]
 }`;
 
-  // Try Gemini
+  // 1. Try Agent Router if configured
+  if (agentRouterConfig?.encryptedCredentials && agentRouterConfig?.model) {
+    try {
+      const creds = decryptCredentials<{ apiKey?: string }>(agentRouterConfig.encryptedCredentials);
+      if (creds.apiKey) {
+        const rawJson = await callAgentRouterDirective(creds.apiKey, agentRouterConfig.model, prompt, agentRouterConfig.baseUrl);
+        const rawObj = (typeof rawJson === "object" && rawJson !== null ? rawJson : {}) as Record<string, unknown>;
+        const parsed = searchDirectiveSchema.safeParse({
+          ...rawObj,
+          source: "ai",
+          providerUsed: "agentrouter",
+          modelUsed: agentRouterConfig.model,
+          generatedAt: new Date().toISOString(),
+          cacheKey,
+          cvVerified: cvDossier.loaded,
+          candidateEvidenceFingerprint: evidence.evidenceFingerprint,
+          candidateSummary: {
+            fullName: evidence.fullName,
+            yearsExperience: evidence.yearsExperience,
+            primaryRoles: (rawObj as any)?.targetRoleFamilies?.slice(0, 4) || evidence.targetRoleFamilies.slice(0, 4),
+          },
+        });
+        if (parsed.success) {
+          inMemoryCachedDirective = parsed.data;
+          return parsed.data;
+        }
+      }
+    } catch (arErr) {
+      console.warn("[SearchDirective] AgentRouter planning failed, trying next provider:", arErr);
+    }
+  }
+
+  // 2. Try Gemini
   if (geminiConfig?.encryptedCredentials && geminiConfig?.model) {
     try {
       const creds = decryptCredentials<{ apiKey?: string }>(geminiConfig.encryptedCredentials);
@@ -425,7 +501,7 @@ Output MUST be a single JSON object strictly matching this schema:
     }
   }
 
-  // Fallback to OpenAI
+  // 3. Fallback to OpenAI
   if (openAiConfig?.encryptedCredentials && openAiConfig?.model) {
     try {
       const creds = decryptCredentials<{ apiKey?: string }>(openAiConfig.encryptedCredentials);

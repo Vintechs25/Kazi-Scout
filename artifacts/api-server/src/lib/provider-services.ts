@@ -620,13 +620,40 @@ export function deriveRoleFamilies(skills: string[], roles: string[]): string[] 
   const combined = [...skills, ...roles].join(" ").toLowerCase();
   const families = new Set<string>();
 
+  if (combined.includes("surgeon") || combined.includes("surgery") || combined.includes("surgical")) {
+    families.add("surgery");
+  }
+  if (combined.includes("doctor") || combined.includes("physician") || combined.includes("clinical") || combined.includes("medical") || combined.includes("mbbs")) {
+    families.add("medicine_healthcare");
+  }
+  if (combined.includes("nurse") || combined.includes("nursing") || combined.includes("midwife")) {
+    families.add("nursing");
+  }
+  if (combined.includes("pharmacist") || combined.includes("pharmacy")) {
+    families.add("pharmacy");
+  }
+  if (combined.includes("lawyer") || combined.includes("attorney") || combined.includes("legal") || combined.includes("counsel") || combined.includes("litigation")) {
+    families.add("legal");
+  }
+  if (combined.includes("accountant") || combined.includes("audit") || combined.includes("cpa") || combined.includes("finance") || combined.includes("financial")) {
+    families.add("finance_accounting");
+  }
+  if (combined.includes("civil engineer") || combined.includes("structural")) {
+    families.add("civil_engineering");
+  }
+  if (combined.includes("mechanical engineer") || combined.includes("cad") || combined.includes("hvac")) {
+    families.add("mechanical_engineering");
+  }
+  if (combined.includes("electrical engineer") || combined.includes("power systems") || combined.includes("electronics")) {
+    families.add("electrical_engineering");
+  }
   if (combined.includes("react") || combined.includes("frontend") || combined.includes("front-end") || combined.includes("css") || combined.includes("html") || combined.includes("vue") || combined.includes("angular")) {
     families.add("frontend");
   }
   if (combined.includes("node") || combined.includes("express") || combined.includes("backend") || combined.includes("back-end") || combined.includes("api") || combined.includes("sql") || combined.includes("postgres")) {
     families.add("backend");
   }
-  if (families.has("frontend") && families.has("backend") || combined.includes("fullstack") || combined.includes("full stack") || combined.includes("software developer") || combined.includes("software engineer")) {
+  if ((families.has("frontend") && families.has("backend")) || combined.includes("fullstack") || combined.includes("full stack") || combined.includes("software developer") || combined.includes("software engineer")) {
     families.add("fullstack");
   }
   if (combined.includes("python") || combined.includes("automation") || combined.includes("scripting") || combined.includes("bot")) {
@@ -638,20 +665,35 @@ export function deriveRoleFamilies(skills: string[], roles: string[]): string[] 
   if (combined.includes("qa") || combined.includes("test") || combined.includes("testing") || combined.includes("cypress") || combined.includes("selenium")) {
     families.add("qa");
   }
+  if (combined.includes("teacher") || combined.includes("lecturer") || combined.includes("professor") || combined.includes("curriculum")) {
+    families.add("education");
+  }
+  if (combined.includes("marketing") || combined.includes("seo") || combined.includes("digital media")) {
+    families.add("marketing");
+  }
+
+  // Include roles directly if families is still empty
+  if (families.size === 0 && roles.length > 0) {
+    for (const r of roles.slice(0, 3)) {
+      const clean = r.toLowerCase().replace(/[^a-z0-9]+/g, "_").slice(0, 30);
+      if (clean) families.add(clean);
+    }
+  }
 
   return Array.from(families);
 }
 
-const extractionInstructions = `You are an expert AI recruiter and technical career analyst.
-Analyze the candidate's CV text comprehensively and extract their structured profile, technical competencies, job roles, and search preferences.
+const extractionInstructions = `You are a universal AI career and credential analysis system.
+Your job is to analyze the candidate's CV text comprehensively, with absolute domain neutrality across ALL professions and career disciplines (Healthcare, Medicine, Surgery, Nursing, Law, Finance, Accounting, Engineering, Technology, Software, Operations, Education, Trades, and more).
 
 Guidelines:
-1. Experience Timeline: Extract each work experience, internship, or freelancing position with job title, company name, start date (e.g. "Jan 2023"), and end date (e.g. "Present" or "Dec 2024"). Do not extrapolate or exaggerate dates.
-2. Target Roles: Extract or infer 4 to 8 realistic target job titles that directly align with their skills and experience.
-3. Skills: Extract core technical, domain, and soft skills listed in the CV.
-4. Technologies: Extract specific programming languages, libraries, frameworks, tools, databases, and operating systems.
-5. Location: Extract country and city, plus preferred locations (e.g. local country and Remote/Worldwide).
-6. Work Modes: Extract preferred modes (remote, hybrid, onsite).
+1. Candidate Identity & Background: Extract full name, email, phone number, residence country, city, and timezone directly from the text.
+2. Experience Timeline: Extract each work experience, residency, fellowship, clinical post, engineering role, employment, or practice with title, company/hospital/institution name, start date, and end date.
+3. Target Roles: Infer 4 to 8 realistic target job titles that directly align with their qualifications, seniority, and demonstrated expertise.
+4. Core Competencies & Skills: Extract domain-specific clinical, professional, technical, and leadership skills strictly grounded in the CV text.
+5. Technologies & Tools: Extract specific instruments, clinical systems, ERPs, CAD/software tools, programming languages, or equipment mentioned.
+6. Education & Certifications: Extract all degrees (MBBS, LLB, B.Eng, BSc, MSc, PhD, etc.) and professional board certifications or fellowships (FWACS, FRCS, CPA, ACCA, Bar Admission, PMP, PE, etc.).
+7. Preferences: Extract preferred locations (local and global remote) and work modes.
 
 Return exactly one valid JSON object with the following schema:
 {
@@ -989,7 +1031,7 @@ export async function generateCoverLetterWithAi(
   const candidateName = profile?.fullName?.trim() || "Candidate";
   const candidateEmail = profile?.email?.trim() || "";
   const candidatePhone = profile?.phone?.trim() || "";
-  const candidateLocation = `${profile?.city || "Nairobi"}, ${profile?.country || "Kenya"}`;
+  const candidateLocation = [profile?.city, profile?.country].filter(Boolean).join(", ") || "Remote";
 
   const prompt = `Candidate Dossier (All Uploaded Credentials & Documents):
 ${cvContextText}
@@ -1003,11 +1045,11 @@ Location: ${candidateLocation}
 Target Job Details:
 Title: ${job.title}
 Company: ${job.company}
-Location: ${job.location || "Nairobi, Kenya / Remote"}
+Location: ${job.location || "Remote / Unspecified"}
 Description: ${job.description}
 Extracted Email: ${extractedDetails?.applyEmail || "None"}
 Extracted Reference Code: ${extractedDetails?.refCode || "None"}
-Required Documents Mentioned: ${(extractedDetails?.whatToAttach || []).join(", ") || "CV, Academic Certificates, ID"}
+Required Documents Mentioned: ${(extractedDetails?.whatToAttach || []).join(", ") || "CV, Credentials"}
 
 Generate the tailored application package now.`;
 

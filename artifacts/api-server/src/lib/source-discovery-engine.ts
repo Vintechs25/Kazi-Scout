@@ -17,13 +17,12 @@ export class SourceDiscoveryEngine {
   private static defaultSeedQueries = [
     "site:go.ke careers vacancies Kenya",
     "site:go.ke recruitment vacancies",
-    "Kenya IT support jobs official careers",
-    "Kenya cybersecurity vacancies",
-    "Kenya internship computer science",
+    "Kenya official careers vacancies",
     "Kenya NGO vacancies",
+    "Kenya hospital medical vacancies careers",
     "Kenya county public service board recruitment",
-    "remote IT support jobs Africa",
-    "remote junior developer jobs open worldwide",
+    "remote professional vacancies Africa",
+    "remote jobs open worldwide",
   ];
 
   /**
@@ -40,6 +39,12 @@ export class SourceDiscoveryEngine {
     const queries = [...this.defaultSeedQueries];
     try {
       const candidate = await getOrGenerateCandidateEvidence();
+      if (candidate?.targetRoleFamilies?.length) {
+        for (const role of candidate.targetRoleFamilies.slice(0, 3)) {
+          queries.push(`Kenya ${role} official careers`);
+          queries.push(`remote ${role} vacancies`);
+        }
+      }
       if (candidate?.demonstratedTechnicalSkills?.length) {
         const topSkills = candidate.demonstratedTechnicalSkills.slice(0, 3).join(" ");
         queries.push(`Kenya ${topSkills} jobs official careers`);

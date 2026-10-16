@@ -15,7 +15,7 @@ import { splitJobSections, extractContextualYears, extractSkillsFromText, COMPRE
 import { extractApplicationDetails, formatApplicationBanner } from "./application-extractor";
 import { extractCvText } from "./cv-text-extraction";
 import { getOrGenerateSearchDirective, type SearchDirective } from "./search-directive";
-import { evaluatePreIngestionGate, EXECUTIVE_REGEX, OFF_FAMILY_PROFESSIONS_REGEX } from "./pre-ingestion-gate";
+import { evaluatePreIngestionGate, EXECUTIVE_REGEX } from "./pre-ingestion-gate";
 import { batchEvaluateQualifiedJobs } from "./ai-job-evaluator";
 import { getVerifiedMasterCv } from "./cv-storage";
 import { getOrGenerateCandidateEvidence } from "./candidate-evidence";
@@ -240,48 +240,25 @@ export function isJobExpired(deadline: Date | null | undefined, postedDate?: Dat
 }
 
 /**
- * Filter out completely irrelevant professions (medical, legal, accounting, non-English reception, etc.)
+ * Quality & legitimacy filter for discovered listings.
+ * Rejects scams, fees, or empty spam, while permitting all authentic professional careers
+ * across all sectors (Healthcare, Law, Finance, Engineering, Technology, Education, etc.).
  */
+export function isLegitimateJob(job: NormalizedJob): boolean {
+  if (!job.title || job.title.trim().length < 2) return false;
+  const fullText = `${job.title} ${job.description || ""} ${job.company || ""}`.toLowerCase();
+
+  // Reject scams and fees
+  if (SCAM_FLAG_REGEX.test(fullText)) return false;
+
+  // Reject pure gibberish
+  if (!/[a-zA-Z]{3,}/.test(job.title)) return false;
+
+  return true;
+}
+
 export function isRelevantTechOrItJob(job: NormalizedJob): boolean {
-  const text = `${job.title} ${job.description} ${job.company}`.toLowerCase();
-  const title = job.title.toLowerCase();
-
-  // Reject executive / director roles immediately
-  if (EXECUTIVE_REGEX.test(job.title)) return false;
-
-  // Reject off-family professions
-  if (OFF_FAMILY_PROFESSIONS_REGEX.test(job.title)) return false;
-
-  // Explicit blacklist of non-tech professions & foreign language roles
-  const blacklist = [
-    "oncology", "pharmacist", "doctor", "nurse", "veterin", "tierarzt",
-    "legal counsel", "attorney", "lawyer", "corporate counsel",
-    "accountant", "accounts receivable", "auditor", "fp&a", "wealth management", "payroll assistant",
-    "real estate sales", "verwalter", "property manager", "horeca", "automotriz",
-    "kundenservice", "telefondienst", "head academic", "deputy head", "school teacher",
-    "supply chain", "category buyer", "logistics coordinator", "medical review",
-    "revenue marketing", "event coordinator", "inside sales", "finance consultant",
-    "safety officer", "health and safety", "driver", "chef", "cook", "security guard",
-    "submit cvs - new recruitment", "registration fee", "pay to apply",
-  ];
-
-  for (const bad of blacklist) {
-    if (title.includes(bad)) return false;
-  }
-
-  // Must match software, web, IT support, automation, data, or cybersecurity domain
-  const techKeywords = [
-    "software", "developer", "engineer", "frontend", "front-end", "backend", "back-end",
-    "full stack", "full-stack", "fullstack", "web", "react", "node", "python",
-    "javascript", "typescript", "it support", "support specialist", "systems", "network",
-    "technician", "cybersecurity", "security", "qa", "tester", "testing", "automation",
-    "supabase", "postgresql", "sql", "devops", "cloud", "api", "database", "programmer", "coding",
-    "helpdesk", "help desk", "service desk", "desktop support", "ict officer", "it officer",
-    "technical support", "deployment", "lan", "wan", "cisco",
-  ];
-
-  const hasTechKeyword = techKeywords.some((kw) => title.includes(kw) || text.includes(kw));
-  return hasTechKeyword;
+  return isLegitimateJob(job);
 }
 
 export function isEligibleMarket(job: NormalizedJob): boolean {
@@ -290,7 +267,7 @@ export function isEligibleMarket(job: NormalizedJob): boolean {
   const title = (job.title || "").toLowerCase();
   const src = (job.source || "").toLowerCase();
 
-  // 1. Remote / Worldwide / Africa positions
+  // 1. Remote / Worldwide / Africa / Global positions
   if (
     job.remote ||
     loc.includes("remote") ||
@@ -303,9 +280,19 @@ export function isEligibleMarket(job: NormalizedJob): boolean {
     return true;
   }
 
-  // 2. Local Kenyan market
-  const kenyaKeywords = ["kenya", "nairobi", "mombasa", "kisumu", "nakuru", "eldoret", "thika", "jobwebkenya"];
-  return kenyaKeywords.some((k) => loc.includes(k) || desc.includes(k) || src.includes(k) || title.includes(k));
+  // 2. Local markets across Africa, UK, US, Europe, Global
+  const marketKeywords = [
+    "kenya", "nairobi", "mombasa", "kisumu", "nakuru", "eldoret", "thika", "jobwebkenya",
+    "nigeria", "lagos", "ibadan", "abuja", "port harcourt", "enugu",
+    "ghana", "accra", "kumasi",
+    "south africa", "johannesburg", "cape town", "durban", "pretoria",
+    "uganda", "kampala",
+    "tanzania", "dar es salaam",
+    "rwanda", "kigali",
+    "united kingdom", "london", "uk",
+    "united states", "usa", "canada", "germany", "france"
+  ];
+  return marketKeywords.some((k) => loc.includes(k) || desc.includes(k) || src.includes(k) || title.includes(k)) || !loc;
 }
 
 async function fetchWithTimeout(url: string, options: RequestInit = {}, timeoutMs = 8000): Promise<Response> {
@@ -1233,21 +1220,14 @@ export function filterJobs(jobs: NormalizedJob[], filter: JobSearchFilter): Norm
 }
 
 export const ROLE_ALLOW_PATTERNS: RegExp[] = [
-  /\b(it|ict)\s+(support|officer|technician|assistant|administrator|admin|specialist)\b/i,
-  /\b(help\s?desk|service\s?desk|desktop\s+support|technical\s+support|support\s+(?:engineer|technician|specialist))\b/i,
-  /\b(junior\s+)?(system|systems|network)\s+(administrator|admin|technician|support|engineer)\b/i,
-  /\b(front[- ]?end|full[- ]?stack|web|software|react|node|python|javascript|typescript|automation)\s+(developer|engineer|programmer)\b/i,
-  /\b(qa|quality\s+assurance|test(?:er|ing)|test\s+engineer)\b/i,
-  /\b(deployment|implementation|application\s+support|noc)\b/i,
-  /\b(junior|entry[\s-]level|associate|intern)\s+(?:developer|engineer|analyst|specialist)\b/i,
+  /./i, // Candidate-driven role evaluation
 ];
 
 export type Level = "entry" | "junior" | "mid" | "senior" | "unknown";
 
-export const SENIOR_PATTERNS = /\b(senior|sr\.?|sr\b|staff|principal|lead|head\s+of|director|vp|vice\s+president|chief|architect|manager|expert|tier\s?(iii|3)|level\s?3|l3)\b/i;
-export const ENTRY_PATTERNS  = /\b(intern(?:ship)?|trainee|apprentice|graduate|junior|jr\.?|entry[- ]level|associate|tier\s?(i|1)\b|level\s?1|l1|help\s?desk|service\s?desk|desktop\s+support|ict\s+officer)\b/i;
+export const SENIOR_PATTERNS = /\b(senior|sr\.?|sr\b|staff|principal|lead|head\s+of|director|vp|vice\s+president|chief|architect|manager|expert|tier\s?(iii|3)|level\s?3|l3|consultant\s+surgeon|partner)\b/i;
+export const ENTRY_PATTERNS  = /\b(intern(?:ship)?|trainee|apprentice|graduate|junior|jr\.?|entry[- ]level|associate|tier\s?(i|1)\b|level\s?1|l1)\b/i;
 
-export const OFF_FAMILY_REGEX = /\b(sales|account\s+(?:exec|executive|manager)|sdr|bdr|marketing|recruiter|recruitment|customer\s+success|nurse|pharma|oncology|doctor|veterin|attorney|lawyer|legal|accountant|auditor|payroll|real\s+estate|property\s+manager|horeca|kundenservice|telefondienst|school\s+teacher|category\s+buyer|merchandiser|logistics\s+coordinator|receptionist|finance\s+consultant|safety\s+officer|health\s+and\s+safety|front\s+office|concierge)\b/i;
 export const REGION_BLOCK_REGEX = /\b(us\s+only|usa\s+only|united\s+states\s+only|must\s+(?:be\s+)?(?:located|based)\s+in\s+(?:the\s+)?(?:us|uk|eu|europe|germany|canada|mexico|united\s+states)|eu\s+only|europe\s+only|(?:us|eu|uk)[ -]based)\b/i;
 export const FOREIGN_STACK_REGEX = /\b(ruby\s+on\s+rails|rails|dotnet|\.net|c#|golang|rust|scala|kotlin|swift|salesforce|sap|laravel|elixir)\b/i;
 export const SCAM_FLAG_REGEX = /\b(registration\s+fee|application\s+fee|pay\s+to\s+apply|send\s+money|training\s+fee|telegram\s+only|whatsapp\s+only|submit\s+cvs\s*-\s*new\s+recruitment)\b/i;
@@ -1260,7 +1240,7 @@ export function classifyLevel(title: string, desc: string): Level {
   if (ENTRY_PATTERNS.test(title)) return "entry";
   if (SENIOR_PATTERNS.test(title)) return "senior";
   const yrs = minYearsRequired(desc);
-  if (yrs !== null) return yrs <= 2 ? "junior" : yrs <= 4 ? "mid" : "senior";
+  if (yrs !== null) return yrs <= 2 ? "junior" : yrs <= 5 ? "mid" : "senior";
   if (/\b(10|8|7|6|5)\+?\s*years/i.test(desc)) return "senior";
   return "unknown";
 }
@@ -1276,7 +1256,7 @@ export interface GateResult {
 }
 
 /**
- * Deterministic Hard Filters (Gates) that run before scoring
+ * Deterministic Hard Filters (Gates) evaluated against candidate's profile
  */
 export function passesGates(job: NormalizedJob | JobRecord, profile: any): GateResult {
   const title = job.title.trim();
@@ -1288,44 +1268,61 @@ export function passesGates(job: NormalizedJob | JobRecord, profile: any): GateR
     return { pass: false, reason: "Security: Flagged as suspicious / fee / telegram" };
   }
 
-  // 1. Role Allowlist (Must match tech/developer/IT support role family)
-  const matchesRoleAllowlist = ROLE_ALLOW_PATTERNS.some((pattern) => pattern.test(title));
-  if (!matchesRoleAllowlist) {
-    return { pass: false, reason: "Role: Title not in allowed tech/developer/IT support families" };
-  }
+  // 1. Role Relevance (Evaluated dynamically against candidate's target roles if profile exists)
+  const targetRoles: string[] = Array.isArray(profile?.targetRoles) ? profile.targetRoles : [];
+  if (targetRoles.length > 0) {
+    const titleLower = title.toLowerCase();
+    const matchesTargetRole = targetRoles.some((tr) => {
+      const clean = tr.toLowerCase().trim();
+      if (!clean) return false;
+      if (titleLower.includes(clean)) return true;
+      const words = clean.split(/[\s/,-]+/).filter((w) => w.length > 2);
+      return words.length > 0 && words.some((w) => titleLower.includes(w));
+    });
 
-  // 2. Off-Family Blacklist
-  if (OFF_FAMILY_REGEX.test(title)) {
-    return { pass: false, reason: "Role: Off-family non-tech domain" };
-  }
+    const candidateSkills: string[] = [
+      ...(Array.isArray(profile?.skills) ? profile.skills : []),
+      ...(Array.isArray(profile?.technologies) ? profile.technologies : []),
+    ];
+    const matchesCandidateSkill = candidateSkills.some((s) => {
+      const clean = s.toLowerCase().trim();
+      return clean.length > 3 && titleLower.includes(clean);
+    });
 
-  // 3. Foreign Stack Check (Rails, .NET, C#, Golang, Rust, Salesforce if not in candidate stack)
-  if (FOREIGN_STACK_REGEX.test(title)) {
-    const candidateTech = `${(profile?.technologies || []).join(" ")} ${(profile?.skills || []).join(" ")}`.toLowerCase();
-    if (!FOREIGN_STACK_REGEX.test(candidateTech)) {
-      return { pass: false, reason: "Stack: Primary role stack not in candidate skillset" };
+    if (!matchesTargetRole && !matchesCandidateSkill && targetRoles.length >= 3) {
+      return { pass: false, reason: `Role: Title does not match candidate target roles (${targetRoles.slice(0, 3).join(", ")})` };
     }
   }
 
-  // 4. Level Classification & Hard Seniority Gate
-  const level = classifyLevel(title, desc);
-  if (level === "senior" || level === "mid") {
-    return { pass: false, reason: `Level: Job is classified as ${level} (candidate is entry/junior)` };
+  // 2. Experience Level Gate (Dynamic against candidate's verified experience)
+  const candidateYears = typeof profile?.yearsExperience === "number" ? profile.yearsExperience : null;
+  const yrsRequired = minYearsRequired(desc);
+  if (candidateYears !== null && yrsRequired !== null) {
+    const maxAllowed = Math.max(candidateYears + 3, 3);
+    if (yrsRequired > maxAllowed) {
+      return { pass: false, reason: `Experience: Asks for ${yrsRequired}+ years (candidate ceiling is ${maxAllowed} yrs)` };
+    }
   }
 
-  // 5. Years Required Gate
-  const yrs = minYearsRequired(desc);
-  if (yrs !== null && yrs > 2) {
-    return { pass: false, reason: `Experience: Asks for ${yrs}+ years (candidate max 2 yrs)` };
-  }
-
-  // 6. Region Gate
+  // 3. Region Gate
   const fullText = `${loc} ${desc}`.toLowerCase();
   const isBlockedRegion = REGION_BLOCK_REGEX.test(fullText);
-  const isLocalKenya = loc.includes("kenya") || loc.includes("nairobi") || loc.includes("mombasa") || job.source.toLowerCase().includes("kenya");
+  const preferredLocations: string[] = Array.isArray(profile?.preferredLocations) ? profile.preferredLocations : [];
+  const candidateCountry = (profile?.country || "").toLowerCase();
+  const candidateCity = (profile?.city || "").toLowerCase();
 
-  if (isBlockedRegion && !isLocalKenya && !loc.includes("worldwide") && !loc.includes("anywhere") && !loc.includes("africa")) {
-    return { pass: false, reason: "Region: Restricted to US/EU/UK residents" };
+  const isLocalCandidate =
+    (candidateCountry && (loc.includes(candidateCountry) || fullText.includes(candidateCountry))) ||
+    (candidateCity && (loc.includes(candidateCity) || fullText.includes(candidateCity))) ||
+    preferredLocations.some((pl: string) => pl && (loc.includes(pl.toLowerCase()) || fullText.includes(pl.toLowerCase()))) ||
+    loc.includes("kenya") || loc.includes("nairobi") || loc.includes("mombasa") ||
+    loc.includes("nigeria") || loc.includes("lagos") || loc.includes("ibadan") || loc.includes("abuja") ||
+    loc.includes("south africa") || loc.includes("ghana") || loc.includes("uganda") || loc.includes("tanzania") ||
+    loc.includes("united kingdom") || loc.includes("united states") || loc.includes("canada") || loc.includes("europe") ||
+    job.source.toLowerCase().includes("kenya");
+
+  if (isBlockedRegion && !isLocalCandidate && !loc.includes("worldwide") && !loc.includes("anywhere") && !loc.includes("africa") && !loc.includes("remote")) {
+    return { pass: false, reason: "Region: Restricted to specific country residents" };
   }
 
   return { pass: true };
@@ -1650,29 +1647,23 @@ export async function discoverAndMatchJobs(minMatchScoreThreshold = 75): Promise
   try {
     directive = await getOrGenerateSearchDirective();
   } catch {
-    directive = {
-      source: "deterministic_fallback",
-      targetRoleFamilies: ["Software Development", "IT Support"],
-      searchQueries: ["Software Developer", "IT Support Specialist"],
-      alternativeJobTitles: ["Full Stack Developer", "Backend Developer", "Frontend Developer"],
-      requiredSkills: [],
-      preferredSkills: [],
-      suitableExperienceLevels: ["Entry Level", "Junior", "0-2 years"],
-      maxExperienceYears: 2,
-      seniorityExclusions: ["senior", "lead", "principal", "manager"],
-      locationRestrictions: {
-        allowedCities: ["Nairobi"],
-        allowedCountries: ["Kenya"],
-        allowWorldwideRemote: true,
-        blockedRegions: [],
-      },
-      workAuthorizationNotes: null,
-      disqualificationRules: [],
-      requiredQualifications: [],
-      niceToHaveQualifications: [],
-      cvFreshness: "current",
-      generatedAt: new Date().toISOString(),
-    } as unknown as SearchDirective;
+    const [profile] = await db
+      .select()
+      .from(candidateProfilesTable)
+      .where(eq(candidateProfilesTable.id, "primary"))
+      .limit(1)
+      .catch(() => [null]);
+
+    const { generateDeterministicDirective } = await import("./search-directive");
+    directive = generateDeterministicDirective(profile || {
+      targetRoles: [],
+      skills: [],
+      technologies: [],
+      yearsExperience: null,
+      preferredLocations: [],
+      country: "",
+      city: "",
+    });
   }
 
   // 2. Delegate to comprehensive CV-guided discovery pipeline

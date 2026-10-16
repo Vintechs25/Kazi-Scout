@@ -67,19 +67,20 @@ function buildEvaluationPrompt(
   evidence: CandidateEvidenceProfile,
   cvSnippet: string,
 ): string {
-  return `You are a precision AI Lead Technical Recruiter evaluating an opportunity against a candidate's VERIFIED CV and evidence profile.
+  const maxAllowedExp = Math.max(evidence.yearsExperience + 3, 3);
+  return `You are a precision AI Lead Talent Assessor and Career Matchmaker evaluating an opportunity against a candidate's VERIFIED CV and evidence profile.
+The candidate can be from ANY career domain (Medicine & Healthcare, Law, Finance, Engineering, Technology, Education, Operations, Creative, etc.).
 
 CANDIDATE EVIDENCE DOSSIER (VERIFIED FROM ACTUAL MASTER CV):
 - Full Name: ${evidence.fullName}
-- Verified Experience: ${evidence.yearsExperience} year(s) (Strictly Junior / Entry-Level)
+- Verified Experience: ${evidence.yearsExperience} year(s)
 - Target Role Families: ${JSON.stringify(evidence.targetRoleFamilies)}
-- Demonstrated Technical Skills (Explicitly Evidenced): ${JSON.stringify(evidence.demonstratedTechnicalSkills)}
+- Demonstrated Skills & Competencies (Explicitly Evidenced): ${JSON.stringify(evidence.demonstratedTechnicalSkills)}
 - Self-Reported Skills (From Profile): ${JSON.stringify(evidence.selfReportedSkills)}
-- Verified Employment: ${JSON.stringify(evidence.verifiedWorkExperience)}
-- Education: ${JSON.stringify(evidence.education)}
-- Certifications: ${JSON.stringify(evidence.certifications)}
+- Verified Employment / Professional Background: ${JSON.stringify(evidence.verifiedWorkExperience)}
+- Education & Degrees: ${JSON.stringify(evidence.education)}
+- Certifications & Licensures: ${JSON.stringify(evidence.certifications)}
 - Limitations & Guardrails: ${JSON.stringify(evidence.limitationsOrMissingInfo)}
-- Location: Nairobi, Kenya (Eligible for Kenya roles and genuinely worldwide-remote roles)
 ${cvSnippet ? `\nVERIFIED MASTER CV EXCERPT:\n${cvSnippet.slice(0, 2200)}` : ""}
 
 OPPORTUNITY TO EVALUATE:
@@ -93,21 +94,21 @@ ${(job.description || "").slice(0, 3500)}
 
 RIGOROUS EVALUATION RULES:
 1. Ground every claim strictly in candidate evidence. Do NOT invent qualifications or experience.
-2. TITLE MATCH IS NEVER SUFFICIENT: A role matching the title "IT Support" or "Developer" is NOT a strong match if required tech stack or seniority does not match.
+2. TITLE MATCH IS NEVER SUFFICIENT: A role matching the title is NOT a strong match if required qualifications, clinical/technical competencies, or duties do not align.
 3. HARD ELIGIBILITY FAILURES:
-   - Experience: If the role strictly requires 3+ or more years of experience (or is Senior, Lead, Principal, Staff, Director, VP, CTO, Manager), candidate is INELIGIBLE.
-   - Geography / Authorization: If the role strictly restricts to US-only, UK-only, EU-only, Canada-only with no worldwide remote option, candidate is INELIGIBLE.
+   - Experience: If the role strictly requires experience significantly exceeding candidate's verified background (strictly requires ${maxAllowedExp}+ years), candidate is INELIGIBLE.
+   - Geography / Authorization: If the role strictly restricts to a foreign country with no remote or sponsorship option, candidate is INELIGIBLE.
    - When a hard eligibility failure occurs:
      * "hardEligibilityFailure" MUST be true.
      * "decision" MUST be "INELIGIBLE".
      * "matchScore" MUST NOT exceed 30.
      * High numerical score MUST NEVER override hard eligibility failure!
 4. DECISION CATEGORIES:
-   - STRONG_MATCH: Score 80-100. Entry/junior level (0-2 yrs) or IT support/developer role where candidate demonstrated skills (troubleshooting, hardware, LAN/WAN, Linux/Windows, databases, web development) align directly. Zero hard eligibility failures.
-   - POTENTIAL_MATCH: Score 50-79. Relevant tech role where candidate meets core skills but lacks 1-2 secondary requirements, or junior role in an adjacent tech stack. Zero hard eligibility failures.
-   - NOT_A_MATCH: Score < 50. Wrong profession/domain (sales, medical, accounting, executive) or heavily incompatible tech stack.
+   - STRONG_MATCH: Score 80-100. Role directly aligns with candidate's target profession, verified qualifications, credentials, and experience level. Zero hard eligibility failures.
+   - POTENTIAL_MATCH: Score 50-79. Relevant role in candidate's domain where candidate meets core qualifications but lacks 1-2 secondary requirements, or adjacent role in their field. Zero hard eligibility failures.
+   - NOT_A_MATCH: Score < 50. Completely wrong profession/domain or heavily incompatible qualifications.
    - INSUFFICIENT_INFORMATION: Job description lacks enough detail to verify responsibilities or qualifications.
-   - INELIGIBLE: Fails hard eligibility criteria (seniority, experience >2 yrs, geographical lock).
+   - INELIGIBLE: Fails hard eligibility criteria (severe experience/seniority mismatch or strict geographical lock).
 5. Output MUST be a valid JSON object matching the schema below.
 
 JSON OUTPUT SCHEMA:
@@ -116,9 +117,9 @@ JSON OUTPUT SCHEMA:
   "matchScore": number (0-100),
   "matchedSkills": ["skill1", "skill2"],
   "missingSkills": ["missingSkill1"],
-  "experienceCompatibility": "Detailed analysis of 1-yr candidate vs job requirement",
-  "responsibilityCompatibility": "Analysis of day-to-day duties vs demonstrated skills",
-  "locationEligibility": "Analysis of Nairobi/Kenya/Worldwide remote eligibility",
+  "experienceCompatibility": "Detailed analysis of candidate's verified years vs job requirement",
+  "responsibilityCompatibility": "Analysis of day-to-day duties vs demonstrated competencies",
+  "locationEligibility": "Analysis of location and remote eligibility",
   "hardEligibilityFailure": boolean,
   "hardFailureReason": string | null,
   "explanation": "Concise, evidence-grounded justification (2-3 sentences)",

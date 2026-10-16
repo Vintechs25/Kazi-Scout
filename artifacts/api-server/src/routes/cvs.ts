@@ -479,10 +479,7 @@ export function repairSpacedCharacters(str: string): string {
     .replace(/\b(Dr|Prof|Mr|Mrs|Ms|Engr|Barr)\s*\./gi, "$1. ")
     .replace(/M\s*\.?\s*B\s*\.?\s*,?\s*B\s*\.?\s*S/gi, "M.B., B.S.")
     .replace(/F\s*W\s*A\s*C\s*S/gi, "FWACS")
-    .replace(/F\s*R\s*C\s*S/gi, "FRCS")
-    .replace(/\bOlu\s*y\s*o\s*le\b/gi, "Oluyole")
-    .replace(/E\s*sta\s*te/gi, "Estate")
-    .replace(/E\s*x\s*t\b/gi, "Ext");
+    .replace(/F\s*R\s*C\s*S/gi, "FRCS");
 
   const validShortWords = new Set([
     "a", "i", "an", "as", "at", "be", "by", "do", "go", "he", "if", "in", "is",
@@ -512,15 +509,7 @@ export function repairSpacedCharacters(str: string): string {
         );
         const prevIsFragment = prev.length <= 3 && !validShortWords.has(prevLower) && /^[a-z]/.test(next);
 
-        const isKnownJoin = (
-          (prevLower === "ol" && nextLower.startsWith("u")) ||
-          (prevLower.endsWith("asom") && nextLower === "id") ||
-          (prevLower.endsWith("id") && nextLower === "oyin") ||
-          (prevLower === "s" && nextLower === "treet") ||
-          (prevLower === "stre" && nextLower === "et")
-        );
-
-        if (bothSingle || prevIsSingle || nextIsSingle || nextIsFragment || prevIsFragment || isKnownJoin) {
+        if (bothSingle || prevIsSingle || nextIsSingle || nextIsFragment || prevIsFragment) {
           out[out.length - 1] = prev + next;
           i++;
           continue;
@@ -533,12 +522,22 @@ export function repairSpacedCharacters(str: string): string {
   }
 
   let result = out.join("");
+  // Algorithmic healing: merge trailing or leading lone syllables e.g. "S mith" -> "Smith", "John son" -> "Johnson"
   result = result
-    .replace(/\bOluw\s*asomidoyin\b/gi, "Oluwasomidoyin")
-    .replace(/\bOlukem\s*i\s*Bello\b/gi, "Olukemi Bello")
-    .replace(/\bOlukem\s*i\b/gi, "Olukemi")
-    .replace(/\bBELLOOluw\s*a\s*somidoy\s*in\b/gi, "BELLO Oluwasomidoyin")
-    .replace(/\bKunleM\s*alam\s*iStreet\b/gi, "Kunle Malami Street");
+    .replace(/\b([A-Za-z]{2,})\s+([a-z]{1,3})\b/g, (m, w, f) => {
+      const valid = new Set(["a", "an", "as", "at", "be", "by", "do", "go", "he", "if", "in", "is", "it", "me", "my", "no", "of", "on", "or", "so", "to", "up", "us", "we", "for", "and", "the", "but", "not", "you", "all", "any", "can", "had", "her", "was", "one", "our", "out", "day", "get", "has", "him", "his", "how", "man", "new", "now", "old", "see", "two", "way", "who", "boy", "did", "its", "let", "put", "say", "she", "too", "use"]);
+      if (!valid.has(f.toLowerCase())) {
+        return w + f;
+      }
+      return m;
+    })
+    .replace(/\b([A-Za-z]{1,3})\s+([a-z]{2,})\b/g, (m, f, w) => {
+      const valid = new Set(["a", "an", "as", "at", "be", "by", "do", "go", "he", "if", "in", "is", "it", "me", "my", "no", "of", "on", "or", "so", "to", "up", "us", "we", "for", "and", "the", "but", "not", "you", "all", "any", "can", "had", "her", "was", "one", "our", "out"]);
+      if (!valid.has(f.toLowerCase()) && /^[a-z]/.test(w)) {
+        return f + w;
+      }
+      return m;
+    });
 
   return result;
 }
@@ -587,10 +586,10 @@ export function parseCvLocally(rawText: string): Record<string, unknown> {
 
   // 2. Global Country, City, Timezone extraction
   const countries = [
-    { name: "Nigeria", rx: /\bnigeria\b|\bnigerian\b|\+234\b|\blagos\b|\bibadan\b|\babuja\b|\bport\s+harcourt\b|\benugu\b|\boyo\s+state\b|\bogun\s+state\b|\boluyole\b/i, tz: "Africa/Lagos", cities: ["Ibadan", "Lagos", "Abuja", "Port Harcourt", "Enugu", "Kano", "Benin City"] },
+    { name: "Nigeria", rx: /\bnigeria\b|\bnigerian\b|\+234\b|\blagos\b|\bibadan\b|\babuja\b|\bport\s+harcourt\b|\benugu\b|\boyo\s+state\b|\bogun\s+state\b/i, tz: "Africa/Lagos", cities: ["Ibadan", "Lagos", "Abuja", "Port Harcourt", "Enugu", "Kano", "Benin City"] },
     { name: "Kenya", rx: /\bkenya\b|\bkenyan\b|\+254\b|\bnairobi\b|\bmombasa\b|\bkisumu\b|\bnakuru\b|\beldoret\b/i, tz: "Africa/Nairobi", cities: ["Nairobi", "Mombasa", "Kisumu", "Nakuru", "Eldoret"] },
     { name: "Ghana", rx: /\bghana\b|\bghanaian\b|\+233\b|\baccra\b|\bkumasi\b/i, tz: "Africa/Accra", cities: ["Accra", "Kumasi"] },
-    { name: "South Africa", rx: /\bsouth\s+africa\b|\b\+27\b|\bjohannesburg\b|\bcape\s+town\b|\bdurban\b|\bpretoria\b/i, tz: "Africa/Johannesburg", cities: ["Johannesburg", "Cape Town", "Durban", "Pretoria"] },
+    { name: "South Africa", rx: /\bsouth\s+africa\b|\b\+27\b|\bjohannesburg\b|\bcape\s+town\b|\bdurban\b|\bpretoria\b/i, tz: "Africa/Johannesburg", cities: ["Johannesburg", "Cape Town", "Durban", "Preoria"] },
     { name: "Uganda", rx: /\buganda\b|\bugandan\b|\b\+256\b|\bkampala\b/i, tz: "Africa/Kampala", cities: ["Kampala"] },
     { name: "Tanzania", rx: /\btanzania\b|\b\+255\b|\bdar\s+es\s+salaam\b|\bdodoma\b/i, tz: "Africa/Dar_es_Salaam", cities: ["Dar es Salaam", "Dodoma"] },
     { name: "Rwanda", rx: /\brwanda\b|\b\+250\b|\bkigali\b/i, tz: "Africa/Kigali", cities: ["Kigali"] },
@@ -619,9 +618,6 @@ export function parseCvLocally(rawText: string): Record<string, unknown> {
           city = cityName;
           break;
         }
-      }
-      if (!city && c.name === "Nigeria" && /oluyole/i.test(text)) {
-        city = "Ibadan";
       }
       break;
     }
@@ -652,13 +648,15 @@ export function parseCvLocally(rawText: string): Record<string, unknown> {
     targetRoles.push("Consultant Surgeon", "General Surgeon", "Medical Doctor", "Clinical Specialist");
     industries.push("Healthcare & Hospital Care", "Surgery & Clinical Practice", "Medical Services");
     defaultSkills.push("General Surgery", "Clinical Governance", "Patient Consultation", "Pre-operative & Post-operative Care", "Trauma Management", "Surgical Procedures");
-    defaultEducation.push("Bachelor of Medicine, Bachelor of Surgery (M.B., B.S.)");
-    defaultCertifications.push("Fellow of the West African College of Surgeons (FWACS)");
+    if (/m\.?b\.?,?\s*b\.?s|mbbs/i.test(text)) defaultEducation.push("Bachelor of Medicine, Bachelor of Surgery (M.B., B.S.)");
+    if (/fwacs/i.test(text)) defaultCertifications.push("Fellow of the West African College of Surgeons (FWACS)");
+    if (/frcs/i.test(text)) defaultCertifications.push("Fellow of the Royal College of Surgeons (FRCS)");
+    if (/facs/i.test(text)) defaultCertifications.push("Fellow of the American College of Surgeons (FACS)");
   } else if (isDoctor) {
     targetRoles.push("Medical Doctor", "Physician", "Clinical Medical Officer");
     industries.push("Healthcare & Hospital Care", "Medical Practice");
     defaultSkills.push("Clinical Diagnosis", "Patient Care", "Medical Treatment Planning", "Emergency Care");
-    defaultEducation.push("Bachelor of Medicine, Bachelor of Surgery (M.B., B.S.)");
+    if (/m\.?b\.?,?\s*b\.?s|mbbs/i.test(text)) defaultEducation.push("Bachelor of Medicine, Bachelor of Surgery (M.B., B.S.)");
   } else if (isNurse) {
     targetRoles.push("Registered Nurse", "Clinical Nurse Specialist", "Nursing Officer");
     industries.push("Healthcare & Hospital Care", "Nursing & Patient Care");
@@ -747,20 +745,64 @@ export function parseCvLocally(rawText: string): Record<string, unknown> {
     yearsExperience = isSurgeon ? 12 : isDoctor ? 8 : 3;
   }
 
-  // 5. Skills extraction
-  const medicalSkills = [
-    "General Surgery", "Laparoscopic Surgery", "Trauma Care", "Patient Triage",
-    "Clinical Governance", "Surgical Oncology", "Medical Education", "Emergency Care",
-    "Intensive Care", "Wound Management", "Infection Control", "Pediatric Care",
-    "Patient Consultation", "Diagnostics", "Pre-operative & Post-operative Care"
-  ];
-  const techSkills = [
-    "JavaScript", "TypeScript", "React", "Node.js", "Express", "Python",
-    "PostgreSQL", "SQL", "Git", "Docker", "REST APIs", "Linux", "AWS"
-  ];
+  // 5. Skills extraction across all career disciplines
+  const universalSkillBanks: Record<string, string[]> = {
+    medical: [
+      "General Surgery", "Laparoscopic Surgery", "Trauma Care", "Patient Triage",
+      "Clinical Governance", "Surgical Oncology", "Medical Education", "Emergency Care",
+      "Intensive Care", "Wound Management", "Infection Control", "Pediatric Care",
+      "Patient Consultation", "Diagnostics", "Pre-operative & Post-operative Care",
+      "Pharmacology", "Drug Interactions", "Medication Administration", "Vital Signs Monitoring"
+    ],
+    tech: [
+      "JavaScript", "TypeScript", "React", "Node.js", "Express", "Python",
+      "PostgreSQL", "SQL", "Git", "Docker", "REST APIs", "Linux", "AWS",
+      "Systems Administration", "Network Configuration", "Troubleshooting", "Cybersecurity"
+    ],
+    legal: [
+      "Legal Drafting", "Contract Negotiation", "Litigation", "Dispute Resolution",
+      "Regulatory Compliance", "Legal Research", "Due Diligence", "Corporate Governance"
+    ],
+    finance: [
+      "Financial Reporting", "Audit & Assurance", "Tax Compliance", "Budgeting & Forecasting",
+      "Financial Analysis", "Cost Accounting", "Risk Management", "ERP Systems", "QuickBooks", "Excel"
+    ],
+    engineering: [
+      "AutoCAD", "Structural Analysis", "Project Management", "Site Supervision",
+      "Thermodynamics", "PLC Systems", "Circuit Design", "Quality Control", "Preventative Maintenance"
+    ],
+    education: [
+      "Curriculum Design", "Classroom Instruction", "Student Assessment", "E-Learning",
+      "Educational Leadership", "Pedagogy", "Academic Research"
+    ],
+    marketing: [
+      "Digital Marketing", "SEO/SEM", "Content Strategy", "Campaign Analytics",
+      "Brand Management", "Social Media Marketing", "CRM", "Copywriting"
+    ],
+    operations: [
+      "Project Management", "Operations Management", "Supply Chain", "Vendor Relations",
+      "Stakeholder Engagement", "Process Improvement", "Team Leadership", "Change Management"
+    ],
+  };
 
-  const pool = isDoctor || isNurse || isPharmacist ? medicalSkills : techSkills;
-  let detectedSkills = pool.filter(s => new RegExp(`\\b${s.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")}\\b`, "i").test(text));
+  const domainCategory = isDoctor || isNurse || isPharmacist || isSurgeon
+    ? "medical"
+    : isLawyer
+    ? "legal"
+    : isAccountant
+    ? "finance"
+    : isCivilEngineer || isMechEngineer || isElectEngineer
+    ? "engineering"
+    : isTeacher
+    ? "education"
+    : isMarketing
+    ? "marketing"
+    : isSoftware || isITSupport
+    ? "tech"
+    : "operations";
+
+  const domainSkills = universalSkillBanks[domainCategory] || universalSkillBanks.operations;
+  let detectedSkills = domainSkills.filter(s => new RegExp(`\\b${s.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")}\\b`, "i").test(text));
   if (detectedSkills.length === 0) {
     detectedSkills = defaultSkills;
   }
