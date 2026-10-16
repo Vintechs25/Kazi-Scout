@@ -360,7 +360,7 @@ function AppShell({ children, health }: { children: React.ReactNode; health: any
           const healthData = health.data as any;
           const isTurso = healthData?.database === 'turso';
           const isVercelHost = typeof window !== 'undefined' && !['localhost', '127.0.0.1'].includes(window.location.hostname);
-          const isEphemeral = Boolean(healthData?.isVercel || (!isTurso && isVercelHost));
+          const isEphemeral = !isTurso && Boolean(healthData?.isVercel || isVercelHost);
 
           if (!isEphemeral) return null;
           return (
