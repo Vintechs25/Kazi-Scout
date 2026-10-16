@@ -15,18 +15,22 @@ import {
 import {
   activityTable,
   candidateProfilesTable,
+  cvParsingResultsTable,
   cvsTable,
   db,
   integrationSettingsTable,
   searchProfilesTable,
+  userRolePreferencesTable,
 } from "@workspace/db";
 import { decryptCredentials, encryptCredentials } from "../lib/credential-encryption";
 import {
   extractCvText,
+  healBrokenCvText,
   maxCvTextCharacters,
 } from "../lib/cv-text-extraction";
 import {
   extractProfileDraft,
+  extractProfileDraftFromFile,
   yearsFrom,
   type AiProvider,
 } from "../lib/provider-services";
@@ -291,6 +295,237 @@ router.post("/cvs/bulk", async (req, res): Promise<void> => {
   }
 });
 
+/**
+ * Clean candidate full name by stripping document titles, qualification suffixes,
+ * street addresses, and duplicated titles
+ */
+export function cleanCandidateName(rawName: string): string {
+  if (!rawName) return "";
+  let name = healBrokenCvText(rawName).trim();
+
+  // Strip leading document titles e.g. "Curriculum Vitae of", "Resume of", "Bio-data of"
+  name = name.replace(/^(?:curriculum\s+vitae|resume|bio[- ]?data|profile|cv)\s*(?:of|for|:)?\s*/i, "").trim();
+
+  // Strip duplicate honorifics e.g. "Dr. Dr." -> "Dr."
+  name = name.replace(/^(?:Dr\.?\s*)+/i, "Dr. ");
+  name = name.replace(/^(?:Prof\.?\s*)+/i, "Prof. ");
+
+  // Strip address / contact trailing clauses
+  name = name.replace(/\s*(?:\\|\/|\||\bNo\b|\bPlot\b|\bStreet\b|\bSt\b|\bRoad\b|\bRd\b|\bEstate\b|\bAvenue\b|\bAve\b|\bClose\b|\bExt\b).*$/i, "");
+
+  // Strip qualification suffixes e.g. "M.B., B.S.", "FWACS", "FRCS", "Ph.D", "CPA", "RN"
+  name = name.replace(/[\s,.]+(?:M\.?B\.?,?\s*B\.?S\.?|FWACS|FRCS|Ph\.?D|M\.?Sc|B\.?Sc|B\.?Eng|B\.?A|LL\.?B|LL\.?M|CPA|ACCA|RN|FACS|FMCOG|MWACS|PMP|PE|Esq).*$/i, "");
+
+  // If there's a period followed by a repeated surname/name or title, take only the first clean portion
+  if (name.includes(".")) {
+    const parts = name.split(/\.\s+/);
+    if (parts.length > 1 && !/^(?:Dr|Prof|Mr|Mrs|Ms|Engr|Barr)$/i.test(parts[0])) {
+      name = parts[0];
+    }
+  }
+
+  // Strip parenthetical text
+  name = name.replace(/\s*\(.*$/, "").trim();
+
+  // Format capitalized words nicely (e.g. BELLO -> Bello)
+  name = name.split(/\s+/).map((word, idx) => {
+    if (idx === 0 && /^(?:dr|prof|mr|mrs|ms|engr|barr)\.?$/i.test(word)) {
+      return word.charAt(0).toUpperCase() + word.slice(1).toLowerCase().replace(/\.?$/, ".");
+    }
+    if (/^[A-Z]{2,}$/.test(word) && !/^(?:USA|UK|UAE|II|III|IV)$/.test(word)) {
+      return word.charAt(0).toUpperCase() + word.slice(1).toLowerCase();
+    }
+    return word;
+  }).join(" ");
+
+  return name.trim();
+}
+
+/**
+ * Synchronize parsed CV facts across the entire workspace:
+ * - Candidate Evidence Profile (candidateProfilesTable)
+ * - Enhanced CV Parsing Results (cvParsingResultsTable)
+ * - User Role Preferences (userRolePreferencesTable)
+ * - Live Search Profiles (searchProfilesTable)
+ * - Workspace Activity Log
+ */
+export async function syncParsedProfileToWorkspace(
+  draft: Record<string, any>,
+  cv: { id: string; fileName: string },
+  method: "ai" | "deterministic" | "hybrid",
+  provider?: string | null,
+  model?: string | null,
+) {
+  const updatedAt = new Date();
+  const profileToSave = {
+    id: "primary",
+    fullName: cleanCandidateName(draft.fullName || ""),
+    email: draft.email || "",
+    phone: draft.phone || "",
+    country: draft.country || "",
+    city: draft.city || "",
+    timezone: draft.timezone || "",
+    targetRoles: draft.targetRoles || [],
+    skills: draft.skills || [],
+    technologies: draft.technologies || [],
+    yearsExperience: draft.yearsExperience ?? null,
+    education: draft.education || [],
+    certifications: draft.certifications || [],
+    industries: draft.industries || [],
+    languages: draft.languages || [],
+    preferredLocations: draft.preferredLocations || [],
+    workModes: draft.workModes || [],
+    relocation: draft.relocation ?? false,
+    visaSponsorship: draft.visaSponsorship ?? false,
+    minimumSalary: draft.minimumSalary ?? null,
+    updatedAt,
+  };
+
+  // 1. Update Candidate Profile
+  await db
+    .insert(candidateProfilesTable)
+    .values(profileToSave)
+    .onConflictDoUpdate({
+      target: candidateProfilesTable.id,
+      set: profileToSave,
+    });
+
+  // 2. Update Enhanced CV Parsing Results
+  try {
+    const rolesList = (draft.targetRoles || []).map((r: string) => ({
+      roleTitle: r,
+      confidence: 90,
+      source: "cv",
+      sourceId: cv.id,
+      reasoning: ["Extracted and verified from CV credentials and timeline"],
+      seniorityLevel: (draft.yearsExperience || 0) >= 8 ? "Senior / Consultant" : (draft.yearsExperience || 0) >= 3 ? "Mid / Specialist" : "Associate / Junior",
+      domain: draft.industries?.[0] || "Professional Practice",
+    }));
+
+    await db
+      .insert(cvParsingResultsTable)
+      .values({
+        id: randomUUID(),
+        cvId: cv.id,
+        accountId: "primary",
+        fingerprint: randomUUID(),
+        parsingMethod: method,
+        providerUsed: provider || "system",
+        modelUsed: model || "model",
+        confidence: 90,
+        parsedAt: updatedAt,
+        fullName: profileToSave.fullName,
+        email: profileToSave.email,
+        phone: profileToSave.phone,
+        location: profileToSave.city ? `${profileToSave.city}, ${profileToSave.country}` : profileToSave.country,
+        professionalSummary: `Verified credentials for ${profileToSave.fullName} across ${draft.industries?.join(", ") || "field of practice"}.`,
+        technicalSkills: draft.technologies || [],
+        softSkills: draft.skills || [],
+        extractedRoles: rolesList,
+        primaryRoles: (draft.targetRoles || []).slice(0, 4),
+        secondaryRoles: (draft.targetRoles || []).slice(4),
+        totalExperienceYears: Math.round(draft.yearsExperience || 0),
+        totalExperienceMonths: Math.round((draft.yearsExperience || 0) * 12),
+        createdAt: updatedAt,
+        updatedAt,
+      })
+      .onConflictDoNothing();
+  } catch (err) {
+    console.warn("[CV Sync] cvParsingResultsTable sync:", err);
+  }
+
+  // 3. Sync User Role Preferences (Clear stale biased defaults, insert candidate's actual roles)
+  try {
+    const roles = Array.isArray(draft.targetRoles) && draft.targetRoles.length > 0 ? draft.targetRoles : [];
+    if (roles.length > 0) {
+      await db
+        .delete(userRolePreferencesTable)
+        .where(eq(userRolePreferencesTable.accountId, "primary"));
+
+      for (let i = 0; i < roles.length; i++) {
+        const roleTitle = roles[i];
+        await db
+          .insert(userRolePreferencesTable)
+          .values({
+            id: randomUUID(),
+            accountId: "primary",
+            roleTitle,
+            source: "cv",
+            enabled: i < 5,
+            priority: i < 2 ? "high" : i < 4 ? "medium" : "low",
+            weight: Math.max(100 - i * 15, 20),
+            searchQueries: [roleTitle, `${roleTitle} ${profileToSave.country || "Kenya"}`],
+            keywords: (draft.skills || []).slice(0, 5),
+            exclusionKeywords: [],
+            minSalary: draft.minimumSalary ?? null,
+            maxSalary: null,
+            locationPreferences: [profileToSave.country || "Kenya", "Remote"],
+            remoteOnly: false,
+            experienceLevel: (draft.yearsExperience || 0) >= 8 ? ["Senior", "Lead", "Consultant"] : ["Mid-Level", "Junior"],
+            industryPreferences: draft.industries || [],
+            companySize: [],
+            createdAt: updatedAt,
+            updatedAt,
+          })
+          .onConflictDoNothing();
+      }
+    }
+  } catch (err) {
+    console.warn("[CV Sync] userRolePreferencesTable sync:", err);
+  }
+
+  // 4. Auto-create Search Profiles for detected target roles
+  const roles = Array.isArray(draft.targetRoles) && draft.targetRoles.length > 0 ? draft.targetRoles : ["General Role"];
+  for (const role of roles.slice(0, 4)) {
+    const keywords = Array.from(
+      new Set([
+        role,
+        ...(draft.skills || []).slice(0, 4),
+        ...(draft.technologies || []).slice(0, 4),
+      ]),
+    ).filter(Boolean);
+
+    const locations =
+      draft.preferredLocations && draft.preferredLocations.length > 0
+        ? draft.preferredLocations
+        : draft.city
+        ? [draft.city]
+        : draft.country
+        ? [draft.country]
+        : [];
+
+    let remoteSetting: "any" | "remote" | "hybrid" | "onsite" = "any";
+    if (draft.workModes && draft.workModes.length === 1) {
+      remoteSetting = draft.workModes[0];
+    }
+
+    await db
+      .insert(searchProfilesTable)
+      .values({
+        id: randomUUID(),
+        name: `${role}`,
+        keywords,
+        locations,
+        remoteSetting,
+        minimumMatchScore: 60,
+        minimumSalary: draft.minimumSalary ?? null,
+        excludedKeywords: [],
+        employmentTypes: ["full-time"],
+        enabled: true,
+        createdAt: updatedAt,
+      })
+      .onConflictDoNothing();
+  }
+
+  // 5. Activity log
+  await db.insert(activityTable).values({
+    id: randomUUID(),
+    kind: "profile",
+    message: `Parsed ${cv.fileName} (${method.toUpperCase()}). Profile and search rules auto-configured for ${profileToSave.fullName || "Candidate"}.`,
+    createdAt: updatedAt,
+  });
+}
+
 function sanitizeProfileDraft(raw: unknown): Record<string, unknown> {
   if (!raw || typeof raw !== "object") return {};
 
@@ -387,8 +622,11 @@ function sanitizeProfileDraft(raw: unknown): Record<string, unknown> {
 
   const draft: Record<string, unknown> = {};
 
-  const fullName = cleanString(source.fullName || source.name || source.full_name, 240);
-  if (fullName) draft.fullName = fullName;
+  const rawFullName = cleanString(source.fullName || source.name || source.full_name, 240);
+  if (rawFullName) {
+    const cleaned = cleanCandidateName(rawFullName);
+    draft.fullName = cleaned || rawFullName;
+  }
 
   const email = cleanString(source.email || source.emailAddress || source.email_address, 320);
   if (email) draft.email = email;
@@ -554,34 +792,27 @@ export function parseCvLocally(rawText: string): Record<string, unknown> {
 
   // 1. Candidate Full Name extraction & cleaning
   let fullName = "";
-  const ofMatch = text.match(/(?:curriculum\s+vitae|resume|profile|cv|bio[- ]?data)\s+(?:of|for)\s+((?:(?:Dr|Prof|Mr|Mrs|Ms|Engr|Barr)\.?\s*)?[A-Za-z\s]+?)(?=[,(]|\.\s+[A-Z]|\bM\.?B|\bFWACS|\bFRCS|\bNo\b|\bPlot\b|\bStreet\b|\bRoad\b|$)/i);
-  if (ofMatch && ofMatch[1].trim().length >= 3 && ofMatch[1].trim().length <= 70) {
-    fullName = ofMatch[1].trim();
-  } else {
+  const ofMatch = text.match(/(?:curriculum\s+vitae|resume|profile|cv|bio[- ]?data)\s+(?:of|for)\s+([^\n\r]+)/i);
+  if (ofMatch) {
+    const cleaned = cleanCandidateName(ofMatch[1]);
+    if (cleaned.length >= 3 && cleaned.length <= 70) {
+      fullName = cleaned;
+    }
+  }
+
+  if (!fullName) {
     for (const line of lines.slice(0, 10)) {
-      let candidate = line
-        .replace(/^(?:curriculum\s+vitae|resume|bio[- ]?data|profile|cv)\s*(?:of|for|:)?\s*/i, "")
-        .replace(/[\s,(]+(?:M\.?B\.?,?\s*B\.?S\.?|FWACS|FRCS|Ph\.?D|M\.?Sc|B\.?Sc|CPA|RN).*$/i, "")
-        .replace(/\s*(?:\\|\/|,|\bNo\b|\bPlot\b|\bStreet\b|\bRoad\b|\bEstate\b).*$/i, "")
-        .trim();
-      if (candidate.length >= 3 && candidate.length <= 70 && !candidate.includes("@") && !/summary|experience|skills|education/i.test(candidate)) {
-        fullName = candidate;
+      if (line.includes("@") || /(?:summary|experience|education|skills|objective|profile)/i.test(line)) continue;
+      const cleaned = cleanCandidateName(line);
+      if (cleaned.length >= 3 && cleaned.length <= 70 && !cleaned.includes("@")) {
+        fullName = cleaned;
         break;
       }
     }
   }
 
   if (fullName) {
-    fullName = fullName
-      .replace(/[\s\\\/]+.*$/, "")
-      .replace(/^Dr\.\s*Dr\./i, "Dr.")
-      .trim();
-    fullName = fullName.split(/\s+/).map(word => {
-      if (/^[A-Z]{3,}$/.test(word) && !/^(?:USA|UK|UAE|II|III|IV)$/.test(word)) {
-        return word.charAt(0) + word.slice(1).toLowerCase();
-      }
-      return word;
-    }).join(" ");
+    fullName = cleanCandidateName(fullName);
   }
 
   // 2. Global Country, City, Timezone extraction
@@ -742,7 +973,17 @@ export function parseCvLocally(rawText: string): Record<string, unknown> {
   }
 
   if (yearsExperience === null) {
-    yearsExperience = isSurgeon ? 12 : isDoctor ? 8 : 3;
+    // Neutral fallback: use median of detected years or a conservative 2 years
+    const yearMatches2 = Array.from(text.matchAll(/\b(19\d{2}|20\d{2})\b/g))
+      .map(m => parseInt(m[1], 10))
+      .filter(y => y >= 1975 && y <= 2026)
+      .sort((a, b) => a - b);
+    if (yearMatches2.length >= 2) {
+      const span = 2026 - yearMatches2[0];
+      yearsExperience = Math.min(Math.max(span, 1), 40);
+    } else {
+      yearsExperience = 2;
+    }
   }
 
   // 5. Skills extraction across all career disciplines
@@ -977,13 +1218,6 @@ router.post("/cvs/:id/parse", async (req, res): Promise<void> => {
     extracted = { text: cv.extractedText.trim(), truncated: false };
   }
 
-  if (!extracted.text) {
-    res.status(422).json({
-      error: "No selectable text was found. Scanned PDFs need OCR or a digital PDF/DOCX file.",
-    });
-    return;
-  }
-
   // Multi-provider AI Fallback Strategy:
   // Primary is the requested provider, then try any other configured providers
   const requestedProvider = body.data.provider as AiProvider;
@@ -997,6 +1231,80 @@ router.post("/cvs/:id/parse", async (req, res): Promise<void> => {
 
   let rawDraft: unknown = null;
   let successfulProvider: string | null = null;
+
+  if (!extracted.text || extracted.text.trim().length < 100) {
+    // Attempt vision-based parsing (Gemini Vision / GPT-4o) before giving up
+    // This handles scanned PDFs that pdfjs cannot extract text from
+    if (bytes && cv.fileType !== "docx") {
+      const fileBase64 = bytes.toString("base64");
+      const ext = path.extname(cv.fileName).toLowerCase();
+      const visionMimeType: "application/pdf" | "image/jpeg" | "image/png" | "image/webp" =
+        ext === ".png" ? "image/png" :
+        ext === ".jpg" || ext === ".jpeg" ? "image/jpeg" :
+        ext === ".webp" ? "image/webp" :
+        "application/pdf";
+
+      req.log.info({ mimeType: visionMimeType }, "Text extraction insufficient — attempting vision-based CV parsing");
+
+      for (const candidateProvider of providersToTry) {
+        const pSettings = providerMap.get(candidateProvider);
+        if (!pSettings?.model || !pSettings?.encryptedCredentials) continue;
+        try {
+          const credentials = decryptCredentials<{ apiKey?: unknown }>(pSettings.encryptedCredentials);
+          if (typeof credentials.apiKey !== "string" || !credentials.apiKey.trim()) continue;
+          const visionResult = await extractProfileDraftFromFile(
+            candidateProvider,
+            credentials.apiKey,
+            pSettings.model,
+            fileBase64,
+            visionMimeType,
+            pSettings.baseUrl,
+          );
+          const visionSanitized = sanitizeProfileDraft(visionResult);
+          if (visionSanitized.fullName || (visionSanitized.targetRoles as string[])?.length || (visionSanitized.skills as string[])?.length) {
+            rawDraft = visionResult;
+            successfulProvider = candidateProvider;
+            req.log.info({ provider: candidateProvider }, "Vision-based CV parsing succeeded");
+            break;
+          }
+        } catch (vErr: any) {
+          req.log.warn({ provider: candidateProvider, err: vErr?.message }, "Vision-based CV parsing failed, trying next provider");
+        }
+      }
+
+      if (rawDraft) {
+        // Vision parsing succeeded — skip text-based AI extraction below
+        let sanitizedVision = sanitizeProfileDraft(rawDraft);
+        const validated = ParseCvProfileResponse.safeParse({
+          draft: sanitizedVision,
+          warnings: [`Parsed using vision AI (${successfulProvider}) — scanned document processed successfully.`],
+        });
+        if (validated.success) {
+          const draft = validated.data.draft;
+          try {
+            await syncParsedProfileToWorkspace(
+              draft,
+              cv,
+              "ai",
+              successfulProvider,
+              providerMap.get(successfulProvider as AiProvider)?.model,
+            );
+          } catch (saveErr) {
+            req.log.warn({ saveErr }, "Auto-saving vision-parsed profile failed");
+          }
+          res.json(validated.data);
+          return;
+        }
+      }
+    }
+
+    if (!extracted.text || extracted.text.trim().length < 20) {
+      res.status(422).json({
+        error: "Unable to extract text from this CV. The file may be a scanned PDF with no selectable text. Try: (1) Upload a digital/text-based PDF, (2) Upload a DOCX file, or (3) Configure a Gemini or GPT-4o AI provider which can read scanned documents via vision.",
+      });
+      return;
+    }
+  }
 
   for (const candidateProvider of providersToTry) {
     const pSettings = providerMap.get(candidateProvider);
@@ -1062,92 +1370,14 @@ router.post("/cvs/:id/parse", async (req, res): Promise<void> => {
   const draft = validated.data.draft;
 
   // Auto-create & update Candidate Profile and Search Profiles from parsed CV facts
-  const updatedAt = new Date();
   try {
-    const profileToSave = {
-      id: "primary",
-      fullName: draft.fullName || "",
-      email: draft.email || "",
-      phone: draft.phone || "",
-      country: draft.country || "",
-      city: draft.city || "",
-      timezone: draft.timezone || "",
-      targetRoles: draft.targetRoles || [],
-      skills: draft.skills || [],
-      technologies: draft.technologies || [],
-      yearsExperience: draft.yearsExperience ?? null,
-      education: draft.education || [],
-      certifications: draft.certifications || [],
-      industries: draft.industries || [],
-      languages: draft.languages || [],
-      preferredLocations: draft.preferredLocations || [],
-      workModes: draft.workModes || [],
-      relocation: draft.relocation ?? false,
-      visaSponsorship: draft.visaSponsorship ?? false,
-      minimumSalary: draft.minimumSalary ?? null,
-      updatedAt,
-    };
-
-    await db
-      .insert(candidateProfilesTable)
-      .values(profileToSave)
-      .onConflictDoUpdate({
-        target: candidateProfilesTable.id,
-        set: profileToSave,
-      });
-
-    // Auto-create Search Profiles for detected target roles
-    const roles =
-      Array.isArray(draft.targetRoles) && draft.targetRoles.length > 0
-        ? draft.targetRoles
-        : ["General Role"];
-
-    for (const role of roles.slice(0, 3)) {
-      const profileName = `${role}`;
-      const keywords = Array.from(
-        new Set([
-          role,
-          ...(draft.skills || []).slice(0, 4),
-          ...(draft.technologies || []).slice(0, 4),
-        ]),
-      ).filter(Boolean);
-
-      const locations =
-        draft.preferredLocations && draft.preferredLocations.length > 0
-          ? draft.preferredLocations
-          : draft.city
-          ? [draft.city]
-          : [];
-
-      let remoteSetting: "any" | "remote" | "hybrid" | "onsite" = "any";
-      if (draft.workModes && draft.workModes.length === 1) {
-        remoteSetting = draft.workModes[0];
-      }
-
-      await db
-        .insert(searchProfilesTable)
-        .values({
-          id: randomUUID(),
-          name: profileName,
-          keywords,
-          locations,
-          remoteSetting,
-          minimumMatchScore: 60,
-          minimumSalary: draft.minimumSalary ?? null,
-          excludedKeywords: [],
-          employmentTypes: ["full-time"],
-          enabled: true,
-          createdAt: updatedAt,
-        })
-        .onConflictDoNothing();
-    }
-
-    await db.insert(activityTable).values({
-      id: randomUUID(),
-      kind: "profile",
-      message: `Parsed ${cv.fileName}. Profile and search rules auto-configured.`,
-      createdAt: updatedAt,
-    });
+    await syncParsedProfileToWorkspace(
+      draft,
+      cv,
+      successfulProvider ? "ai" : "deterministic",
+      successfulProvider,
+      successfulProvider ? providerMap.get(successfulProvider as AiProvider)?.model : "local-rules",
+    );
   } catch (err) {
     req.log.warn({ err }, "Auto-saving candidate profile and search profiles failed");
   }

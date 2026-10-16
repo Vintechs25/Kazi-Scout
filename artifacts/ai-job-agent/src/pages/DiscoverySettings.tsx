@@ -126,32 +126,32 @@ const fetchDiscoverySettings = async (): Promise<{
       enableStartups: true,
       enableFreelance: false,
       defaultFilters: {
-        minSalary: 50000,
-        locations: ['Kenya', 'Nairobi', 'Remote'],
+        minSalary: null,
+        locations: [],
         remoteOnly: false,
         jobTypes: ['Full-time', 'Contract'],
-        experienceLevels: ['Entry Level', 'Junior'],
-        industries: ['IT', 'Technology'],
+        experienceLevels: [],
+        industries: [],
         companies: [],
-        excludeKeywords: ['scam', 'fee to apply'],
+        excludeKeywords: ['scam', 'fee to apply', 'registration fee'],
       },
       enableAISuggestions: true,
       enableKeywordExpansion: true,
-      expansionKeywords: ['developer', 'engineer', 'IT support'],
+      expansionKeywords: [],
       requireApplicationInstructions: true,
       notifyNewJobs: true,
       notificationChannels: ['in_app', 'email'],
       lastDiscoveryRun: null,
       nextScheduledRun: null,
-      totalDiscoveries: 10,
-      totalJobsDiscovered: 500,
-      totalMatches: 150,
-      totalApplications: 25,
+      totalDiscoveries: 0,
+      totalJobsDiscovered: 0,
+      totalMatches: 0,
+      totalApplications: 0,
       createdAt: new Date().toISOString(),
       updatedAt: new Date().toISOString(),
     },
     enabledRoles: {
-      roles: ['IT Support Specialist', 'Junior Systems Administrator', 'ICT Officer'],
+      roles: [],
       preferences: [],
       searchQueries: [],
     },
@@ -170,10 +170,10 @@ const fetchDiscoverySettings = async (): Promise<{
       excludedSources: [],
     },
     guidance: {
-      guidance: ['Discovery prioritizes approved IT Support and Junior Systems Administrator roles in Kenya and worldwide remote.'],
-      enabledRoles: ['IT Support Specialist', 'Junior Systems Administrator', 'ICT Officer'],
+      guidance: ['Discovery prioritizes candidate CV-approved target roles in Kenya and worldwide remote.'],
+      enabledRoles: [],
       searchQueries: [],
-      sourceRecommendations: ['BrighterMonday (IT)', 'MyJobMag (IT)', 'Google for Jobs (Tech)'],
+      sourceRecommendations: ['BrighterMonday Kenya', 'MyJobMag Kenya', 'Google for Jobs', 'LinkedIn'],
       filters: {},
     },
   };
@@ -241,20 +241,21 @@ const runDiscovery = async (): Promise<{
     }
   } catch (err) {
     console.warn('[DiscoverySettings] Failed to execute discovery run on server:', err);
+    throw err;
   }
 
   return {
-    discovered: 45,
-    duplicates: 5,
-    matched: 32,
+    discovered: 0,
+    duplicates: 0,
+    matched: 0,
     highMatches: [],
     mediumMatches: [],
     lowMatches: [],
-    rejected: 8,
+    rejected: 0,
     errors: [],
-    sourcesScraped: ['brightermonday', 'myjobmag', 'jobwebkenya', 'google-jobs'],
-    executionTime: 12000,
-    rolesSearched: ['Software Developer', 'IT Support Specialist'],
+    sourcesScraped: [],
+    executionTime: 0,
+    rolesSearched: [],
   };
 };
 
@@ -483,11 +484,17 @@ export function DiscoverySettings() {
           </div>
           <div className="agent-message" style={{ display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap', marginTop: 8 }}>
             <span style={{ fontWeight: 600 }}>Active Search Targets:</span>
-            {(guidance.enabledRoles?.length ? guidance.enabledRoles : ['IT Support Specialist', 'Junior Systems Administrator']).map((role: string) => (
-              <span key={role} className="pill-badge badge-green" style={{ fontSize: 11 }}>
-                <Target size={11}/> {role}
+            {guidance.enabledRoles?.length ? (
+              guidance.enabledRoles.map((role: string) => (
+                <span key={role} className="pill-badge badge-green" style={{ fontSize: 11 }}>
+                  <Target size={11}/> {role}
+                </span>
+              ))
+            ) : (
+              <span className="pill-badge badge-gray" style={{ fontSize: 11 }}>
+                Derived from active CV profile
               </span>
-            ))}
+            )}
           </div>
         </div>
         <div className="top-meta" style={{ display: 'flex', gap: 10, alignItems: 'center', flexWrap: 'wrap' }}>
@@ -845,7 +852,7 @@ export function DiscoverySettings() {
                 <div>
                   <div style={{ fontWeight: 600 }}>Enable AI Keyword Expansion & Role Synonyms</div>
                   <div className="field-hint">
-                    Expands searches with relevant terms (e.g., "ICT Officer" &harr; "IT Support Specialist").
+                    Expands searches with relevant terms (e.g., &ldquo;Accountant&rdquo; &harr; &ldquo;Financial Analyst&rdquo; or &ldquo;Officer&rdquo; &harr; &ldquo;Specialist&rdquo;).
                   </div>
                 </div>
                 <div

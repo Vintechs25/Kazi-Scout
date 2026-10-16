@@ -138,6 +138,68 @@ export const COMPREHENSIVE_SKILL_SYNONYMS: Record<string, string> = {
   "testing": "qa_testing",
   "cypress": "qa_testing",
   "selenium": "qa_testing",
+
+  // Healthcare & Medicine
+  "general surgery": "surgery",
+  "surgical": "surgery",
+  "clinical governance": "clinical_governance",
+  "patient care": "patient_care",
+  "pre operative": "pre_op_care",
+  "post operative": "post_op_care",
+  "trauma management": "trauma_management",
+  "emergency care": "emergency_care",
+  "triage": "triage",
+  "pharmacology": "pharmacology",
+  "nursing": "nursing",
+  "phlebotomy": "phlebotomy",
+  "vital signs": "vital_signs",
+
+  // Finance, Accounting & Audit
+  "financial reporting": "financial_reporting",
+  "audit": "audit",
+  "auditing": "audit",
+  "tax compliance": "taxation",
+  "taxation": "taxation",
+  "budgeting": "budgeting",
+  "forecasting": "forecasting",
+  "financial modeling": "financial_modeling",
+  "quickbooks": "quickbooks",
+  "sage": "sage",
+  "cpa": "cpa",
+  "acca": "acca",
+  "ifrs": "ifrs",
+  "general ledger": "general_ledger",
+
+  // Legal & Compliance
+  "litigation": "litigation",
+  "legal drafting": "legal_drafting",
+  "contract negotiation": "contract_negotiation",
+  "regulatory compliance": "compliance",
+  "due diligence": "due_diligence",
+  "arbitration": "arbitration",
+  "dispute resolution": "dispute_resolution",
+
+  // Engineering & Construction
+  "structural design": "structural_design",
+  "autocad": "autocad",
+  "site supervision": "site_supervision",
+  "project management": "project_management",
+  "plc": "plc_systems",
+  "circuit design": "circuit_design",
+  "power distribution": "power_distribution",
+  "hvac": "hvac",
+  "cad": "cad",
+  "cam": "cam",
+
+  // Operations, Administration & Education
+  "operations management": "operations",
+  "supply chain": "supply_chain",
+  "procurement": "procurement",
+  "stakeholder management": "stakeholder_management",
+  "team leadership": "leadership",
+  "curriculum development": "curriculum_development",
+  "human resources": "human_resources",
+  "recruitment": "recruitment",
 };
 
 export function normalizeSkillToken(raw: string): string {

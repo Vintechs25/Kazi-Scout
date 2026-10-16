@@ -1,7 +1,7 @@
 /**
  * Job Search Service
- * Precision job discovery tailored for Software Developers & IT Support Specialists
- * Enforces strict domain relevance, experience-level requirements, and application deadlines
+ * Universal multi-domain precision job discovery across Kenya and worldwide remote careers
+ * Enforces candidate CV alignment, experience-level requirements, and application deadlines
  */
 
 import { readFile } from "node:fs/promises";
@@ -36,9 +36,9 @@ export interface JobSource {
 export const ALL_JOB_SOURCES: JobSource[] = [
   {
     id: "myjobmag",
-    name: "MyJobMag Kenya (IT & Telecom Vacancies)",
+    name: "MyJobMag Kenya (All Vacancies)",
     baseUrl: "https://www.myjobmag.co.ke",
-    searchEndpoint: "/jobs-by-field/information-technology",
+    searchEndpoint: "/jobs",
     enabled: true,
     rateLimit: 60,
     countries: ["Kenya"],
@@ -46,9 +46,9 @@ export const ALL_JOB_SOURCES: JobSource[] = [
   },
   {
     id: "careerpointkenya",
-    name: "Career Point Kenya (IT & Software Jobs)",
+    name: "Career Point Kenya (All Vacancies)",
     baseUrl: "https://www.careerpointkenya.co.ke",
-    searchEndpoint: "/category/it-jobs-in-kenya/feed/",
+    searchEndpoint: "/feed/",
     enabled: true,
     rateLimit: 60,
     countries: ["Kenya"],
@@ -56,7 +56,7 @@ export const ALL_JOB_SOURCES: JobSource[] = [
   },
   {
     id: "jobwebkenya",
-    name: "JobWeb Kenya (Local Tech & IT)",
+    name: "JobWeb Kenya (Live Vacancies)",
     baseUrl: "https://jobwebkenya.com",
     searchEndpoint: "/feed/",
     enabled: true,
@@ -66,7 +66,7 @@ export const ALL_JOB_SOURCES: JobSource[] = [
   },
   {
     id: "googlejobs",
-    name: "Google for Jobs (Kenya Tech & IT)",
+    name: "Google for Jobs / Kenya Web Search",
     baseUrl: "https://www.google.com",
     searchEndpoint: "/search?q=jobs+kenya",
     enabled: true,
@@ -76,7 +76,7 @@ export const ALL_JOB_SOURCES: JobSource[] = [
   },
   {
     id: "workingnomads",
-    name: "Working Nomads (Remote Tech)",
+    name: "Working Nomads (Remote)",
     baseUrl: "https://www.workingnomads.com",
     searchEndpoint: "/api/exposed_jobs/",
     enabled: true,
@@ -86,9 +86,9 @@ export const ALL_JOB_SOURCES: JobSource[] = [
   },
   {
     id: "weworkremotely",
-    name: "We Work Remotely (Tech)",
+    name: "We Work Remotely (Global)",
     baseUrl: "https://weworkremotely.com",
-    searchEndpoint: "/categories/remote-programming-jobs.rss",
+    searchEndpoint: "/categories/all-other-remote-jobs.rss",
     enabled: true,
     rateLimit: 60,
     countries: [],
@@ -96,7 +96,7 @@ export const ALL_JOB_SOURCES: JobSource[] = [
   },
   {
     id: "himalayas",
-    name: "Himalayas Developer Feed",
+    name: "Himalayas Remote",
     baseUrl: "https://himalayas.app",
     searchEndpoint: "/jobs/api",
     enabled: true,
@@ -106,7 +106,7 @@ export const ALL_JOB_SOURCES: JobSource[] = [
   },
   {
     id: "arbeitnow",
-    name: "Arbeitnow Remote Tech",
+    name: "Arbeitnow Remote",
     baseUrl: "https://www.arbeitnow.com",
     searchEndpoint: "/api/job-board-api",
     enabled: true,
@@ -116,7 +116,7 @@ export const ALL_JOB_SOURCES: JobSource[] = [
   },
   {
     id: "jobicy",
-    name: "Jobicy Remote Dev",
+    name: "Jobicy Remote Vacancies",
     baseUrl: "https://jobicy.com",
     searchEndpoint: "/api/v2/remote-jobs",
     enabled: true,
@@ -126,7 +126,7 @@ export const ALL_JOB_SOURCES: JobSource[] = [
   },
   {
     id: "remotive",
-    name: "Remotive Software",
+    name: "Remotive Global Remote",
     baseUrl: "https://remotive.com",
     searchEndpoint: "/api/remote-jobs",
     enabled: true,
@@ -307,12 +307,14 @@ async function fetchWithTimeout(url: string, options: RequestInit = {}, timeoutM
 }
 
 // 1. MyJobMag Kenya Live Ingestion (Full Details, Method of Application & Emails)
-async function fetchMyJobMagJobs(limit = 35): Promise<NormalizedJob[]> {
+async function fetchMyJobMagJobs(limit = 35, keywords: string[] = []): Promise<NormalizedJob[]> {
   try {
-    const urls = [
-      "https://www.myjobmag.co.ke/jobs-by-field/information-technology",
-      "https://www.myjobmag.co.ke/jobs-by-field/ict-telecommunications",
-    ];
+    const urls: string[] = ["https://www.myjobmag.co.ke/jobs"];
+    for (const kw of (keywords || []).slice(0, 3)) {
+      if (kw && kw.trim().length >= 3) {
+        urls.push(`https://www.myjobmag.co.ke/search/jobs?q=${encodeURIComponent(kw.trim())}`);
+      }
+    }
 
     const allDiscoveredLinks: { title: string; url: string; company?: string }[] = [];
 
@@ -406,12 +408,14 @@ async function fetchMyJobMagJobs(limit = 35): Promise<NormalizedJob[]> {
 }
 
 // 2. Career Point Kenya Live RSS & Full Details Ingestion
-async function fetchCareerPointKenyaJobs(limit = 40): Promise<NormalizedJob[]> {
+async function fetchCareerPointKenyaJobs(limit = 40, keywords: string[] = []): Promise<NormalizedJob[]> {
   try {
-    const feedUrls = [
-      "https://www.careerpointkenya.co.ke/category/it-jobs-in-kenya/feed/",
-      "https://www.careerpointkenya.co.ke/feed/",
-    ];
+    const feedUrls: string[] = ["https://www.careerpointkenya.co.ke/feed/"];
+    for (const kw of (keywords || []).slice(0, 3)) {
+      if (kw && kw.trim().length >= 3) {
+        feedUrls.push(`https://www.careerpointkenya.co.ke/?s=${encodeURIComponent(kw.trim())}&feed=rss2`);
+      }
+    }
 
     const items: NormalizedJob[] = [];
     const seenUrls = new Set<string>();
@@ -587,13 +591,10 @@ async function fetchJobWebKenyaJobs(limit = 40): Promise<NormalizedJob[]> {
 }
 
 // 4. Google for Jobs / Web Query Live Search
-async function fetchGoogleAndWebJobs(limit = 30): Promise<NormalizedJob[]> {
+async function fetchGoogleAndWebJobs(limit = 30, keywords: string[] = []): Promise<NormalizedJob[]> {
   try {
-    const queries = [
-      "https://jobwebkenya.com/?s=IT+support",
-      "https://jobwebkenya.com/?s=software+developer",
-      "https://jobwebkenya.com/?s=ICT+officer",
-    ];
+    const searchTerms = (keywords && keywords.length > 0 ? keywords : ["jobs", "vacancies"]).slice(0, 4);
+    const queries = searchTerms.map(t => `https://jobwebkenya.com/?s=${encodeURIComponent(t.trim())}`);
 
     const items: NormalizedJob[] = [];
     const seenUrls = new Set<string>();
@@ -632,7 +633,7 @@ async function fetchGoogleAndWebJobs(limit = 30): Promise<NormalizedJob[]> {
           source: "Google / Kenya Web Search",
           sourceUrl: url,
           externalJobId: url,
-          description: `Live vacancy indexed for Kenya IT market: ${title} at ${company}. Open original link for full application portal and submission instructions.`,
+          description: `Live vacancy indexed for Kenya market: ${title} at ${company}. Open original link for full application portal and submission instructions.`,
           discoveredAt: new Date(),
           deadlineDate: null,
           postedDate: new Date(),
@@ -708,17 +709,26 @@ async function fetchWorkingNomadsJobs(limit = 40): Promise<NormalizedJob[]> {
   }
 }
 
-// 3. WeWorkRemotely Live RSS (Programming & Dev)
+// 3. WeWorkRemotely Live RSS (Global Remote)
 async function fetchWeWorkRemotelyJobs(limit = 40): Promise<NormalizedJob[]> {
   try {
-    const res = await fetchWithTimeout("https://weworkremotely.com/categories/remote-programming-jobs.rss", {
-      headers: { "User-Agent": "Mozilla/5.0 KaziScout/2.0" },
-    });
-    if (!res.ok) return [];
-    const xml = await res.text();
+    const feedUrls = [
+      "https://weworkremotely.com/categories/all-other-remote-jobs.rss",
+      "https://weworkremotely.com/categories/remote-management-and-finance-jobs.rss",
+      "https://weworkremotely.com/categories/remote-customer-support-jobs.rss",
+      "https://weworkremotely.com/categories/remote-programming-jobs.rss",
+    ];
     const items: NormalizedJob[] = [];
-    const itemRegex = /<item>([\s\S]*?)<\/item>/g;
-    let match;
+
+    for (const feedUrl of feedUrls) {
+      if (items.length >= limit) break;
+      const res = await fetchWithTimeout(feedUrl, {
+        headers: { "User-Agent": "Mozilla/5.0 KaziScout/2.0" },
+      });
+      if (!res.ok) continue;
+      const xml = await res.text();
+      const itemRegex = /<item>([\s\S]*?)<\/item>/g;
+      let match;
 
     while ((match = itemRegex.exec(xml)) !== null && items.length < limit) {
       const itemXml = match[1];
@@ -770,6 +780,7 @@ async function fetchWeWorkRemotelyJobs(limit = 40): Promise<NormalizedJob[]> {
         items.push(candidateJob);
       }
     }
+  }
 
     return items;
   } catch (err) {
@@ -1017,13 +1028,13 @@ export async function searchJobsFromSource(
 
   switch (source.id) {
     case "myjobmag":
-      return fetchMyJobMagJobs(limit);
+      return fetchMyJobMagJobs(limit, filter.keywords);
     case "careerpointkenya":
-      return fetchCareerPointKenyaJobs(limit);
+      return fetchCareerPointKenyaJobs(limit, filter.keywords);
     case "jobwebkenya":
       return fetchJobWebKenyaJobs(limit);
     case "googlejobs":
-      return fetchGoogleAndWebJobs(limit);
+      return fetchGoogleAndWebJobs(limit, filter.keywords);
     case "workingnomads":
       return fetchWorkingNomadsJobs(limit);
     case "weworkremotely":

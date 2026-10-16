@@ -791,21 +791,36 @@ function generateSearchQueriesForRole(role: string): string[] {
     queries.push(`${role} ${level}`);
   }
   
-  // Tech-specific variants
-  if (/developer|engineer|programmer/i.test(roleLower)) {
+  // Role and industry-specific expansions
+  if (/developer|programmer|software/i.test(roleLower)) {
     queries.push(`${role} Kenya remote`);
     queries.push(`${role} worldwide`);
     queries.push(`${role} full-time`);
-    queries.push(`${role} part-time`);
     queries.push(`${role} contract`);
-  }
-  
-  // IT Support specific
-  if (/it support|technical support|help desk|ict/i.test(roleLower)) {
+  } else if (/doctor|physician|surgeon|medical|clinical|nurse|health/i.test(roleLower)) {
+    queries.push(`${role} hospital Kenya`);
+    queries.push(`${role} clinic Kenya`);
+    queries.push(`${role} healthcare`);
+    queries.push(`${role} full-time`);
+  } else if (/accountant|accounting|audit|finance|financial|banking/i.test(roleLower)) {
+    queries.push(`${role} Kenya`);
+    queries.push(`${role} financial services`);
+    queries.push(`${role} corporate`);
+  } else if (/lawyer|attorney|legal|counsel/i.test(roleLower)) {
+    queries.push(`${role} Kenya`);
+    queries.push(`${role} law firm`);
+    queries.push(`${role} corporate counsel`);
+  } else if (/civil|mechanical|electrical|structural|engineer/i.test(roleLower)) {
+    queries.push(`${role} Kenya`);
+    queries.push(`${role} engineering`);
+    queries.push(`${role} project`);
+  } else if (/it support|technical support|help desk|ict|systems administrator/i.test(roleLower)) {
     queries.push(`${role} Nairobi`);
-    queries.push(`${role} hospital`);
     queries.push(`${role} enterprise`);
-    queries.push(`${role} EMR EHR`);
+    queries.push(`${role} infrastructure`);
+  } else if (/operations|manager|coordinator|officer|specialist/i.test(roleLower)) {
+    queries.push(`${role} Kenya`);
+    queries.push(`${role} operations`);
   }
   
   return [...new Set(queries)];

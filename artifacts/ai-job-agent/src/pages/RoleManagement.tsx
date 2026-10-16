@@ -88,82 +88,18 @@ const fetchUserRoles = async (): Promise<{
     console.warn('[RoleManagement] Falling back to local roles:', e);
   }
   return {
-    preferences: [
-      {
-        id: '1',
-        accountId: 'user1',
-        roleTitle: 'IT Support Specialist',
-        source: 'cv',
-        enabled: true,
-        priority: 'high',
-        weight: 90,
-        searchQueries: ['IT Support Specialist Kenya', 'Helpdesk Technician Nairobi'],
-        keywords: ['Hardware', 'Troubleshooting', 'LAN/WAN'],
-        exclusionKeywords: ['Senior', 'Director'],
-        minSalary: null,
-        maxSalary: null,
-        locationPreferences: ['Kenya', 'Nairobi', 'Remote'],
-        remoteOnly: false,
-        experienceLevel: ['Entry Level', 'Junior'],
-        industryPreferences: [],
-        companySize: [],
-        createdAt: new Date().toISOString(),
-        updatedAt: new Date().toISOString(),
-      },
-      {
-        id: '2',
-        accountId: 'user1',
-        roleTitle: 'Junior Systems Administrator',
-        source: 'cv',
-        enabled: true,
-        priority: 'high',
-        weight: 85,
-        searchQueries: ['Junior Systems Administrator Kenya', 'Linux Admin Nairobi'],
-        keywords: ['Linux', 'Windows Server', 'Bash'],
-        exclusionKeywords: ['Architect'],
-        minSalary: null,
-        maxSalary: null,
-        locationPreferences: ['Kenya', 'Remote'],
-        remoteOnly: false,
-        experienceLevel: ['Entry Level', 'Junior'],
-        industryPreferences: [],
-        companySize: [],
-        createdAt: new Date().toISOString(),
-        updatedAt: new Date().toISOString(),
-      },
-      {
-        id: '3',
-        accountId: 'user1',
-        roleTitle: 'ICT Officer',
-        source: 'cv',
-        enabled: true,
-        priority: 'medium',
-        weight: 75,
-        searchQueries: ['ICT Officer Kenya', 'ICT Support Nairobi'],
-        keywords: ['Networking', 'Diagnostics'],
-        exclusionKeywords: [],
-        minSalary: null,
-        maxSalary: null,
-        locationPreferences: ['Kenya'],
-        remoteOnly: false,
-        experienceLevel: ['Junior'],
-        industryPreferences: [],
-        companySize: [],
-        createdAt: new Date().toISOString(),
-        updatedAt: new Date().toISOString(),
-      },
-    ],
+    preferences: [],
     statistics: {
-      totalRoles: 3,
-      enabledRoles: 3,
-      highPriorityRoles: 2,
-      cvRoles: 3,
+      totalRoles: 0,
+      enabledRoles: 0,
+      highPriorityRoles: 0,
+      cvRoles: 0,
       manualRoles: 0,
-      selectedForDiscovery: 3,
+      selectedForDiscovery: 0,
     },
     suggestions: {
-      primary: ['Junior Full-Stack Developer', 'Technical Support Associate'],
-      secondary: ['Network Operations Assistant'],
+      primary: [],
+      secondary: [],
     },
   };
 };
@@ -183,7 +119,7 @@ const fetchDiscoverySettings = async () => {
     settings: {
       id: '1',
       accountId: 'user1',
-      selectedRoleIds: ['1', '2', '3'],
+      selectedRoleIds: [],
       searchFrequency: 'manual',
     },
   };
@@ -480,7 +416,7 @@ export function RoleManagement() {
             <input
               type="text"
               className="field"
-              placeholder="e.g. Network Operations Center (NOC) Engineer, IT Intern"
+              placeholder="e.g. Consultant Surgeon, Financial Analyst, Civil Engineer, Project Manager"
               value={newRole}
               onChange={e => setNewRole(e.target.value)}
               onKeyDown={e => { if (e.key === 'Enter') handleAddRole(); }}

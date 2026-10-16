@@ -33,7 +33,7 @@ export class SearchOnlyAdapter implements IJobConnector {
 
   async discoverListings(source: JobSourceRecord, filter?: ConnectorFilter): Promise<NormalizedListing[]> {
     // Generates targeted deep-link search queries for user exploration and automated search agents
-    const keywords = filter?.keywords?.slice(0, 3).join("+") || "IT+support+Kenya";
+    const keywords = filter?.keywords?.slice(0, 3).join("+") || "jobs";
     const targetUrl = source.canonicalUrl.includes("{query}")
       ? source.canonicalUrl.replace("{query}", encodeURIComponent(keywords))
       : `${source.canonicalUrl}?q=${encodeURIComponent(keywords)}`;

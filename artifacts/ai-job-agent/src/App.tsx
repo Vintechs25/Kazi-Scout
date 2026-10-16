@@ -592,8 +592,38 @@ function SearchProfiles() {
   const profiles = q.data ?? [];
   return <main className="page-wrap"><PageHead eyebrow="Workspace / discovery rules" title="Search profiles" sub="Your criteria in one place. Profiles are rules, not connected job sources."><Button variant="primary" onClick={() => setAdding(true)}><Plus size={15}/>New profile</Button></PageHead>
     {q.isLoading ? <Loading/> : q.isError ? <ErrorState error={q.error} retry={q.refetch}/> : profiles.length === 0 ? <section className="panel"><Empty icon={SlidersHorizontal} title="No search profiles yet" copy="Define the roles, places and exclusions you want to use when reviewing opportunities." action={<Button variant="primary" onClick={() => setAdding(true)}><Plus size={14}/>Create search profile</Button>}/></section> : <div style={{ display:'grid', gap:12 }}>{profiles.map(p => <section className="panel" key={p.id}><div className="panel-head"><div><div className="panel-title">{p.name}</div><div className="field-hint" style={{ marginTop:5 }}>Created {date(p.createdAt)}</div></div><div className="row-actions"><span className={`badge ${p.enabled ? 'badge-green' : ''}`}>{p.enabled ? 'Enabled' : 'Paused'}</span><Button onClick={() => setEdit(p)}>Edit</Button><Button variant="danger" onClick={() => { if (confirm(`Delete “${p.name}”?`)) del.mutate({ id: p.id }, { onSuccess: refresh }); }}><Trash2 size={14}/></Button></div></div><div className="panel-body" style={{ display:'flex', gap:24, flexWrap:'wrap', fontSize:11 }}><span><b>Keywords</b> · {p.keywords.join(', ') || 'None'}</span><span><b>Locations</b> · {p.locations.join(', ') || 'Any'}</span><span><b>Work mode</b> · {labelize(p.remoteSetting)}</span><span><b>Match floor</b> · {p.minimumMatchScore}%</span><span><b>Salary floor</b> · {p.minimumSalary ?? 'Not set'}</span><span><b>Exclude</b> · {p.excludedKeywords.join(', ') || 'None'}</span><span><b>Employment</b> · {p.employmentTypes.join(', ') || 'Any'}</span></div></section>)}</div>}
-    {(adding || edit) && <Drawer title={edit ? 'Edit search profile' : 'New search profile'} close={() => { setAdding(false); setEdit(null); }}><form className="form-grid" onSubmit={saveForm}>
-    </form></Drawer>}
+    {(adding || edit) && (
+      <Drawer title={edit ? 'Edit search profile' : 'New search profile'} close={() => { setAdding(false); setEdit(null); }}>
+        <p className="page-sub" style={{ marginBottom: 18 }}>
+          Configure keywords, locations, and match score thresholds to discover and evaluate target opportunities.
+        </p>
+        <form className="form-grid" onSubmit={saveForm}>
+          <Field label="Profile name" name="name" defaultValue={edit?.name || ''} required placeholder="e.g. Clinical Officer, Legal Counsel, Finance Specialist" className="full" />
+          <Field label="Keywords" name="keywords" defaultValue={(edit?.keywords || []).join(', ')} required hint="Comma-separated keywords" className="full" />
+          <Field label="Locations" name="locations" defaultValue={(edit?.locations || []).join(', ')} placeholder="e.g. Nairobi, Kisumu, Remote, Worldwide" hint="Comma-separated cities or countries" />
+          <SelectField label="Work mode" name="remoteSetting" defaultValue={edit?.remoteSetting || 'any'}>
+            <option value="any">Any (Remote, Hybrid, Onsite)</option>
+            <option value="remote_only">Remote only</option>
+            <option value="hybrid">Hybrid</option>
+            <option value="onsite">Onsite</option>
+          </SelectField>
+          <Field label="Minimum match score (%)" name="minimumMatchScore" type="number" min="0" max="100" defaultValue={edit?.minimumMatchScore ?? 60} required />
+          <Field label="Minimum salary" name="minimumSalary" type="number" min="0" defaultValue={edit?.minimumSalary ?? ''} placeholder="Optional monthly/annual figure" />
+          <Field label="Excluded keywords" name="excludedKeywords" defaultValue={(edit?.excludedKeywords || []).join(', ')} hint="Roles or skills to skip (comma-separated)" className="full" />
+          <Field label="Employment types" name="employmentTypes" defaultValue={(edit?.employmentTypes || []).join(', ')} placeholder="Full-time, Contract, Internship" className="full" />
+          <label className="form-item full" style={{ flexDirection: 'row', alignItems: 'center', gap: 8 }}>
+            <input type="checkbox" name="enabled" defaultChecked={edit ? Boolean(edit.enabled) : true} />
+            <span style={{ fontSize: 12, fontWeight: 600 }}>Enable this search profile for automated scanning</span>
+          </label>
+          <div className="form-item full" style={{ marginTop: 12, display: 'flex', gap: 10 }}>
+            <Button variant="primary" type="submit" disabled={create.isPending || update.isPending}>
+              {create.isPending || update.isPending ? 'Saving…' : edit ? 'Update search profile' : 'Create search profile'}
+            </Button>
+            <Button onClick={() => { setAdding(false); setEdit(null); }}>Cancel</Button>
+          </div>
+        </form>
+      </Drawer>
+    )}
   </main>;
 }
 
@@ -698,7 +728,7 @@ function CandidateEvidenceDrawer({ onClose }: { onClose: () => void }) {
           {/* Professional Work Experience */}
           <div className="panel" style={{ padding: 14 }}>
             <div style={{ fontWeight: 700, fontSize: 13, marginBottom: 10, display: 'flex', alignItems: 'center', gap: 6 }}>
-              <BriefcaseBusiness size={15} color="#10b981" /> Verified Work Experience (Hospital & Professional Roles)
+              <BriefcaseBusiness size={15} color="#10b981" /> Verified Professional Experience & Work History
             </div>
             <div style={{ display: 'grid', gap: 12 }}>
               {data.verifiedWorkExperience?.map((exp: any, i: number) => (
@@ -846,9 +876,9 @@ function SearchDirectiveBanner({ directiveData, onRefresh, isRefreshing, onViewE
       </div>
       <div className="panel-body" style={{ padding: '8px 16px', fontSize: 12 }}>
         <div style={{ display: 'flex', gap: 16, flexWrap: 'wrap', color: 'var(--foreground)' }}>
-          <div><b>Target Roles:</b> {directive.targetRoleFamilies?.slice(0, 3).join(', ') || 'IT Support, Junior Software Dev'}…</div>
+          <div><b>Target Roles:</b> {directive.targetRoleFamilies?.slice(0, 3).join(', ') || 'General Professional Roles'}…</div>
           <div><b>Locations:</b> {directive.locationRestrictions?.allowedCountries?.join(', ') || 'Kenya'} {directive.locationRestrictions?.allowWorldwideRemote ? '(+ Worldwide Remote)' : ''}</div>
-          <div><b>Seniority Exclusions:</b> {directive.seniorityExclusions?.slice(0, 3).join(', ')} (CTO, VP, Lead, Senior)</div>
+          <div><b>Seniority Exclusions:</b> {directive.seniorityExclusions?.slice(0, 3).join(', ') || 'Executive, C-Level'}</div>
         </div>
         {expanded && (
           <div style={{ marginTop: 12, paddingTop: 12, borderTop: '1px solid rgba(255,255,255,0.08)', display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(260px, 1fr))', gap: 12 }}>

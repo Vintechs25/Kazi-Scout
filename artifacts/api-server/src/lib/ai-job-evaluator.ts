@@ -68,22 +68,28 @@ function buildEvaluationPrompt(
   cvSnippet: string,
 ): string {
   const maxAllowedExp = Math.max(evidence.yearsExperience + 3, 3);
-  return `You are a precision AI Lead Talent Assessor and Career Matchmaker evaluating an opportunity against a candidate's VERIFIED CV and evidence profile.
-The candidate can be from ANY career domain (Medicine & Healthcare, Law, Finance, Engineering, Technology, Education, Operations, Creative, etc.).
+  return `You are a precision AI Lead Talent Assessor and universal Career Matchmaker.
+Evaluate whether the following job opportunity is a genuine fit for this candidate based STRICTLY on their verified CV evidence.
 
-CANDIDATE EVIDENCE DOSSIER (VERIFIED FROM ACTUAL MASTER CV):
+━━━ DOMAIN NEUTRALITY (MANDATORY) ━━━
+This system evaluates candidates from ALL career domains equally:
+Medicine/Surgery, Nursing, Pharmacy, Law, Finance/Accounting, Civil/Mechanical/Electrical Engineering,
+Technology/Software, Education/Academia, Operations/Management, Creative/Design, Trades, NGO, Agriculture, and more.
+Never apply IT/tech assumptions to a medical or legal candidate, and vice versa.
+
+━━━ CANDIDATE EVIDENCE DOSSIER ━━━
 - Full Name: ${evidence.fullName}
 - Verified Experience: ${evidence.yearsExperience} year(s)
 - Target Role Families: ${JSON.stringify(evidence.targetRoleFamilies)}
-- Demonstrated Skills & Competencies (Explicitly Evidenced): ${JSON.stringify(evidence.demonstratedTechnicalSkills)}
-- Self-Reported Skills (From Profile): ${JSON.stringify(evidence.selfReportedSkills)}
+- Demonstrated Skills & Competencies: ${JSON.stringify(evidence.demonstratedTechnicalSkills)}
+- Self-Reported Skills: ${JSON.stringify(evidence.selfReportedSkills)}
 - Verified Employment / Professional Background: ${JSON.stringify(evidence.verifiedWorkExperience)}
 - Education & Degrees: ${JSON.stringify(evidence.education)}
 - Certifications & Licensures: ${JSON.stringify(evidence.certifications)}
 - Limitations & Guardrails: ${JSON.stringify(evidence.limitationsOrMissingInfo)}
-${cvSnippet ? `\nVERIFIED MASTER CV EXCERPT:\n${cvSnippet.slice(0, 2200)}` : ""}
+${cvSnippet ? `\nVERIFIED MASTER CV EXCERPT:\n${cvSnippet.slice(0, 2500)}` : ""}
 
-OPPORTUNITY TO EVALUATE:
+━━━ OPPORTUNITY TO EVALUATE ━━━
 - Title: ${job.title}
 - Company: ${job.company}
 - Location: ${job.location || "Unspecified / Remote"}
@@ -92,24 +98,22 @@ OPPORTUNITY TO EVALUATE:
 - Full Description:
 ${(job.description || "").slice(0, 3500)}
 
-RIGOROUS EVALUATION RULES:
-1. Ground every claim strictly in candidate evidence. Do NOT invent qualifications or experience.
-2. TITLE MATCH IS NEVER SUFFICIENT: A role matching the title is NOT a strong match if required qualifications, clinical/technical competencies, or duties do not align.
-3. HARD ELIGIBILITY FAILURES:
-   - Experience: If the role strictly requires experience significantly exceeding candidate's verified background (strictly requires ${maxAllowedExp}+ years), candidate is INELIGIBLE.
-   - Geography / Authorization: If the role strictly restricts to a foreign country with no remote or sponsorship option, candidate is INELIGIBLE.
-   - When a hard eligibility failure occurs:
-     * "hardEligibilityFailure" MUST be true.
-     * "decision" MUST be "INELIGIBLE".
-     * "matchScore" MUST NOT exceed 30.
-     * High numerical score MUST NEVER override hard eligibility failure!
-4. DECISION CATEGORIES:
-   - STRONG_MATCH: Score 80-100. Role directly aligns with candidate's target profession, verified qualifications, credentials, and experience level. Zero hard eligibility failures.
-   - POTENTIAL_MATCH: Score 50-79. Relevant role in candidate's domain where candidate meets core qualifications but lacks 1-2 secondary requirements, or adjacent role in their field. Zero hard eligibility failures.
-   - NOT_A_MATCH: Score < 50. Completely wrong profession/domain or heavily incompatible qualifications.
-   - INSUFFICIENT_INFORMATION: Job description lacks enough detail to verify responsibilities or qualifications.
-   - INELIGIBLE: Fails hard eligibility criteria (severe experience/seniority mismatch or strict geographical lock).
-5. Output MUST be a valid JSON object matching the schema below.
+━━━ EVALUATION RULES ━━━
+1. EVIDENCE-GROUNDED ONLY: Ground every claim in candidate evidence. Do NOT invent qualifications.
+2. TITLE MATCH IS INSUFFICIENT: Matching title ≠ strong match without matching qualifications and domain.
+3. DOMAIN MATCHING: The job's required domain MUST match candidate's verified domain. Cross-domain mismatches (e.g., doctor applying for software engineering) are NOT_A_MATCH unless explicitly transitional.
+4. HARD ELIGIBILITY FAILURES — Set hardEligibilityFailure=true, decision=INELIGIBLE, matchScore≤30 when:
+   a. Role strictly requires experience significantly exceeding candidate's verified background (>${maxAllowedExp} years strictly required)
+   b. Role strictly locks to a foreign country with no remote option or sponsorship pathway
+   c. Role requires a mandatory license/credential (e.g., board certification, bar admission, PE license, medical registration) the candidate demonstrably lacks
+   CRITICAL: A high matchScore MUST NEVER override a hard eligibility failure.
+5. DECISION CATEGORIES:
+   - STRONG_MATCH (80-100): Direct domain/qualification/experience alignment. Zero hard eligibility failures.
+   - POTENTIAL_MATCH (50-79): Same domain, meets core requirements but lacks 1-2 secondary requirements, or reachable adjacent role.
+   - NOT_A_MATCH (<50): Wrong domain, incompatible qualifications, or fundamentally wrong career level.
+   - INSUFFICIENT_INFORMATION: Job description too vague for meaningful assessment.
+   - INELIGIBLE: Hard eligibility failure present.
+6. Output MUST be valid JSON matching the schema below.
 
 JSON OUTPUT SCHEMA:
 {
@@ -118,7 +122,7 @@ JSON OUTPUT SCHEMA:
   "matchedSkills": ["skill1", "skill2"],
   "missingSkills": ["missingSkill1"],
   "experienceCompatibility": "Detailed analysis of candidate's verified years vs job requirement",
-  "responsibilityCompatibility": "Analysis of day-to-day duties vs demonstrated competencies",
+  "responsibilityCompatibility": "Analysis of day-to-day duties vs demonstrated domain-specific competencies",
   "locationEligibility": "Analysis of location and remote eligibility",
   "hardEligibilityFailure": boolean,
   "hardFailureReason": string | null,

@@ -536,9 +536,13 @@ export class GoogleJobsConnector implements IJobConnector {
 
   private buildSearchQueries(filter?: ConnectorFilter): string[] {
     const queries: string[] = [];
-    const keyword = filter?.keywords && filter.keywords.length > 0 ? filter.keywords[0] : "IT support";
+    const keyword = filter?.keywords && filter.keywords.length > 0 ? filter.keywords[0] : "jobs";
     queries.push(`${keyword} jobs Kenya`);
-    queries.push("IT jobs Nairobi Kenya");
+    if (filter?.keywords && filter.keywords.length > 1) {
+      queries.push(`${filter.keywords[1]} jobs Kenya`);
+    } else {
+      queries.push(`${keyword} vacancies Kenya`);
+    }
     return queries;
   }
 

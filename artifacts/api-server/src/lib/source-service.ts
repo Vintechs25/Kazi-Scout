@@ -294,7 +294,10 @@ export class SourceService {
 
     const connector = getConnectorForSource(source);
     const limit = options.limit || 40;
-    const keywords = options.keywords || ["developer", "engineer", "IT support", "ICT", "analyst", "technician", "systems", "software"];
+    const candidateKeywords = options.keywords && options.keywords.length > 0 ? options.keywords : [];
+    const keywords = candidateKeywords.length > 0 
+      ? candidateKeywords 
+      : ["officer", "manager", "specialist", "assistant", "consultant", "analyst", "coordinator", "lead", "director", "associate"];
 
     const discovered = await connector.discoverListings(source, { limit, keywords });
 
@@ -319,11 +322,13 @@ export class SourceService {
 
         const jobId = listing.id || randomUUID();
 
-        // Calculate match score
+        // Calculate match score based on candidate keywords if available or universal relevance
         const text = `${title} ${listing.description || ""} ${company}`.toLowerCase();
-        const techKws = ["software", "developer", "engineer", "web", "frontend", "backend", "fullstack", "react", "node", "python", "javascript", "it support", "ict", "technician", "network", "system", "database", "sql", "cyber", "security", "data", "cloud", "qa", "analyst", "helpdesk", "administrator"];
-        const matches = techKws.filter(kw => text.includes(kw));
-        const matchScore = Math.min(95, Math.max(45, matches.length * 15 + (source.country === "Kenya" ? 20 : 10)));
+        const searchTerms = (candidateKeywords.length > 0 ? candidateKeywords : keywords).map(k => k.toLowerCase());
+        const matches = searchTerms.filter(kw => text.includes(kw));
+        const matchScore = candidateKeywords.length > 0
+          ? Math.min(95, Math.max(40, (matches.length > 0 ? 60 + matches.length * 10 : 35) + (source.country === "Kenya" ? 15 : 10)))
+          : Math.min(85, Math.max(50, (matches.length > 0 ? 55 + matches.length * 5 : 45) + (source.country === "Kenya" ? 15 : 10)));
         const status = matchScore >= 80 ? "MATCHED" : matchScore >= 50 ? "NEEDS_REVIEW" : "DISCOVERED";
 
         // Check existing job by fingerprint, id, or (source, externalJobId)

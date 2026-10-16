@@ -84,21 +84,8 @@ const fetchDiscoveryHistory = async (limit = 20): Promise<{
   }
 
   return {
-    runs: [
-      {
-        id: '1',
-        rolesSearched: ['IT Support Specialist', 'Junior Systems Administrator'],
-        sourcesScraped: ['BrighterMonday Kenya', 'MyJobMag Kenya', 'Google for Jobs', 'PSCK'],
-        discovered: 45,
-        matched: 32,
-        highMatches: 18,
-        executionTime: 8500,
-        errors: [],
-        startedAt: new Date(Date.now() - 3600000).toISOString(),
-        completedAt: new Date(Date.now() - 3600000 + 8500).toISOString(),
-      },
-    ],
-    total: 1,
+    runs: [],
+    total: 0,
   };
 };
 
@@ -122,19 +109,19 @@ const fetchDiscoveryStats = async (): Promise<DiscoveryStats> => {
       }
     }
   } catch (err) {
-    console.warn('[EnhancedDiscovery] Failed to fetch discovery stats, falling back to local:', err);
+    console.warn('[EnhancedDiscovery] Failed to fetch discovery stats:', err);
   }
 
   return {
-    totalDiscoveries: 12,
-    totalJobsDiscovered: 480,
-    totalMatches: 195,
-    avgJobsPerDiscovery: 40,
-    avgMatchesPerDiscovery: 16,
-    lastDiscovery: new Date().toISOString(),
-    bestDiscovery: { discovered: 95, matched: 42, date: new Date().toISOString() },
-    sourcesScraped: 24,
-    mostSuccessfulSource: 'BrighterMonday Kenya',
+    totalDiscoveries: 0,
+    totalJobsDiscovered: 0,
+    totalMatches: 0,
+    avgJobsPerDiscovery: 0,
+    avgMatchesPerDiscovery: 0,
+    lastDiscovery: null,
+    bestDiscovery: null,
+    sourcesScraped: 0,
+    mostSuccessfulSource: null,
   };
 };
 
@@ -166,26 +153,25 @@ const runDiscovery = async (config: any): Promise<DiscoveryResult> => {
       };
     }
   } catch (err) {
-    console.warn('[EnhancedDiscovery] Failed to run discovery via API, simulating local run:', err);
+    console.warn('[EnhancedDiscovery] Failed to run discovery via API:', err);
+    throw err;
   }
 
-  // Fallback demo result
-  await new Promise(resolve => setTimeout(resolve, 1500));
   return {
-    discovered: 55,
-    duplicates: 8,
-    matched: 38,
+    discovered: 0,
+    duplicates: 0,
+    matched: 0,
     highMatches: [],
     mediumMatches: [],
     lowMatches: [],
-    rejected: 12,
+    rejected: 0,
     errors: [],
-    sourcesScraped: ['brightermonday', 'myjobmag', 'jobwebkenya', 'google-jobs', 'weworkremotely'],
-    executionTime: 7500,
-    rolesSearched: ['IT Support Specialist', 'Junior Systems Administrator'],
-    cvMatched: 38,
-    requirementVerified: 28,
-    canApply: 24,
+    sourcesScraped: [],
+    executionTime: 0,
+    rolesSearched: [],
+    cvMatched: 0,
+    requirementVerified: 0,
+    canApply: 0,
   };
 };
 
@@ -203,11 +189,11 @@ const getEnabledRoles = async (): Promise<{ roles: string[]; preferences: any[];
       }
     }
   } catch (err) {
-    console.warn('[EnhancedDiscovery] Failed to fetch enabled roles, falling back to local:', err);
+    console.warn('[EnhancedDiscovery] Failed to fetch enabled roles:', err);
   }
 
   return {
-    roles: ['IT Support Specialist', 'Junior Systems Administrator', 'ICT Officer'],
+    roles: [],
     preferences: [],
     searchQueries: [],
   };

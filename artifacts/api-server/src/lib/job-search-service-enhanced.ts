@@ -110,6 +110,17 @@ export async function discoverAndMatchJobsEnhanced(
       } else if (parsedCv?.targetRoles && Array.isArray(parsedCv.targetRoles) && parsedCv.targetRoles.length > 0) {
         rolesToSearch = parsedCv.targetRoles;
       }
+
+      if (!rolesToSearch || rolesToSearch.length === 0) {
+        const [candidateProfile] = await db
+          .select()
+          .from(candidateProfilesTable)
+          .where(or(eq(candidateProfilesTable.id, accountId), eq(candidateProfilesTable.id, "primary")))
+          .limit(1);
+        if (candidateProfile?.targetRoles && Array.isArray(candidateProfile.targetRoles) && candidateProfile.targetRoles.length > 0) {
+          rolesToSearch = candidateProfile.targetRoles;
+        }
+      }
     } catch {
       // fallback
     }
@@ -117,11 +128,11 @@ export async function discoverAndMatchJobsEnhanced(
 
   if (!rolesToSearch || rolesToSearch.length === 0) {
     rolesToSearch = [
-      "Software Developer",
-      "IT Support Specialist",
-      "Full Stack Developer",
-      "Junior Systems Administrator",
-      "ICT Officer",
+      "Officer",
+      "Specialist",
+      "Coordinator",
+      "Associate",
+      "Manager",
     ];
   }
 

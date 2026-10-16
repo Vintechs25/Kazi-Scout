@@ -385,14 +385,9 @@ export async function initializeRolePreferencesFromCv(
     }
   }
 
-  // If still empty, supply appropriate default tech/IT roles
+  // If still empty, return empty array (do not inject biased role assumptions)
   if (candidateRoles.length === 0) {
-    candidateRoles = [
-      "IT Support Specialist",
-      "ICT Officer",
-      "Junior Systems Administrator",
-      "Junior Software Developer"
-    ];
+    return [];
   }
   
   // Create preferences for each unique role
