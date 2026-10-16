@@ -475,6 +475,47 @@ function GmailCard({
           Gmail uses read-only access. This app does not send, delete, or modify mail.
           The OAuth client ID and secret are stored encrypted on this machine.
         </div>
+
+        {/* Developer White-Glove Support Callout */}
+        <div style={{
+          marginBottom: 16,
+          padding: '14px 16px',
+          borderRadius: 8,
+          background: 'rgba(16, 185, 129, 0.07)',
+          border: '1px solid rgba(16, 185, 129, 0.3)',
+          display: 'flex',
+          flexDirection: 'column',
+          gap: 10
+        }}>
+          <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', flexWrap: 'wrap', gap: 8 }}>
+            <div style={{ fontWeight: 700, fontSize: 13, color: '#10b981', display: 'flex', alignItems: 'center', gap: 6 }}>
+              <Mail size={15}/> Need Help Setting Up Gmail Auto-Apply?
+            </div>
+            <span className="badge badge-green">Free Technical Support</span>
+          </div>
+          <div style={{ fontSize: 12, color: 'hsl(var(--foreground))', lineHeight: 1.5 }}>
+            Don't worry about configuring Google Cloud Console or OAuth keys manually. Our engineering team at <b>Vintech Systems & Consulting</b> will set up or verify your Gmail credentials for you in 5 minutes:
+          </div>
+          <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
+            <a
+              href="https://wa.me/254719767590?text=Hello%20Vintech%20Systems%2C%20I%20need%20help%20setting%20up%20Gmail%20OAuth%20Auto-Apply%20for%20my%20KaziScout%20account."
+              target="_blank"
+              rel="noopener noreferrer"
+              className="btn btn-primary btn-sm"
+              style={{ background: '#25D366', borderColor: '#25D366', color: '#ffffff', textDecoration: 'none' }}
+            >
+              💬 WhatsApp Developer: +254 719 767 590
+            </a>
+            <a
+              href="mailto:INFO@VINTECHSYSTEMS.COM?subject=KaziScout%20Gmail%20OAuth%20Setup%20Assistance"
+              className="btn btn-ghost btn-sm"
+              style={{ textDecoration: 'none' }}
+            >
+              ✉️ Email: INFO@VINTECHSYSTEMS.COM
+            </a>
+          </div>
+        </div>
+
         <form onSubmit={saveConfig} className="form-grid">
           <label className="form-item">
             <span className="label">Google OAuth client ID</span>

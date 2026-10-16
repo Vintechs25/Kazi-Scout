@@ -7,6 +7,7 @@ import {
   Trash2, UserRound, X, ExternalLink, Play, Pause, Square, RotateCw, LockKeyhole, ClipboardList,
   Mail, Paperclip, Copy, Calendar, Send, UploadCloud, Download, CheckCircle2, AlertCircle, FileCheck, Layers,
   Globe, MapPin, Target, PanelLeftClose, PanelLeftOpen, Menu, Eye, EyeOff, UserPlus, LogIn,
+  BookOpen,
 } from 'lucide-react';
 import {
   useHealthCheck, useGetAuthStatus, useSetupLocalAccount, useLoginLocalAccount, useLogoutLocalAccount,
@@ -22,6 +23,8 @@ import { SourcesManagement, IndexingControl, CountyRegistryView, JobProvenancePa
 import { RoleManagement } from './pages/RoleManagement';
 import { DiscoverySettings } from './pages/DiscoverySettings';
 import { EnhancedDiscovery } from './pages/EnhancedDiscovery';
+import { UserGuide } from './pages/UserGuide';
+import { OnboardingModal } from './components/OnboardingModal';
 
 const queryClient = new QueryClient({ defaultOptions: { queries: { retry: 1, staleTime: 8000 } } });
 const nav = [
@@ -37,7 +40,8 @@ const nav = [
   { href: '/settings', label: 'Agent & settings', icon: Settings2 },
   { href: '/roles', label: 'Role Management', icon: Target },
   { href: '/discovery-settings', label: 'Discovery Settings', icon: SlidersHorizontal },
-  { href: '/discovery', label: 'Enhanced Discovery', icon: Search }
+  { href: '/discovery', label: 'Enhanced Discovery', icon: Search },
+  { href: '/guide', label: 'User Manual & Support', icon: BookOpen },
 ];
 const labelize = (value = '') => value.toLowerCase().replaceAll('_', ' ').replace(/\b\w/g, c => c.toUpperCase());
 const date = (s?: string | null) => s ? new Date(s).toLocaleDateString(undefined, { month: 'short', day: 'numeric', year: 'numeric' }) : '—';
@@ -101,6 +105,7 @@ function AppShell({ children, health }: { children: React.ReactNode; health: any
 
   return (
     <div className="app-shell">
+      <OnboardingModal />
       {mobileOpen && (
         <div
           className="sidebar-backdrop"
@@ -326,7 +331,26 @@ function AppShell({ children, health }: { children: React.ReactNode; health: any
             </span>
           </div>
 
-          <div className="top-meta" style={{ display: 'flex', alignItems: 'center', gap: 14 }}>
+          <div className="top-meta" style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
+            <Link
+              href="/guide"
+              className="btn btn-ghost btn-sm hide-on-mobile"
+              style={{
+                display: 'inline-flex',
+                alignItems: 'center',
+                gap: 6,
+                fontSize: 11,
+                padding: '4px 10px',
+                border: '1px solid hsl(var(--border))',
+                borderRadius: 20,
+                textDecoration: 'none',
+                color: 'hsl(var(--foreground))'
+              }}
+              title="Open User Manual & Technical Support"
+            >
+              <BookOpen size={13} color="#10b981" />
+              <span>Guide & Support</span>
+            </Link>
             {(() => {
               const healthData = health.data as any;
               const isTurso = healthData?.database === 'turso';
@@ -443,6 +467,7 @@ function AuthGate() {
     <Route path="/roles" component={RoleManagement}/>
     <Route path="/discovery-settings" component={DiscoverySettings}/>
     <Route path="/discovery" component={EnhancedDiscovery}/>
+    <Route path="/guide" component={UserGuide}/>
     <Route component={Dashboard}/>
   </Switch></AppShell>;
 }
@@ -527,6 +552,71 @@ function Dashboard() {
         </div>
       </div>
     </section>
+
+    {/* Quick-Start Onboarding & Developer Support Banner */}
+    <section className="panel" style={{
+      marginBottom: 18,
+      padding: '14px 18px',
+      borderRadius: 12,
+      background: 'linear-gradient(135deg, rgba(16, 185, 129, 0.08) 0%, rgba(59, 130, 246, 0.04) 100%)',
+      border: '1px solid rgba(16, 185, 129, 0.3)',
+      display: 'flex',
+      alignItems: 'center',
+      justifyContent: 'space-between',
+      flexWrap: 'wrap',
+      gap: 14
+    }}>
+      <div style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
+        <div style={{
+          width: 36,
+          height: 36,
+          borderRadius: 8,
+          background: '#10b981',
+          color: '#ffffff',
+          display: 'flex',
+          alignItems: 'center',
+          justifyContent: 'center',
+          flexShrink: 0
+        }}>
+          <BookOpen size={18} />
+        </div>
+        <div>
+          <div style={{ fontWeight: 700, fontSize: 13, color: 'hsl(var(--foreground))', display: 'flex', alignItems: 'center', gap: 6 }}>
+            Getting Started: How KaziScout Works
+            <span className="badge badge-green" style={{ fontSize: 9 }}>5-Step Flow</span>
+          </div>
+          <div style={{ fontSize: 11, color: 'hsl(var(--muted-foreground))', marginTop: 2 }}>
+            1. Upload CV in <b>Document Vault</b> &rarr; 2. Calibrate <b>Profile</b> &rarr; 3. Run <b>Discovery</b> &rarr; 4. Review <b>Jobs</b> &rarr; 5. WhatsApp Developer for <b>Gmail Auto-Apply</b> (+254 719 767 590).
+          </div>
+        </div>
+      </div>
+      <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
+        <button
+          onClick={() => window.dispatchEvent(new CustomEvent('open-kaziscout-guide'))}
+          className="btn btn-primary btn-sm"
+          style={{ fontSize: 11, padding: '5px 12px' }}
+        >
+          <Sparkles size={12}/> Interactive Tour
+        </button>
+        <Link
+          href="/guide"
+          className="btn btn-ghost btn-sm"
+          style={{ fontSize: 11, padding: '5px 12px', textDecoration: 'none' }}
+        >
+          <BookOpen size={12}/> User Manual
+        </Link>
+        <a
+          href="https://wa.me/254719767590?text=Hello%20Vintech%20Systems%2C%20I%20am%20using%20KaziScout%20and%20need%20assistance%20setting%20up%20Auto-Apply."
+          target="_blank"
+          rel="noopener noreferrer"
+          className="btn btn-ghost btn-sm"
+          style={{ fontSize: 11, padding: '5px 12px', textDecoration: 'none', color: '#10b981', borderColor: 'rgba(16, 185, 129, 0.4)' }}
+        >
+          💬 WhatsApp Support
+        </a>
+      </div>
+    </section>
+
     <section className="stats-grid">
       {stats.map(([label, val, note, Icon, accentColor]: any) => (
         <div
@@ -2674,6 +2764,10 @@ function AuthPage({ initialMode = 'login' }: { initialMode?: 'login' | 'register
       if (!res.ok) {
         throw new Error(data.error || 'Registration failed. Please try again.');
       }
+      try {
+        localStorage.setItem('kaziscout_show_onboarding', 'true');
+        localStorage.removeItem('kaziscout_onboarding_completed');
+      } catch {}
       await queryClient.invalidateQueries();
       setLoc('/dashboard');
     } catch (err: any) {
