@@ -683,20 +683,29 @@ Output pure valid JSON only. Do not include markdown formatting or commentary ou
 
 function parseJsonSafely(text: string): unknown {
   const trimmed = text.trim();
-  const cleaned = trimmed
-    .replace(/^```(?:json)?\s*\n?/i, "")
-    .replace(/\n?```\s*$/i, "")
+  let cleaned = trimmed
+    .replace(/^[\s\S]*?```(?:json)?\s*\n?/i, (m) => (m.includes("{") ? m : ""))
+    .replace(/\n?```[\s\S]*$/i, "")
     .trim();
 
   try {
     return JSON.parse(cleaned);
-  } catch {
-    const match = cleaned.match(/\{[\s\S]*\}/);
-    if (match) {
-      return JSON.parse(match[0]);
+  } catch {}
+
+  const match = cleaned.match(/\{[\s\S]*\}/);
+  if (match) {
+    let jsonStr = match[0];
+    try {
+      return JSON.parse(jsonStr);
+    } catch {
+      jsonStr = jsonStr.replace(/,\s*([}\]])/g, "$1");
+      try {
+        return JSON.parse(jsonStr);
+      } catch {}
     }
-    throw new Error("Invalid JSON returned by AI model.");
   }
+
+  throw new Error("Invalid JSON returned by AI model.");
 }
 
 function extractJsonText(value: unknown): string | null {

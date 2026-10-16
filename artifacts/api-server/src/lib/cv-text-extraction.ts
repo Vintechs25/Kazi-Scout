@@ -97,11 +97,12 @@ export async function extractCvText(
               const lastTransform = lastItem.transform;
               if (Array.isArray(transform) && Array.isArray(lastTransform)) {
                 const yDiff = Math.abs(transform[5] - lastTransform[5]);
-                if (yDiff > 4) {
+                if (yDiff > 5) {
                   pageText += "\n";
                 } else {
-                  const xGap = transform[4] - (lastTransform[4] + (lastItem.width || 0));
-                  if (xGap > 2 && !pageText.endsWith(" ") && !item.str.startsWith(" ")) {
+                  const width = typeof lastItem.width === "number" && lastItem.width > 0 ? lastItem.width : 0;
+                  const xGap = transform[4] - (lastTransform[4] + width);
+                  if (xGap > 3.2 && !pageText.endsWith(" ") && !item.str.startsWith(" ")) {
                     pageText += " ";
                   }
                 }
@@ -139,11 +140,22 @@ export async function extractCvText(
     }
   }
 
-  // Normalize spaces while preserving structural line breaks
-  const normalized = (extracted || "")
+  // Normalize spaces and heal fragmented character runs while preserving structural line breaks
+  let normalized = (extracted || "")
     .replace(/[ \t]+/g, " ")
     .replace(/\n{3,}/g, "\n\n")
     .trim();
+
+  // Heal broken runs like "B E L L O" or "E x t"
+  normalized = normalized.replace(/\b([A-Za-z])(?:\s+([A-Za-z]))+\b/g, (match) => {
+    const parts = match.split(/\s+/);
+    const commonSingles = new Set(["a", "i"]);
+    if (parts.length > 2 || parts.every(p => !commonSingles.has(p.toLowerCase()))) {
+      return parts.join("");
+    }
+    return match;
+  });
+
   if (!normalized) {
     return { text: "", truncated: false };
   }
