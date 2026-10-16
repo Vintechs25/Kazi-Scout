@@ -17,4 +17,5 @@ export interface AiProviderConfigInput {
      * @maxLength 160
      */
   model: string;
+  baseUrl?: string;
 }

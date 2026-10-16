@@ -12,4 +12,6 @@ export type CvParseInputProvider = typeof CvParseInputProvider[keyof typeof CvPa
 export const CvParseInputProvider = {
   openai: 'openai',
   gemini: 'gemini',
+  agentrouter: 'agentrouter',
+  openrouter: 'openrouter',
 } as const;

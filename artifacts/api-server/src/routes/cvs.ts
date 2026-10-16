@@ -572,6 +572,7 @@ router.post("/cvs/:id/parse", async (req, res): Promise<void> => {
       apiKey,
       providerSettings.model,
       extracted.text,
+      providerSettings.baseUrl,
     );
   } catch (err) {
     req.log.warn({ provider: body.data.provider, err }, "AI provider extraction failed, falling back to precision local parser");

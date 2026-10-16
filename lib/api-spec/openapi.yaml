@@ -397,6 +397,24 @@ paths:
             application/json:
               schema: { $ref: "#/components/schemas/ProviderTestResult" }
         "409": { description: Provider is not configured }
+  /settings/default-provider:
+    patch:
+      operationId: setDefaultAiProvider
+      tags: [settings]
+      summary: Set the preferred or default AI provider (auto, agentrouter, gemini, openai)
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/SetDefaultAiProviderInput"
+      responses:
+        "200":
+          description: Default provider updated
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/SetDefaultAiProviderResult"
   /settings/gmail:
     put:
       operationId: saveGmailOAuthConfig
@@ -482,10 +500,7 @@ paths:
         content:
           application/json:
             schema:
-              type: object
-              properties:
-                roleTitle: { type: string }
-              required: [roleTitle]
+              $ref: "#/components/schemas/AddCustomRoleInput"
       responses:
         "200":
           description: Role added successfully
@@ -531,10 +546,7 @@ paths:
           content:
             application/json:
               schema:
-                type: object
-                properties:
-                  success: { type: boolean }
-                  message: { type: string }
+                $ref: "#/components/schemas/RemoveRolePreferenceResult"
   /user/roles/{roleId}/enable:
     patch:
       operationId: toggleRoleEnabled
@@ -550,10 +562,7 @@ paths:
         content:
           application/json:
             schema:
-              type: object
-              properties:
-                enabled: { type: boolean }
-              required: [enabled]
+              $ref: "#/components/schemas/ToggleRoleEnabledInput"
       responses:
         "200":
           description: Role toggle updated
@@ -576,10 +585,7 @@ paths:
         content:
           application/json:
             schema:
-              type: object
-              properties:
-                priority: { type: string, enum: [high, medium, low] }
-              required: [priority]
+              $ref: "#/components/schemas/SetRolePriorityInput"
       responses:
         "200":
           description: Priority set
@@ -602,10 +608,7 @@ paths:
         content:
           application/json:
             schema:
-              type: object
-              properties:
-                weight: { type: integer, minimum: 1, maximum: 100 }
-              required: [weight]
+              $ref: "#/components/schemas/SetRoleWeightInput"
       responses:
         "200":
           description: Weight set
@@ -652,10 +655,7 @@ paths:
         content:
           application/json:
             schema:
-              type: object
-              properties:
-                frequency: { type: string, enum: [manual, daily, every_2_days, weekly, biweekly] }
-              required: [frequency]
+              $ref: "#/components/schemas/SetSearchFrequencyInput"
       responses:
         "200":
           description: Frequency set
@@ -673,9 +673,7 @@ paths:
         content:
           application/json:
             schema:
-              type: object
-              properties:
-                config: { type: object }
+              $ref: "#/components/schemas/RunDiscoveryInput"
       responses:
         "200":
           description: Discovery results
@@ -797,7 +795,7 @@ components:
       in: path
       name: provider
       required: true
-      schema: { type: string, enum: [openai, gemini] }
+      schema: { type: string, enum: [openai, gemini, agentrouter, openrouter] }
   schemas:
     HealthStatus:
       type: object
@@ -1042,7 +1040,7 @@ components:
     CvParseInput:
       type: object
       properties:
-        provider: { type: string, enum: [openai, gemini] }
+        provider: { type: string, enum: [openai, gemini, agentrouter, openrouter] }
         consent: { type: boolean }
       required: [provider, consent]
     CvParseResult:
@@ -1069,19 +1067,22 @@ components:
     ProviderConnection:
       type: object
       properties:
-        provider: { type: string, enum: [openai, gemini, gmail] }
+        provider: { type: string, enum: [openai, gemini, gmail, agentrouter, openrouter] }
         status: { type: string, enum: [NOT_CONFIGURED, CONFIGURED, CONNECTED, ERROR] }
         detail: { type: string }
         configured: { type: boolean }
         model: { type: ["string", "null"] }
+        baseUrl: { type: ["string", "null"] }
         clientId: { type: ["string", "null"] }
         connectedEmail: { type: ["string", "null"] }
+        isDefault: { type: boolean }
       required: [provider, status, detail, configured, model, clientId, connectedEmail]
     AiProviderConfigInput:
       type: object
       properties:
         apiKey: { type: string, minLength: 8, maxLength: 2000 }
         model: { type: string, minLength: 1, maxLength: 160 }
+        baseUrl: { type: string }
       required: [apiKey, model]
     GmailOAuthConfigInput:
       type: object
@@ -1109,6 +1110,7 @@ components:
         providers:
           type: array
           items: { $ref: "#/components/schemas/ProviderConnection" }
+        defaultAiProvider: { type: string }
         applicationMode: { type: string, enum: [manual, approval, automatic] }
         duplicateProtection: { type: boolean }
         gmailRedirectUri: { type: string }
@@ -1456,3 +1458,49 @@ components:
           items: { type: string }
         roleMatchScore: { type: integer }
         decision: { type: string, enum: [ELIGIBLE, INELIGIBLE, NEEDS_REVIEW] }
+    SetDefaultAiProviderInput:
+      type: object
+      properties:
+        provider: { type: string, enum: [auto, agentrouter, gemini, openai, openrouter] }
+      required: [provider]
+    SetDefaultAiProviderResult:
+      type: object
+      properties:
+        success: { type: boolean }
+        defaultAiProvider: { type: string }
+      required: [success, defaultAiProvider]
+    AddCustomRoleInput:
+      type: object
+      properties:
+        roleTitle: { type: string }
+      required: [roleTitle]
+    RemoveRolePreferenceResult:
+      type: object
+      properties:
+        success: { type: boolean }
+        message: { type: string }
+      required: [success, message]
+    ToggleRoleEnabledInput:
+      type: object
+      properties:
+        enabled: { type: boolean }
+      required: [enabled]
+    SetRolePriorityInput:
+      type: object
+      properties:
+        priority: { type: string, enum: [high, medium, low] }
+      required: [priority]
+    SetRoleWeightInput:
+      type: object
+      properties:
+        weight: { type: integer, minimum: 1, maximum: 100 }
+      required: [weight]
+    SetSearchFrequencyInput:
+      type: object
+      properties:
+        frequency: { type: string, enum: [manual, daily, every_2_days, weekly, biweekly] }
+      required: [frequency]
+    RunDiscoveryInput:
+      type: object
+      properties:
+        config: { type: object }

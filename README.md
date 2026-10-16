@@ -83,3 +83,19 @@ To ensure your **auth credentials, OpenAI/Gemini API keys, search profiles, and 
 3. **Redeploy:**
    Go to **Deployments** in your Vercel project, click the three dots (`...`) on your latest deployment, and click **Redeploy**. KaziScout will automatically initialize and synchronize the entire schema to Turso on startup.
 
+## AI Providers & Smart Fallback Routing
+
+KaziScout supports multi-provider AI evaluation and cover letter generation:
+- **Agent Router (`agentrouter`)**: OpenAI-compatible router gateway (default: `https://agentrouter.org/v1`) with full support for GPT-4o, Claude 3.5 Sonnet, DeepSeek, and custom router models.
+- **Google Gemini**: Gemini 2.0 Flash, Gemini 1.5 Pro, and Flash models.
+- **OpenAI**: GPT-4o, GPT-4o-mini, and reasoning models.
+
+### Smart Fallback & Default Provider
+In **Settings -> AI Providers & Fallback**, you can:
+- Configure API keys and model selections for Agent Router, Gemini, and OpenAI.
+- Choose your **Active / Default AI Provider**:
+  - `Auto`: Seamless smart fallback across your configured providers.
+  - `Agent Router`: Use Agent Router as primary evaluator, falling back to Gemini and OpenAI if unavailable.
+  - `Google Gemini`: Use Gemini as primary evaluator, falling back to OpenAI and Agent Router.
+  - `OpenAI`: Use OpenAI as primary evaluator, falling back to Gemini and Agent Router.
+

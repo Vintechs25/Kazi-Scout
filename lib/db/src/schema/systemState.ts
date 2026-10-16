@@ -6,6 +6,7 @@ export const systemStateTable = sqliteTable("system_state", {
   agentState: text("agent_state", { enum: ["STOPPED", "STARTING", "RUNNING", "PAUSED", "ERROR"] }).notNull().default("STOPPED"),
   agentMessage: text("agent_message").notNull().default("Agent is stopped. No automated actions are running."),
   applicationMode: text("application_mode", { enum: ["manual", "approval", "automatic"] }).notNull().default("approval"),
+  defaultAiProvider: text("default_ai_provider").notNull().default("auto"),
   updatedAt: integer("updated_at", { mode: "timestamp" }).notNull(),
 });
 

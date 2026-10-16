@@ -16,7 +16,10 @@ export interface ProviderConnection {
   /** @nullable */
   model: string | null;
   /** @nullable */
+  baseUrl?: string | null;
+  /** @nullable */
   clientId: string | null;
   /** @nullable */
   connectedEmail: string | null;
+  isDefault?: boolean;
 }

@@ -7,7 +7,7 @@
 import fs from "node:fs";
 import path from "node:path";
 import { eq } from "drizzle-orm";
-import { cvsTable, db, integrationSettingsTable } from "@workspace/db";
+import { cvsTable, db, integrationSettingsTable, systemStateTable } from "@workspace/db";
 import { extractCvText } from "./cv-text-extraction";
 import { decryptCredentials } from "./credential-encryption";
 import { generateCoverLetterWithAi, type AiProvider } from "./provider-services";
@@ -100,31 +100,60 @@ export async function generateTailoredCoverLetter(
 
   // 2. Try Connected AI Provider (Gemini / OpenAI / OpenRouter)
   try {
-    const [settings] = await db
-      .select()
-      .from(integrationSettingsTable)
-      .where(eq(integrationSettingsTable.status, "CONNECTED"))
-      .limit(1);
+    const [allIntegrations, [state]] = await Promise.all([
+      db.select().from(integrationSettingsTable).where(eq(integrationSettingsTable.status, "CONNECTED")),
+      db.select().from(systemStateTable).where(eq(systemStateTable.id, "agent")).limit(1),
+    ]);
+    const defaultPref = state?.defaultAiProvider || "auto";
 
-    let provider = settings?.provider as AiProvider | undefined;
-    let apiKey = settings?.encryptedCredentials ? decryptCredentials<{ apiKey?: string }>(settings.encryptedCredentials)?.apiKey : undefined;
-    let model = settings?.model || "gemini-3.6-flash";
+    // Sort providers according to default preference
+    const sorted = [...allIntegrations].sort((a, b) => {
+      if (defaultPref !== "auto") {
+        if (a.provider === defaultPref) return -1;
+        if (b.provider === defaultPref) return 1;
+      }
+      return 0;
+    });
 
-    if (!apiKey && process.env.GEMINI_API_KEY) {
-      provider = "gemini";
-      apiKey = process.env.GEMINI_API_KEY;
-      model = "gemini-3.6-flash";
+    for (const settings of sorted) {
+      const provider = settings.provider as AiProvider;
+      const apiKey = settings.encryptedCredentials
+        ? decryptCredentials<{ apiKey?: string }>(settings.encryptedCredentials)?.apiKey
+        : undefined;
+      const model = settings.model || (provider === "agentrouter" ? "gpt-4o-mini" : "gemini-3.6-flash");
+
+      if (provider && apiKey) {
+        const aiResult = await generateCoverLetterWithAi(
+          dossier.summaryText || `Candidate Name: ${candidateName}, Education: ${candidateEducation}`,
+          job,
+          { ...extractedDetails, refCode },
+          profile,
+          provider,
+          apiKey,
+          model,
+          settings.baseUrl,
+        );
+
+        if (aiResult && aiResult.coverLetter) {
+          return {
+            subject: aiResult.subject,
+            recipientEmail: aiResult.recipientEmail || extractedDetails?.applyEmail || "",
+            coverLetter: aiResult.coverLetter,
+            suggestedDocumentCategories: aiResult.suggestedDocumentCategories,
+          };
+        }
+      }
     }
 
-    if (provider && apiKey) {
+    if (process.env.GEMINI_API_KEY) {
       const aiResult = await generateCoverLetterWithAi(
         dossier.summaryText || `Candidate Name: ${candidateName}, Education: ${candidateEducation}`,
         job,
         { ...extractedDetails, refCode },
         profile,
-        provider,
-        apiKey,
-        model
+        "gemini",
+        process.env.GEMINI_API_KEY,
+        "gemini-3.6-flash",
       );
 
       if (aiResult && aiResult.coverLetter) {

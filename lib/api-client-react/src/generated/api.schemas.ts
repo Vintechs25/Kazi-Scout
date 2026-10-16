@@ -67,7 +67,6 @@ export const JobStatus = {
   DISCOVERED: 'DISCOVERED',
   MATCHED: 'MATCHED',
   SHORTLISTED: 'SHORTLISTED',
-  APPLIED: 'APPLIED',
   REJECTED: 'REJECTED',
   IGNORED: 'IGNORED',
   NEEDS_REVIEW: 'NEEDS_REVIEW',
@@ -483,6 +482,8 @@ export type CvParseInputProvider = typeof CvParseInputProvider[keyof typeof CvPa
 export const CvParseInputProvider = {
   openai: 'openai',
   gemini: 'gemini',
+  agentrouter: 'agentrouter',
+  openrouter: 'openrouter',
 } as const;
 
 export interface CvParseInput {
@@ -517,6 +518,8 @@ export const ProviderConnectionProvider = {
   openai: 'openai',
   gemini: 'gemini',
   gmail: 'gmail',
+  agentrouter: 'agentrouter',
+  openrouter: 'openrouter',
 } as const;
 
 export type ProviderConnectionStatus = typeof ProviderConnectionStatus[keyof typeof ProviderConnectionStatus];
@@ -537,9 +540,12 @@ export interface ProviderConnection {
   /** @nullable */
   model: string | null;
   /** @nullable */
+  baseUrl?: string | null;
+  /** @nullable */
   clientId: string | null;
   /** @nullable */
   connectedEmail: string | null;
+  isDefault?: boolean;
 }
 
 export interface AiProviderConfigInput {
@@ -553,6 +559,7 @@ export interface AiProviderConfigInput {
      * @maxLength 160
      */
   model: string;
+  baseUrl?: string;
 }
 
 export interface GmailOAuthConfigInput {
@@ -591,14 +598,462 @@ export const SettingsStatusApplicationMode = {
 
 export interface SettingsStatus {
   providers: ProviderConnection[];
+  defaultAiProvider?: string;
   applicationMode: SettingsStatusApplicationMode;
   duplicateProtection: boolean;
   gmailRedirectUri: string;
 }
 
+export type RolePreferenceSource = typeof RolePreferenceSource[keyof typeof RolePreferenceSource];
+
+
+export const RolePreferenceSource = {
+  cv: 'cv',
+  manual: 'manual',
+  suggested: 'suggested',
+} as const;
+
+export type RolePreferencePriority = typeof RolePreferencePriority[keyof typeof RolePreferencePriority];
+
+
+export const RolePreferencePriority = {
+  high: 'high',
+  medium: 'medium',
+  low: 'low',
+} as const;
+
+export interface RolePreference {
+  id: string;
+  accountId: string;
+  roleTitle: string;
+  source: RolePreferenceSource;
+  enabled: boolean;
+  priority: RolePreferencePriority;
+  /**
+     * @minimum 1
+     * @maximum 100
+     */
+  weight: number;
+  searchQueries?: string[];
+  keywords?: string[];
+  exclusionKeywords?: string[];
+  /** @nullable */
+  minSalary?: number | null;
+  /** @nullable */
+  maxSalary?: number | null;
+  locationPreferences?: string[];
+  remoteOnly?: boolean;
+  experienceLevel?: string[];
+  industryPreferences?: string[];
+  companySize?: string[];
+  createdAt: string;
+  updatedAt: string;
+}
+
+export type RolePreferenceUpdatePriority = typeof RolePreferenceUpdatePriority[keyof typeof RolePreferenceUpdatePriority];
+
+
+export const RolePreferenceUpdatePriority = {
+  high: 'high',
+  medium: 'medium',
+  low: 'low',
+} as const;
+
+export interface RolePreferenceUpdate {
+  roleTitle?: string;
+  enabled?: boolean;
+  priority?: RolePreferenceUpdatePriority;
+  /**
+     * @minimum 1
+     * @maximum 100
+     */
+  weight?: number;
+  searchQueries?: string[];
+  keywords?: string[];
+  exclusionKeywords?: string[];
+  /** @nullable */
+  minSalary?: number | null;
+  /** @nullable */
+  maxSalary?: number | null;
+  locationPreferences?: string[];
+  remoteOnly?: boolean;
+  experienceLevel?: string[];
+  industryPreferences?: string[];
+  companySize?: string[];
+}
+
+export type UserRolesResponseStatistics = {
+  totalRoles?: number;
+  enabledRoles?: number;
+  highPriorityRoles?: number;
+  manualRoles?: number;
+  cvRoles?: number;
+  selectedForDiscovery?: number;
+};
+
+export type UserRolesResponseSuggestions = {
+  roles?: string[];
+  primary?: string[];
+  secondary?: string[];
+  reasoning?: string[];
+};
+
+export interface UserRolesResponse {
+  success?: boolean;
+  preferences?: RolePreference[];
+  statistics?: UserRolesResponseStatistics;
+  suggestions?: UserRolesResponseSuggestions;
+}
+
+export type DiscoverySettingsSearchFrequency = typeof DiscoverySettingsSearchFrequency[keyof typeof DiscoverySettingsSearchFrequency];
+
+
+export const DiscoverySettingsSearchFrequency = {
+  manual: 'manual',
+  daily: 'daily',
+  every_2_days: 'every_2_days',
+  weekly: 'weekly',
+  biweekly: 'biweekly',
+} as const;
+
+export type DiscoverySettingsNotificationChannelsItem = typeof DiscoverySettingsNotificationChannelsItem[keyof typeof DiscoverySettingsNotificationChannelsItem];
+
+
+export const DiscoverySettingsNotificationChannelsItem = {
+  in_app: 'in_app',
+  email: 'email',
+  sms: 'sms',
+} as const;
+
+export interface DiscoverySettings {
+  id: string;
+  accountId: string;
+  selectedRoleIds: string[];
+  searchFrequency: DiscoverySettingsSearchFrequency;
+  /** @nullable */
+  searchTimePreference?: string | null;
+  /**
+     * @minimum 10
+     * @maximum 500
+     */
+  maxJobsPerSearch: number;
+  autoApproveHighMatches: boolean;
+  /**
+     * @minimum 0
+     * @maximum 100
+     */
+  minMatchScoreForAutoApprove?: number;
+  preferredSourceIds?: string[];
+  excludedSourceIds?: string[];
+  enableAllKenyaSources: boolean;
+  enableGlobalRemoteSources: boolean;
+  enableRecruitmentAgencies: boolean;
+  enableStartups: boolean;
+  enableFreelance?: boolean;
+  /** @nullable */
+  defaultMinSalary?: number | null;
+  /** @nullable */
+  defaultMaxSalary?: number | null;
+  defaultLocations?: string[];
+  defaultRemoteOnly?: boolean;
+  defaultJobTypes?: string[];
+  defaultExperienceLevels?: string[];
+  defaultIndustries?: string[];
+  defaultCompanies?: string[];
+  defaultExcludeKeywords?: string[];
+  requireApplicationInstructions?: boolean;
+  enableAISuggestions?: boolean;
+  enableKeywordExpansion?: boolean;
+  expansionKeywords?: string[];
+  notifyNewJobs?: boolean;
+  notificationChannels?: DiscoverySettingsNotificationChannelsItem[];
+  /** @nullable */
+  lastDiscoveryRun?: string | null;
+  /** @nullable */
+  nextScheduledRun?: string | null;
+  totalDiscoveries: number;
+  totalJobsDiscovered: number;
+  totalMatches: number;
+  totalApplications: number;
+  createdAt: string;
+  updatedAt: string;
+}
+
+export type DiscoverySettingsUpdateSearchFrequency = typeof DiscoverySettingsUpdateSearchFrequency[keyof typeof DiscoverySettingsUpdateSearchFrequency];
+
+
+export const DiscoverySettingsUpdateSearchFrequency = {
+  manual: 'manual',
+  daily: 'daily',
+  every_2_days: 'every_2_days',
+  weekly: 'weekly',
+  biweekly: 'biweekly',
+} as const;
+
+export interface DiscoverySettingsUpdate {
+  selectedRoleIds?: string[];
+  searchFrequency?: DiscoverySettingsUpdateSearchFrequency;
+  /** @nullable */
+  searchTimePreference?: string | null;
+  /**
+     * @minimum 10
+     * @maximum 500
+     */
+  maxJobsPerSearch?: number;
+  autoApproveHighMatches?: boolean;
+  /**
+     * @minimum 0
+     * @maximum 100
+     */
+  minMatchScoreForAutoApprove?: number;
+  preferredSourceIds?: string[];
+  excludedSourceIds?: string[];
+  enableAllKenyaSources?: boolean;
+  enableGlobalRemoteSources?: boolean;
+}
+
+export type DiscoverySettingsResponseEnabledRoles = {
+  roles?: string[];
+  preferences?: RolePreference[];
+  searchQueries?: string[];
+};
+
+export type DiscoverySettingsResponseSourcesAllSourcesItem = { [key: string]: unknown };
+
+export type DiscoverySettingsResponseSources = {
+  allSources?: DiscoverySettingsResponseSourcesAllSourcesItem[];
+};
+
+export type DiscoverySettingsResponseGuidanceFilters = { [key: string]: unknown };
+
+export type DiscoverySettingsResponseGuidance = {
+  guidance?: string[];
+  enabledRoles?: string[];
+  searchQueries?: string[];
+  sourceRecommendations?: string[];
+  filters?: DiscoverySettingsResponseGuidanceFilters;
+};
+
+export interface DiscoverySettingsResponse {
+  success?: boolean;
+  settings?: DiscoverySettings;
+  enabledRoles?: DiscoverySettingsResponseEnabledRoles;
+  sources?: DiscoverySettingsResponseSources;
+  guidance?: DiscoverySettingsResponseGuidance;
+}
+
+export interface DiscoveryResult {
+  discovered?: number;
+  duplicates?: number;
+  matched?: number;
+  highMatches?: number;
+  mediumMatches?: number;
+  lowMatches?: number;
+  rejected?: number;
+  errors?: string[];
+  sourcesScraped?: string[];
+  executionTime?: number;
+  rolesSearched?: string[];
+  cvMatched?: number;
+  requirementVerified?: number;
+  canApply?: number;
+}
+
+export interface DiscoveryRun {
+  id?: string;
+  rolesSearched?: string[];
+  sourcesScraped?: string[];
+  discovered?: number;
+  matched?: number;
+  highMatches?: number;
+  executionTime?: number;
+  errors?: string[];
+  startedAt?: string;
+  /** @nullable */
+  completedAt?: string | null;
+}
+
+export interface DiscoveryHistory {
+  runs?: DiscoveryRun[];
+  total?: number;
+}
+
+export type DiscoveryStatisticsBestDiscovery = {
+  discovered?: number;
+  matched?: number;
+  date?: string;
+};
+
+export interface DiscoveryStatistics {
+  totalDiscoveries?: number;
+  totalJobsDiscovered?: number;
+  totalMatches?: number;
+  avgJobsPerDiscovery?: number;
+  avgMatchesPerDiscovery?: number;
+  /** @nullable */
+  lastDiscovery?: string | null;
+  bestDiscovery?: DiscoveryStatisticsBestDiscovery;
+  sourcesScraped?: number;
+  /** @nullable */
+  mostSuccessfulSource?: string | null;
+}
+
+export type DiscoveryGuidanceFilters = { [key: string]: unknown };
+
+export interface DiscoveryGuidance {
+  guidance?: string[];
+  enabledRoles?: string[];
+  searchQueries?: string[];
+  sourceRecommendations?: string[];
+  filters?: DiscoveryGuidanceFilters;
+}
+
+export type JobVerificationResultApplicationMethod = typeof JobVerificationResultApplicationMethod[keyof typeof JobVerificationResultApplicationMethod];
+
+
+export const JobVerificationResultApplicationMethod = {
+  online: 'online',
+  email: 'email',
+  portal: 'portal',
+  walk_in: 'walk_in',
+  phone: 'phone',
+  post: 'post',
+  referral: 'referral',
+  social: 'social',
+  unknown: 'unknown',
+} as const;
+
+export interface JobVerificationResult {
+  success?: boolean;
+  jobId?: string;
+  hasClearInstructions?: boolean;
+  applicationMethod?: JobVerificationResultApplicationMethod;
+  /** @nullable */
+  applicationUrl?: string | null;
+  /** @nullable */
+  applicationEmail?: string | null;
+  /** @nullable */
+  deadline?: string | null;
+  isUrgent?: boolean;
+  /** @nullable */
+  daysUntilDeadline?: number | null;
+  requiredDocuments?: string[];
+  canApply?: boolean;
+  /** @nullable */
+  canApplyReason?: string | null;
+  /** @nullable */
+  cannotApplyReason?: string | null;
+  verificationScore?: number;
+  confidence?: number;
+  verifiedAt?: string;
+}
+
+export type JobMatchDetailsJob = {
+  id?: string;
+  title?: string;
+};
+
+export type JobMatchDetailsDecision = typeof JobMatchDetailsDecision[keyof typeof JobMatchDetailsDecision];
+
+
+export const JobMatchDetailsDecision = {
+  ELIGIBLE: 'ELIGIBLE',
+  INELIGIBLE: 'INELIGIBLE',
+  NEEDS_REVIEW: 'NEEDS_REVIEW',
+} as const;
+
+export interface JobMatchDetails {
+  success?: boolean;
+  job?: JobMatchDetailsJob;
+  matchScore?: number;
+  cvMatchedSkills?: string[];
+  cvMissingSkills?: string[];
+  roleMatchScore?: number;
+  decision?: JobMatchDetailsDecision;
+}
+
+export type SetDefaultAiProviderInputProvider = typeof SetDefaultAiProviderInputProvider[keyof typeof SetDefaultAiProviderInputProvider];
+
+
+export const SetDefaultAiProviderInputProvider = {
+  auto: 'auto',
+  agentrouter: 'agentrouter',
+  gemini: 'gemini',
+  openai: 'openai',
+  openrouter: 'openrouter',
+} as const;
+
+export interface SetDefaultAiProviderInput {
+  provider: SetDefaultAiProviderInputProvider;
+}
+
+export interface SetDefaultAiProviderResult {
+  success: boolean;
+  defaultAiProvider: string;
+}
+
+export interface AddCustomRoleInput {
+  roleTitle: string;
+}
+
+export interface RemoveRolePreferenceResult {
+  success: boolean;
+  message: string;
+}
+
+export interface ToggleRoleEnabledInput {
+  enabled: boolean;
+}
+
+export type SetRolePriorityInputPriority = typeof SetRolePriorityInputPriority[keyof typeof SetRolePriorityInputPriority];
+
+
+export const SetRolePriorityInputPriority = {
+  high: 'high',
+  medium: 'medium',
+  low: 'low',
+} as const;
+
+export interface SetRolePriorityInput {
+  priority: SetRolePriorityInputPriority;
+}
+
+export interface SetRoleWeightInput {
+  /**
+     * @minimum 1
+     * @maximum 100
+     */
+  weight: number;
+}
+
+export type SetSearchFrequencyInputFrequency = typeof SetSearchFrequencyInputFrequency[keyof typeof SetSearchFrequencyInputFrequency];
+
+
+export const SetSearchFrequencyInputFrequency = {
+  manual: 'manual',
+  daily: 'daily',
+  every_2_days: 'every_2_days',
+  weekly: 'weekly',
+  biweekly: 'biweekly',
+} as const;
+
+export interface SetSearchFrequencyInput {
+  frequency: SetSearchFrequencyInputFrequency;
+}
+
+export type RunDiscoveryInputConfig = { [key: string]: unknown };
+
+export interface RunDiscoveryInput {
+  config?: RunDiscoveryInputConfig;
+}
+
 export type ListJobsParams = {
 q?: string;
 status?: JobStatus;
+};
+
+export type GetDiscoveryHistoryParams = {
+limit?: number;
 };
 
 export type GmailOAuthCallbackParams = {

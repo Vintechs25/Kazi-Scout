@@ -2,9 +2,10 @@ import { createInsertSchema } from "drizzle-zod";
 import { integer, sqliteTable, text } from "drizzle-orm/sqlite-core";
 
 export const integrationSettingsTable = sqliteTable("integration_settings", {
-  provider: text("provider", { enum: ["openai", "gemini", "gmail"] }).primaryKey(),
+  provider: text("provider", { enum: ["openai", "gemini", "gmail", "agentrouter", "openrouter"] }).primaryKey(),
   encryptedCredentials: text("encrypted_credentials").notNull(),
   model: text("model"),
+  baseUrl: text("base_url"),
   clientId: text("client_id"),
   status: text("status", { enum: ["CONFIGURED", "CONNECTED", "ERROR"] })
     .notNull()

@@ -98,7 +98,7 @@ export const GetDashboardResponse = zod.object({
  */
 export const ListJobsQueryParams = zod.object({
   "q": zod.coerce.string().optional(),
-  "status": zod.enum(['DISCOVERED', 'MATCHED', 'SHORTLISTED', 'APPLIED', 'REJECTED', 'IGNORED', 'NEEDS_REVIEW']).optional()
+  "status": zod.enum(['DISCOVERED', 'MATCHED', 'SHORTLISTED', 'REJECTED', 'IGNORED', 'NEEDS_REVIEW']).optional()
 })
 
 export const listJobsResponseMatchScoreMin = 0;
@@ -117,7 +117,7 @@ export const ListJobsResponseItem = zod.object({
   "sourceUrl": zod.string().url().nullable(),
   "description": zod.string(),
   "matchScore": zod.number().int().min(listJobsResponseMatchScoreMin).max(listJobsResponseMatchScoreMax).nullable(),
-  "status": zod.enum(['DISCOVERED', 'MATCHED', 'SHORTLISTED', 'APPLIED', 'REJECTED', 'IGNORED', 'NEEDS_REVIEW']),
+  "status": zod.enum(['DISCOVERED', 'MATCHED', 'SHORTLISTED', 'REJECTED', 'IGNORED', 'NEEDS_REVIEW']),
   "discoveredAt": zod.coerce.date()
 })
 export const ListJobsResponse = zod.array(ListJobsResponseItem)
@@ -170,7 +170,7 @@ export const CreateJobResponse = zod.object({
   "sourceUrl": zod.string().url().nullable(),
   "description": zod.string(),
   "matchScore": zod.number().int().min(createJobResponseMatchScoreMin).max(createJobResponseMatchScoreMax).nullable(),
-  "status": zod.enum(['DISCOVERED', 'MATCHED', 'SHORTLISTED', 'APPLIED', 'REJECTED', 'IGNORED', 'NEEDS_REVIEW']),
+  "status": zod.enum(['DISCOVERED', 'MATCHED', 'SHORTLISTED', 'REJECTED', 'IGNORED', 'NEEDS_REVIEW']),
   "discoveredAt": zod.coerce.date()
 })
 
@@ -201,7 +201,7 @@ export const GetJobResponse = zod.object({
   "sourceUrl": zod.string().url().nullable(),
   "description": zod.string(),
   "matchScore": zod.number().int().min(getJobResponseMatchScoreMin).max(getJobResponseMatchScoreMax).nullable(),
-  "status": zod.enum(['DISCOVERED', 'MATCHED', 'SHORTLISTED', 'APPLIED', 'REJECTED', 'IGNORED', 'NEEDS_REVIEW']),
+  "status": zod.enum(['DISCOVERED', 'MATCHED', 'SHORTLISTED', 'REJECTED', 'IGNORED', 'NEEDS_REVIEW']),
   "discoveredAt": zod.coerce.date()
 })
 
@@ -217,7 +217,7 @@ export const UpdateJobParams = zod.object({
 })
 
 export const UpdateJobBody = zod.object({
-  "status": zod.enum(['DISCOVERED', 'MATCHED', 'SHORTLISTED', 'APPLIED', 'REJECTED', 'IGNORED', 'NEEDS_REVIEW'])
+  "status": zod.enum(['DISCOVERED', 'MATCHED', 'SHORTLISTED', 'REJECTED', 'IGNORED', 'NEEDS_REVIEW'])
 })
 
 export const updateJobResponseMatchScoreMin = 0;
@@ -236,7 +236,7 @@ export const UpdateJobResponse = zod.object({
   "sourceUrl": zod.string().url().nullable(),
   "description": zod.string(),
   "matchScore": zod.number().int().min(updateJobResponseMatchScoreMin).max(updateJobResponseMatchScoreMax).nullable(),
-  "status": zod.enum(['DISCOVERED', 'MATCHED', 'SHORTLISTED', 'APPLIED', 'REJECTED', 'IGNORED', 'NEEDS_REVIEW']),
+  "status": zod.enum(['DISCOVERED', 'MATCHED', 'SHORTLISTED', 'REJECTED', 'IGNORED', 'NEEDS_REVIEW']),
   "discoveredAt": zod.coerce.date()
 })
 
@@ -617,7 +617,7 @@ export const ParseCvProfileParams = zod.object({
 })
 
 export const ParseCvProfileBody = zod.object({
-  "provider": zod.enum(['openai', 'gemini']),
+  "provider": zod.enum(['openai', 'gemini', 'agentrouter', 'openrouter']),
   "consent": zod.boolean()
 })
 
@@ -685,7 +685,7 @@ export const ParseCvProfileResponse = zod.object({
  * @summary Save an encrypted OpenAI or Gemini API configuration
  */
 export const SaveAiProviderParams = zod.object({
-  "provider": zod.enum(['openai', 'gemini'])
+  "provider": zod.enum(['openai', 'gemini', 'agentrouter', 'openrouter'])
 })
 
 export const saveAiProviderBodyApiKeyMin = 8;
@@ -697,17 +697,20 @@ export const saveAiProviderBodyModelMax = 160;
 
 export const SaveAiProviderBody = zod.object({
   "apiKey": zod.string().min(saveAiProviderBodyApiKeyMin).max(saveAiProviderBodyApiKeyMax),
-  "model": zod.string().min(1).max(saveAiProviderBodyModelMax)
+  "model": zod.string().min(1).max(saveAiProviderBodyModelMax),
+  "baseUrl": zod.string().optional()
 })
 
 export const SaveAiProviderResponse = zod.object({
-  "provider": zod.enum(['openai', 'gemini', 'gmail']),
+  "provider": zod.enum(['openai', 'gemini', 'gmail', 'agentrouter', 'openrouter']),
   "status": zod.enum(['NOT_CONFIGURED', 'CONFIGURED', 'CONNECTED', 'ERROR']),
   "detail": zod.string(),
   "configured": zod.boolean(),
   "model": zod.string().nullable(),
+  "baseUrl": zod.string().nullish(),
   "clientId": zod.string().nullable(),
-  "connectedEmail": zod.string().nullable()
+  "connectedEmail": zod.string().nullable(),
+  "isDefault": zod.boolean().optional()
 })
 
 
@@ -715,7 +718,7 @@ export const SaveAiProviderResponse = zod.object({
  * @summary Remove a saved AI provider configuration
  */
 export const RemoveAiProviderParams = zod.object({
-  "provider": zod.enum(['openai', 'gemini'])
+  "provider": zod.enum(['openai', 'gemini', 'agentrouter', 'openrouter'])
 })
 
 export const RemoveAiProviderResponse = zod.void()
@@ -725,13 +728,26 @@ export const RemoveAiProviderResponse = zod.void()
  * @summary Verify the configured API key and selected model
  */
 export const TestAiProviderParams = zod.object({
-  "provider": zod.enum(['openai', 'gemini'])
+  "provider": zod.enum(['openai', 'gemini', 'agentrouter', 'openrouter'])
 })
 
 export const TestAiProviderResponse = zod.object({
   "success": zod.boolean(),
   "message": zod.string(),
   "testedAt": zod.coerce.date()
+})
+
+
+/**
+ * @summary Set the preferred or default AI provider (auto, agentrouter, gemini, openai)
+ */
+export const SetDefaultAiProviderBody = zod.object({
+  "provider": zod.enum(['auto', 'agentrouter', 'gemini', 'openai', 'openrouter'])
+})
+
+export const SetDefaultAiProviderResponse = zod.object({
+  "success": zod.boolean(),
+  "defaultAiProvider": zod.string()
 })
 
 
@@ -752,13 +768,15 @@ export const SaveGmailOAuthConfigBody = zod.object({
 })
 
 export const SaveGmailOAuthConfigResponse = zod.object({
-  "provider": zod.enum(['openai', 'gemini', 'gmail']),
+  "provider": zod.enum(['openai', 'gemini', 'gmail', 'agentrouter', 'openrouter']),
   "status": zod.enum(['NOT_CONFIGURED', 'CONFIGURED', 'CONNECTED', 'ERROR']),
   "detail": zod.string(),
   "configured": zod.boolean(),
   "model": zod.string().nullable(),
+  "baseUrl": zod.string().nullish(),
   "clientId": zod.string().nullable(),
-  "connectedEmail": zod.string().nullable()
+  "connectedEmail": zod.string().nullable(),
+  "isDefault": zod.boolean().optional()
 })
 
 
@@ -801,17 +819,650 @@ export const ControlAgentResponse = zod.object({
  */
 export const GetSettingsResponse = zod.object({
   "providers": zod.array(zod.object({
-  "provider": zod.enum(['openai', 'gemini', 'gmail']),
+  "provider": zod.enum(['openai', 'gemini', 'gmail', 'agentrouter', 'openrouter']),
   "status": zod.enum(['NOT_CONFIGURED', 'CONFIGURED', 'CONNECTED', 'ERROR']),
   "detail": zod.string(),
   "configured": zod.boolean(),
   "model": zod.string().nullable(),
+  "baseUrl": zod.string().nullish(),
   "clientId": zod.string().nullable(),
-  "connectedEmail": zod.string().nullable()
+  "connectedEmail": zod.string().nullable(),
+  "isDefault": zod.boolean().optional()
 })),
+  "defaultAiProvider": zod.string().optional(),
   "applicationMode": zod.enum(['manual', 'approval', 'automatic']),
   "duplicateProtection": zod.boolean(),
   "gmailRedirectUri": zod.string()
+})
+
+
+/**
+ * @summary Get all role preferences for the user
+ */
+export const getUserRolesResponsePreferencesItemWeightMax = 100;
+
+
+
+export const GetUserRolesResponse = zod.object({
+  "success": zod.boolean().optional(),
+  "preferences": zod.array(zod.object({
+  "id": zod.string(),
+  "accountId": zod.string(),
+  "roleTitle": zod.string(),
+  "source": zod.enum(['cv', 'manual', 'suggested']),
+  "enabled": zod.boolean(),
+  "priority": zod.enum(['high', 'medium', 'low']),
+  "weight": zod.number().int().min(1).max(getUserRolesResponsePreferencesItemWeightMax),
+  "searchQueries": zod.array(zod.string()).optional(),
+  "keywords": zod.array(zod.string()).optional(),
+  "exclusionKeywords": zod.array(zod.string()).optional(),
+  "minSalary": zod.number().int().nullish(),
+  "maxSalary": zod.number().int().nullish(),
+  "locationPreferences": zod.array(zod.string()).optional(),
+  "remoteOnly": zod.boolean().optional(),
+  "experienceLevel": zod.array(zod.string()).optional(),
+  "industryPreferences": zod.array(zod.string()).optional(),
+  "companySize": zod.array(zod.string()).optional(),
+  "createdAt": zod.coerce.date(),
+  "updatedAt": zod.coerce.date()
+})).optional(),
+  "statistics": zod.object({
+  "totalRoles": zod.number().int().optional(),
+  "enabledRoles": zod.number().int().optional(),
+  "highPriorityRoles": zod.number().int().optional(),
+  "manualRoles": zod.number().int().optional(),
+  "cvRoles": zod.number().int().optional(),
+  "selectedForDiscovery": zod.number().int().optional()
+}).optional(),
+  "suggestions": zod.object({
+  "roles": zod.array(zod.string()).optional(),
+  "primary": zod.array(zod.string()).optional(),
+  "secondary": zod.array(zod.string()).optional(),
+  "reasoning": zod.array(zod.string()).optional()
+}).optional()
+})
+
+
+/**
+ * @summary Add a custom role for discovery
+ */
+export const AddCustomRoleBody = zod.object({
+  "roleTitle": zod.string()
+})
+
+export const addCustomRoleResponseWeightMax = 100;
+
+
+
+export const AddCustomRoleResponse = zod.object({
+  "id": zod.string(),
+  "accountId": zod.string(),
+  "roleTitle": zod.string(),
+  "source": zod.enum(['cv', 'manual', 'suggested']),
+  "enabled": zod.boolean(),
+  "priority": zod.enum(['high', 'medium', 'low']),
+  "weight": zod.number().int().min(1).max(addCustomRoleResponseWeightMax),
+  "searchQueries": zod.array(zod.string()).optional(),
+  "keywords": zod.array(zod.string()).optional(),
+  "exclusionKeywords": zod.array(zod.string()).optional(),
+  "minSalary": zod.number().int().nullish(),
+  "maxSalary": zod.number().int().nullish(),
+  "locationPreferences": zod.array(zod.string()).optional(),
+  "remoteOnly": zod.boolean().optional(),
+  "experienceLevel": zod.array(zod.string()).optional(),
+  "industryPreferences": zod.array(zod.string()).optional(),
+  "companySize": zod.array(zod.string()).optional(),
+  "createdAt": zod.coerce.date(),
+  "updatedAt": zod.coerce.date()
+})
+
+
+/**
+ * @summary Update a role preference
+ */
+export const UpdateRolePreferenceParams = zod.object({
+  "roleId": zod.coerce.string()
+})
+
+export const updateRolePreferenceBodyWeightMax = 100;
+
+
+
+export const UpdateRolePreferenceBody = zod.object({
+  "roleTitle": zod.string().optional(),
+  "enabled": zod.boolean().optional(),
+  "priority": zod.enum(['high', 'medium', 'low']).optional(),
+  "weight": zod.number().int().min(1).max(updateRolePreferenceBodyWeightMax).optional(),
+  "searchQueries": zod.array(zod.string()).optional(),
+  "keywords": zod.array(zod.string()).optional(),
+  "exclusionKeywords": zod.array(zod.string()).optional(),
+  "minSalary": zod.number().int().nullish(),
+  "maxSalary": zod.number().int().nullish(),
+  "locationPreferences": zod.array(zod.string()).optional(),
+  "remoteOnly": zod.boolean().optional(),
+  "experienceLevel": zod.array(zod.string()).optional(),
+  "industryPreferences": zod.array(zod.string()).optional(),
+  "companySize": zod.array(zod.string()).optional()
+})
+
+export const updateRolePreferenceResponseWeightMax = 100;
+
+
+
+export const UpdateRolePreferenceResponse = zod.object({
+  "id": zod.string(),
+  "accountId": zod.string(),
+  "roleTitle": zod.string(),
+  "source": zod.enum(['cv', 'manual', 'suggested']),
+  "enabled": zod.boolean(),
+  "priority": zod.enum(['high', 'medium', 'low']),
+  "weight": zod.number().int().min(1).max(updateRolePreferenceResponseWeightMax),
+  "searchQueries": zod.array(zod.string()).optional(),
+  "keywords": zod.array(zod.string()).optional(),
+  "exclusionKeywords": zod.array(zod.string()).optional(),
+  "minSalary": zod.number().int().nullish(),
+  "maxSalary": zod.number().int().nullish(),
+  "locationPreferences": zod.array(zod.string()).optional(),
+  "remoteOnly": zod.boolean().optional(),
+  "experienceLevel": zod.array(zod.string()).optional(),
+  "industryPreferences": zod.array(zod.string()).optional(),
+  "companySize": zod.array(zod.string()).optional(),
+  "createdAt": zod.coerce.date(),
+  "updatedAt": zod.coerce.date()
+})
+
+
+/**
+ * @summary Remove a role preference
+ */
+export const RemoveRolePreferenceParams = zod.object({
+  "roleId": zod.coerce.string()
+})
+
+export const RemoveRolePreferenceResponse = zod.object({
+  "success": zod.boolean(),
+  "message": zod.string()
+})
+
+
+/**
+ * @summary Enable or disable a role
+ */
+export const ToggleRoleEnabledParams = zod.object({
+  "roleId": zod.coerce.string()
+})
+
+export const ToggleRoleEnabledBody = zod.object({
+  "enabled": zod.boolean()
+})
+
+export const toggleRoleEnabledResponseWeightMax = 100;
+
+
+
+export const ToggleRoleEnabledResponse = zod.object({
+  "id": zod.string(),
+  "accountId": zod.string(),
+  "roleTitle": zod.string(),
+  "source": zod.enum(['cv', 'manual', 'suggested']),
+  "enabled": zod.boolean(),
+  "priority": zod.enum(['high', 'medium', 'low']),
+  "weight": zod.number().int().min(1).max(toggleRoleEnabledResponseWeightMax),
+  "searchQueries": zod.array(zod.string()).optional(),
+  "keywords": zod.array(zod.string()).optional(),
+  "exclusionKeywords": zod.array(zod.string()).optional(),
+  "minSalary": zod.number().int().nullish(),
+  "maxSalary": zod.number().int().nullish(),
+  "locationPreferences": zod.array(zod.string()).optional(),
+  "remoteOnly": zod.boolean().optional(),
+  "experienceLevel": zod.array(zod.string()).optional(),
+  "industryPreferences": zod.array(zod.string()).optional(),
+  "companySize": zod.array(zod.string()).optional(),
+  "createdAt": zod.coerce.date(),
+  "updatedAt": zod.coerce.date()
+})
+
+
+/**
+ * @summary Set role priority level
+ */
+export const SetRolePriorityParams = zod.object({
+  "roleId": zod.coerce.string()
+})
+
+export const SetRolePriorityBody = zod.object({
+  "priority": zod.enum(['high', 'medium', 'low'])
+})
+
+export const setRolePriorityResponseWeightMax = 100;
+
+
+
+export const SetRolePriorityResponse = zod.object({
+  "id": zod.string(),
+  "accountId": zod.string(),
+  "roleTitle": zod.string(),
+  "source": zod.enum(['cv', 'manual', 'suggested']),
+  "enabled": zod.boolean(),
+  "priority": zod.enum(['high', 'medium', 'low']),
+  "weight": zod.number().int().min(1).max(setRolePriorityResponseWeightMax),
+  "searchQueries": zod.array(zod.string()).optional(),
+  "keywords": zod.array(zod.string()).optional(),
+  "exclusionKeywords": zod.array(zod.string()).optional(),
+  "minSalary": zod.number().int().nullish(),
+  "maxSalary": zod.number().int().nullish(),
+  "locationPreferences": zod.array(zod.string()).optional(),
+  "remoteOnly": zod.boolean().optional(),
+  "experienceLevel": zod.array(zod.string()).optional(),
+  "industryPreferences": zod.array(zod.string()).optional(),
+  "companySize": zod.array(zod.string()).optional(),
+  "createdAt": zod.coerce.date(),
+  "updatedAt": zod.coerce.date()
+})
+
+
+/**
+ * @summary Set role weight
+ */
+export const SetRoleWeightParams = zod.object({
+  "roleId": zod.coerce.string()
+})
+
+export const setRoleWeightBodyWeightMax = 100;
+
+
+
+export const SetRoleWeightBody = zod.object({
+  "weight": zod.number().int().min(1).max(setRoleWeightBodyWeightMax)
+})
+
+export const setRoleWeightResponseWeightMax = 100;
+
+
+
+export const SetRoleWeightResponse = zod.object({
+  "id": zod.string(),
+  "accountId": zod.string(),
+  "roleTitle": zod.string(),
+  "source": zod.enum(['cv', 'manual', 'suggested']),
+  "enabled": zod.boolean(),
+  "priority": zod.enum(['high', 'medium', 'low']),
+  "weight": zod.number().int().min(1).max(setRoleWeightResponseWeightMax),
+  "searchQueries": zod.array(zod.string()).optional(),
+  "keywords": zod.array(zod.string()).optional(),
+  "exclusionKeywords": zod.array(zod.string()).optional(),
+  "minSalary": zod.number().int().nullish(),
+  "maxSalary": zod.number().int().nullish(),
+  "locationPreferences": zod.array(zod.string()).optional(),
+  "remoteOnly": zod.boolean().optional(),
+  "experienceLevel": zod.array(zod.string()).optional(),
+  "industryPreferences": zod.array(zod.string()).optional(),
+  "companySize": zod.array(zod.string()).optional(),
+  "createdAt": zod.coerce.date(),
+  "updatedAt": zod.coerce.date()
+})
+
+
+/**
+ * @summary Get user discovery settings
+ */
+export const getUserDiscoverySettingsResponseSettingsMaxJobsPerSearchMin = 10;
+export const getUserDiscoverySettingsResponseSettingsMaxJobsPerSearchMax = 500;
+
+export const getUserDiscoverySettingsResponseSettingsMinMatchScoreForAutoApproveMin = 0;
+export const getUserDiscoverySettingsResponseSettingsMinMatchScoreForAutoApproveMax = 100;
+
+export const getUserDiscoverySettingsResponseEnabledRolesPreferencesItemWeightMax = 100;
+
+
+
+export const GetUserDiscoverySettingsResponse = zod.object({
+  "success": zod.boolean().optional(),
+  "settings": zod.object({
+  "id": zod.string(),
+  "accountId": zod.string(),
+  "selectedRoleIds": zod.array(zod.string()),
+  "searchFrequency": zod.enum(['manual', 'daily', 'every_2_days', 'weekly', 'biweekly']),
+  "searchTimePreference": zod.string().nullish(),
+  "maxJobsPerSearch": zod.number().int().min(getUserDiscoverySettingsResponseSettingsMaxJobsPerSearchMin).max(getUserDiscoverySettingsResponseSettingsMaxJobsPerSearchMax),
+  "autoApproveHighMatches": zod.boolean(),
+  "minMatchScoreForAutoApprove": zod.number().int().min(getUserDiscoverySettingsResponseSettingsMinMatchScoreForAutoApproveMin).max(getUserDiscoverySettingsResponseSettingsMinMatchScoreForAutoApproveMax).optional(),
+  "preferredSourceIds": zod.array(zod.string()).optional(),
+  "excludedSourceIds": zod.array(zod.string()).optional(),
+  "enableAllKenyaSources": zod.boolean(),
+  "enableGlobalRemoteSources": zod.boolean(),
+  "enableRecruitmentAgencies": zod.boolean(),
+  "enableStartups": zod.boolean(),
+  "enableFreelance": zod.boolean().optional(),
+  "defaultMinSalary": zod.number().int().nullish(),
+  "defaultMaxSalary": zod.number().int().nullish(),
+  "defaultLocations": zod.array(zod.string()).optional(),
+  "defaultRemoteOnly": zod.boolean().optional(),
+  "defaultJobTypes": zod.array(zod.string()).optional(),
+  "defaultExperienceLevels": zod.array(zod.string()).optional(),
+  "defaultIndustries": zod.array(zod.string()).optional(),
+  "defaultCompanies": zod.array(zod.string()).optional(),
+  "defaultExcludeKeywords": zod.array(zod.string()).optional(),
+  "requireApplicationInstructions": zod.boolean().optional(),
+  "enableAISuggestions": zod.boolean().optional(),
+  "enableKeywordExpansion": zod.boolean().optional(),
+  "expansionKeywords": zod.array(zod.string()).optional(),
+  "notifyNewJobs": zod.boolean().optional(),
+  "notificationChannels": zod.array(zod.enum(['in_app', 'email', 'sms'])).optional(),
+  "lastDiscoveryRun": zod.coerce.date().nullish(),
+  "nextScheduledRun": zod.coerce.date().nullish(),
+  "totalDiscoveries": zod.number().int(),
+  "totalJobsDiscovered": zod.number().int(),
+  "totalMatches": zod.number().int(),
+  "totalApplications": zod.number().int(),
+  "createdAt": zod.coerce.date(),
+  "updatedAt": zod.coerce.date()
+}).optional(),
+  "enabledRoles": zod.object({
+  "roles": zod.array(zod.string()).optional(),
+  "preferences": zod.array(zod.object({
+  "id": zod.string(),
+  "accountId": zod.string(),
+  "roleTitle": zod.string(),
+  "source": zod.enum(['cv', 'manual', 'suggested']),
+  "enabled": zod.boolean(),
+  "priority": zod.enum(['high', 'medium', 'low']),
+  "weight": zod.number().int().min(1).max(getUserDiscoverySettingsResponseEnabledRolesPreferencesItemWeightMax),
+  "searchQueries": zod.array(zod.string()).optional(),
+  "keywords": zod.array(zod.string()).optional(),
+  "exclusionKeywords": zod.array(zod.string()).optional(),
+  "minSalary": zod.number().int().nullish(),
+  "maxSalary": zod.number().int().nullish(),
+  "locationPreferences": zod.array(zod.string()).optional(),
+  "remoteOnly": zod.boolean().optional(),
+  "experienceLevel": zod.array(zod.string()).optional(),
+  "industryPreferences": zod.array(zod.string()).optional(),
+  "companySize": zod.array(zod.string()).optional(),
+  "createdAt": zod.coerce.date(),
+  "updatedAt": zod.coerce.date()
+})).optional(),
+  "searchQueries": zod.array(zod.string()).optional()
+}).optional(),
+  "sources": zod.object({
+  "allSources": zod.array(zod.object({
+
+}).passthrough()).optional()
+}).optional(),
+  "guidance": zod.object({
+  "guidance": zod.array(zod.string()).optional(),
+  "enabledRoles": zod.array(zod.string()).optional(),
+  "searchQueries": zod.array(zod.string()).optional(),
+  "sourceRecommendations": zod.array(zod.string()).optional(),
+  "filters": zod.object({
+
+}).passthrough().optional()
+}).optional()
+})
+
+
+/**
+ * @summary Update discovery settings
+ */
+export const updateUserDiscoverySettingsBodyMaxJobsPerSearchMin = 10;
+export const updateUserDiscoverySettingsBodyMaxJobsPerSearchMax = 500;
+
+export const updateUserDiscoverySettingsBodyMinMatchScoreForAutoApproveMin = 0;
+export const updateUserDiscoverySettingsBodyMinMatchScoreForAutoApproveMax = 100;
+
+
+
+export const UpdateUserDiscoverySettingsBody = zod.object({
+  "selectedRoleIds": zod.array(zod.string()).optional(),
+  "searchFrequency": zod.enum(['manual', 'daily', 'every_2_days', 'weekly', 'biweekly']).optional(),
+  "searchTimePreference": zod.string().nullish(),
+  "maxJobsPerSearch": zod.number().int().min(updateUserDiscoverySettingsBodyMaxJobsPerSearchMin).max(updateUserDiscoverySettingsBodyMaxJobsPerSearchMax).optional(),
+  "autoApproveHighMatches": zod.boolean().optional(),
+  "minMatchScoreForAutoApprove": zod.number().int().min(updateUserDiscoverySettingsBodyMinMatchScoreForAutoApproveMin).max(updateUserDiscoverySettingsBodyMinMatchScoreForAutoApproveMax).optional(),
+  "preferredSourceIds": zod.array(zod.string()).optional(),
+  "excludedSourceIds": zod.array(zod.string()).optional(),
+  "enableAllKenyaSources": zod.boolean().optional(),
+  "enableGlobalRemoteSources": zod.boolean().optional()
+})
+
+export const updateUserDiscoverySettingsResponseMaxJobsPerSearchMin = 10;
+export const updateUserDiscoverySettingsResponseMaxJobsPerSearchMax = 500;
+
+export const updateUserDiscoverySettingsResponseMinMatchScoreForAutoApproveMin = 0;
+export const updateUserDiscoverySettingsResponseMinMatchScoreForAutoApproveMax = 100;
+
+
+
+export const UpdateUserDiscoverySettingsResponse = zod.object({
+  "id": zod.string(),
+  "accountId": zod.string(),
+  "selectedRoleIds": zod.array(zod.string()),
+  "searchFrequency": zod.enum(['manual', 'daily', 'every_2_days', 'weekly', 'biweekly']),
+  "searchTimePreference": zod.string().nullish(),
+  "maxJobsPerSearch": zod.number().int().min(updateUserDiscoverySettingsResponseMaxJobsPerSearchMin).max(updateUserDiscoverySettingsResponseMaxJobsPerSearchMax),
+  "autoApproveHighMatches": zod.boolean(),
+  "minMatchScoreForAutoApprove": zod.number().int().min(updateUserDiscoverySettingsResponseMinMatchScoreForAutoApproveMin).max(updateUserDiscoverySettingsResponseMinMatchScoreForAutoApproveMax).optional(),
+  "preferredSourceIds": zod.array(zod.string()).optional(),
+  "excludedSourceIds": zod.array(zod.string()).optional(),
+  "enableAllKenyaSources": zod.boolean(),
+  "enableGlobalRemoteSources": zod.boolean(),
+  "enableRecruitmentAgencies": zod.boolean(),
+  "enableStartups": zod.boolean(),
+  "enableFreelance": zod.boolean().optional(),
+  "defaultMinSalary": zod.number().int().nullish(),
+  "defaultMaxSalary": zod.number().int().nullish(),
+  "defaultLocations": zod.array(zod.string()).optional(),
+  "defaultRemoteOnly": zod.boolean().optional(),
+  "defaultJobTypes": zod.array(zod.string()).optional(),
+  "defaultExperienceLevels": zod.array(zod.string()).optional(),
+  "defaultIndustries": zod.array(zod.string()).optional(),
+  "defaultCompanies": zod.array(zod.string()).optional(),
+  "defaultExcludeKeywords": zod.array(zod.string()).optional(),
+  "requireApplicationInstructions": zod.boolean().optional(),
+  "enableAISuggestions": zod.boolean().optional(),
+  "enableKeywordExpansion": zod.boolean().optional(),
+  "expansionKeywords": zod.array(zod.string()).optional(),
+  "notifyNewJobs": zod.boolean().optional(),
+  "notificationChannels": zod.array(zod.enum(['in_app', 'email', 'sms'])).optional(),
+  "lastDiscoveryRun": zod.coerce.date().nullish(),
+  "nextScheduledRun": zod.coerce.date().nullish(),
+  "totalDiscoveries": zod.number().int(),
+  "totalJobsDiscovered": zod.number().int(),
+  "totalMatches": zod.number().int(),
+  "totalApplications": zod.number().int(),
+  "createdAt": zod.coerce.date(),
+  "updatedAt": zod.coerce.date()
+})
+
+
+/**
+ * @summary Set search frequency
+ */
+export const SetSearchFrequencyBody = zod.object({
+  "frequency": zod.enum(['manual', 'daily', 'every_2_days', 'weekly', 'biweekly'])
+})
+
+export const setSearchFrequencyResponseMaxJobsPerSearchMin = 10;
+export const setSearchFrequencyResponseMaxJobsPerSearchMax = 500;
+
+export const setSearchFrequencyResponseMinMatchScoreForAutoApproveMin = 0;
+export const setSearchFrequencyResponseMinMatchScoreForAutoApproveMax = 100;
+
+
+
+export const SetSearchFrequencyResponse = zod.object({
+  "id": zod.string(),
+  "accountId": zod.string(),
+  "selectedRoleIds": zod.array(zod.string()),
+  "searchFrequency": zod.enum(['manual', 'daily', 'every_2_days', 'weekly', 'biweekly']),
+  "searchTimePreference": zod.string().nullish(),
+  "maxJobsPerSearch": zod.number().int().min(setSearchFrequencyResponseMaxJobsPerSearchMin).max(setSearchFrequencyResponseMaxJobsPerSearchMax),
+  "autoApproveHighMatches": zod.boolean(),
+  "minMatchScoreForAutoApprove": zod.number().int().min(setSearchFrequencyResponseMinMatchScoreForAutoApproveMin).max(setSearchFrequencyResponseMinMatchScoreForAutoApproveMax).optional(),
+  "preferredSourceIds": zod.array(zod.string()).optional(),
+  "excludedSourceIds": zod.array(zod.string()).optional(),
+  "enableAllKenyaSources": zod.boolean(),
+  "enableGlobalRemoteSources": zod.boolean(),
+  "enableRecruitmentAgencies": zod.boolean(),
+  "enableStartups": zod.boolean(),
+  "enableFreelance": zod.boolean().optional(),
+  "defaultMinSalary": zod.number().int().nullish(),
+  "defaultMaxSalary": zod.number().int().nullish(),
+  "defaultLocations": zod.array(zod.string()).optional(),
+  "defaultRemoteOnly": zod.boolean().optional(),
+  "defaultJobTypes": zod.array(zod.string()).optional(),
+  "defaultExperienceLevels": zod.array(zod.string()).optional(),
+  "defaultIndustries": zod.array(zod.string()).optional(),
+  "defaultCompanies": zod.array(zod.string()).optional(),
+  "defaultExcludeKeywords": zod.array(zod.string()).optional(),
+  "requireApplicationInstructions": zod.boolean().optional(),
+  "enableAISuggestions": zod.boolean().optional(),
+  "enableKeywordExpansion": zod.boolean().optional(),
+  "expansionKeywords": zod.array(zod.string()).optional(),
+  "notifyNewJobs": zod.boolean().optional(),
+  "notificationChannels": zod.array(zod.enum(['in_app', 'email', 'sms'])).optional(),
+  "lastDiscoveryRun": zod.coerce.date().nullish(),
+  "nextScheduledRun": zod.coerce.date().nullish(),
+  "totalDiscoveries": zod.number().int(),
+  "totalJobsDiscovered": zod.number().int(),
+  "totalMatches": zod.number().int(),
+  "totalApplications": zod.number().int(),
+  "createdAt": zod.coerce.date(),
+  "updatedAt": zod.coerce.date()
+})
+
+
+/**
+ * @summary Run job discovery with CV guidance
+ */
+export const RunDiscoveryBody = zod.object({
+  "config": zod.object({
+
+}).passthrough().optional()
+})
+
+export const RunDiscoveryResponse = zod.object({
+  "discovered": zod.number().int().optional(),
+  "duplicates": zod.number().int().optional(),
+  "matched": zod.number().int().optional(),
+  "highMatches": zod.number().int().optional(),
+  "mediumMatches": zod.number().int().optional(),
+  "lowMatches": zod.number().int().optional(),
+  "rejected": zod.number().int().optional(),
+  "errors": zod.array(zod.string()).optional(),
+  "sourcesScraped": zod.array(zod.string()).optional(),
+  "executionTime": zod.number().int().optional(),
+  "rolesSearched": zod.array(zod.string()).optional(),
+  "cvMatched": zod.number().int().optional(),
+  "requirementVerified": zod.number().int().optional(),
+  "canApply": zod.number().int().optional()
+})
+
+
+/**
+ * @summary Get discovery history
+ */
+export const getDiscoveryHistoryQueryLimitDefault = 50;
+
+export const GetDiscoveryHistoryQueryParams = zod.object({
+  "limit": zod.coerce.number().int().default(getDiscoveryHistoryQueryLimitDefault)
+})
+
+export const GetDiscoveryHistoryResponse = zod.object({
+  "runs": zod.array(zod.object({
+  "id": zod.string().optional(),
+  "rolesSearched": zod.array(zod.string()).optional(),
+  "sourcesScraped": zod.array(zod.string()).optional(),
+  "discovered": zod.number().int().optional(),
+  "matched": zod.number().int().optional(),
+  "highMatches": zod.number().int().optional(),
+  "executionTime": zod.number().int().optional(),
+  "errors": zod.array(zod.string()).optional(),
+  "startedAt": zod.coerce.date().optional(),
+  "completedAt": zod.coerce.date().nullish()
+})).optional(),
+  "total": zod.number().int().optional()
+})
+
+
+/**
+ * @summary Get discovery statistics
+ */
+export const GetDiscoveryStatisticsResponse = zod.object({
+  "totalDiscoveries": zod.number().int().optional(),
+  "totalJobsDiscovered": zod.number().int().optional(),
+  "totalMatches": zod.number().int().optional(),
+  "avgJobsPerDiscovery": zod.number().optional(),
+  "avgMatchesPerDiscovery": zod.number().optional(),
+  "lastDiscovery": zod.coerce.date().nullish(),
+  "bestDiscovery": zod.object({
+  "discovered": zod.number().int().optional(),
+  "matched": zod.number().int().optional(),
+  "date": zod.coerce.date().optional()
+}).optional(),
+  "sourcesScraped": zod.number().int().optional(),
+  "mostSuccessfulSource": zod.string().nullish()
+})
+
+
+/**
+ * @summary Get discovery guidance
+ */
+export const GetDiscoveryGuidanceResponse = zod.object({
+  "guidance": zod.array(zod.string()).optional(),
+  "enabledRoles": zod.array(zod.string()).optional(),
+  "searchQueries": zod.array(zod.string()).optional(),
+  "sourceRecommendations": zod.array(zod.string()).optional(),
+  "filters": zod.object({
+
+}).passthrough().optional()
+})
+
+
+/**
+ * @summary Verify job requirements against user profile
+ */
+export const VerifyJobRequirementsParams = zod.object({
+  "jobId": zod.coerce.string()
+})
+
+export const VerifyJobRequirementsResponse = zod.object({
+  "success": zod.boolean().optional(),
+  "jobId": zod.string().optional(),
+  "hasClearInstructions": zod.boolean().optional(),
+  "applicationMethod": zod.enum(['online', 'email', 'portal', 'walk_in', 'phone', 'post', 'referral', 'social', 'unknown']).optional(),
+  "applicationUrl": zod.string().nullish(),
+  "applicationEmail": zod.string().nullish(),
+  "deadline": zod.string().nullish(),
+  "isUrgent": zod.boolean().optional(),
+  "daysUntilDeadline": zod.number().int().nullish(),
+  "requiredDocuments": zod.array(zod.string()).optional(),
+  "canApply": zod.boolean().optional(),
+  "canApplyReason": zod.string().nullish(),
+  "cannotApplyReason": zod.string().nullish(),
+  "verificationScore": zod.number().int().optional(),
+  "confidence": zod.number().int().optional(),
+  "verifiedAt": zod.coerce.date().optional()
+})
+
+
+/**
+ * @summary Get enhanced match details for a job
+ */
+export const MatchJobToUserParams = zod.object({
+  "jobId": zod.coerce.string()
+})
+
+export const MatchJobToUserResponse = zod.object({
+  "success": zod.boolean().optional(),
+  "job": zod.object({
+  "id": zod.string().optional(),
+  "title": zod.string().optional()
+}).optional(),
+  "matchScore": zod.number().int().optional(),
+  "cvMatchedSkills": zod.array(zod.string()).optional(),
+  "cvMissingSkills": zod.array(zod.string()).optional(),
+  "roleMatchScore": zod.number().int().optional(),
+  "decision": zod.enum(['ELIGIBLE', 'INELIGIBLE', 'NEEDS_REVIEW']).optional()
 })
 
 

@@ -21,7 +21,7 @@ import {
 
 type SettingsData = GetSettingsQueryResult;
 type ProviderConnection = SettingsData["providers"][number];
-type AiProvider = "openai" | "gemini";
+type AiProvider = "openai" | "gemini" | "agentrouter";
 
 function readableError(error: unknown): string {
   return error instanceof Error ? error.message : "The request failed. Try again.";
@@ -45,6 +45,9 @@ function AiProviderCard({
   const test = useTestAiProvider();
   const remove = useRemoveAiProvider();
   const [apiKey, setApiKey] = useState("");
+  const [baseUrl, setBaseUrl] = useState(
+    connection.baseUrl ?? (provider === "agentrouter" ? "https://agentrouter.org/v1" : ""),
+  );
   const [selectedModel, setSelectedModel] = useState(connection.model ?? "");
   const [testMessage, setTestMessage] = useState("");
   const [removeMessage, setRemoveMessage] = useState("");
@@ -73,7 +76,10 @@ function AiProviderCard({
       const response = await fetch(`/api/settings/providers/${provider}/models`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ apiKey: key || undefined }),
+        body: JSON.stringify({
+          apiKey: key || undefined,
+          baseUrl: baseUrl.trim() || undefined,
+        }),
       });
       if (!response.ok) {
         const resJson = await response.json().catch(() => null);
@@ -108,6 +114,7 @@ function AiProviderCard({
     const values = new FormData(form);
     const modelValue = String(values.get("model") || selectedModel || "").trim();
     const apiKeyValue = String(values.get("apiKey") || apiKey || "").trim();
+    const baseUrlValue = String(values.get("baseUrl") || baseUrl || "").trim();
 
     save.mutate(
       {
@@ -115,6 +122,7 @@ function AiProviderCard({
         data: {
           apiKey: apiKeyValue,
           model: modelValue,
+          baseUrl: baseUrlValue || undefined,
         },
       },
       {
@@ -164,8 +172,12 @@ function AiProviderCard({
     <section className="panel" data-testid={`card-provider-${provider}`}>
       <div className="panel-head">
         <div>
-          <div className="panel-title" style={{ textTransform: "capitalize" }}>
-            {provider}
+          <div className="panel-title">
+            {provider === "agentrouter"
+              ? "Agent Router (AI Gateway & Fallback)"
+              : provider === "gemini"
+              ? "Google Gemini"
+              : "OpenAI"}
           </div>
           <div className="field-hint" style={{ marginTop: 4 }}>
             {connection.detail}
@@ -180,6 +192,23 @@ function AiProviderCard({
       </div>
       <div className="panel-body">
         <form onSubmit={saveProvider} className="form-grid">
+          {provider === "agentrouter" && (
+            <label className="form-item">
+              <span className="label">Base URL (optional)</span>
+              <input
+                className="field"
+                type="text"
+                name="baseUrl"
+                value={baseUrl}
+                onChange={(e) => setBaseUrl(e.target.value)}
+                placeholder="https://agentrouter.org/v1"
+                data-testid={`input-base-url-${provider}`}
+              />
+              <span className="field-hint">
+                OpenAI-compatible router endpoint (default: <code>https://agentrouter.org/v1</code>).
+              </span>
+            </label>
+          )}
           <label className="form-item">
             <span className="label">API key</span>
             <div style={{ display: "flex", gap: 8 }}>
@@ -259,6 +288,8 @@ function AiProviderCard({
                 placeholder={
                   provider === "gemini"
                     ? "e.g. gemini-1.5-flash or gemini-2.0-flash"
+                    : provider === "agentrouter"
+                    ? "e.g. gpt-4o, gpt-4o-mini, claude-3-5-sonnet, deepseek-chat"
                     : "e.g. gpt-4o-mini or gpt-4o"
                 }
               />
@@ -549,13 +580,83 @@ function GmailCard({
   );
 }
 
+function DefaultAiProviderSelector({
+  currentDefault,
+}: {
+  currentDefault?: string;
+}) {
+  const queryClient = useQueryClient();
+  const [saving, setSaving] = useState(false);
+  const [savedMessage, setSavedMessage] = useState("");
+
+  const handleSelect = async (provider: string) => {
+    setSaving(true);
+    setSavedMessage("");
+    try {
+      const res = await fetch("/api/settings/default-provider", {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ provider }),
+      });
+      if (res.ok) {
+        setSavedMessage(
+          provider === "auto"
+            ? "Default mode set to Auto Fallback"
+            : `Default AI provider set to ${provider === "agentrouter" ? "Agent Router" : provider.toUpperCase()}`,
+        );
+        void queryClient.invalidateQueries({ queryKey: getGetSettingsQueryKey() });
+        setTimeout(() => setSavedMessage(""), 4000);
+      }
+    } catch {
+      // ignore
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  return (
+    <section className="panel" style={{ borderLeft: "4px solid hsl(var(--primary))" }}>
+      <div className="panel-head">
+        <div>
+          <div className="panel-title">Default AI Provider & Fallback Strategy</div>
+          <div className="field-hint" style={{ marginTop: 4 }}>
+            Choose which provider evaluates job relevance and writes cover letters. If your preferred provider is unconfigured or encounters high demand / error, KaziScout automatically falls back to your other connected providers.
+          </div>
+        </div>
+      </div>
+      <div className="panel-body">
+        <div style={{ display: "flex", gap: 12, alignItems: "center", flexWrap: "wrap" }}>
+          <label style={{ display: "flex", flexDirection: "column", gap: 4, flex: 1, minWidth: 260 }}>
+            <span className="label">Active / Default AI Provider</span>
+            <select
+              className="field select"
+              value={currentDefault || "auto"}
+              onChange={(e) => void handleSelect(e.target.value)}
+              disabled={saving}
+              style={{ width: "100%" }}
+            >
+              <option value="auto">Auto (Smart Fallback: Gemini → Agent Router → OpenAI)</option>
+              <option value="agentrouter">Agent Router (Primary — fallback to Gemini & OpenAI)</option>
+              <option value="gemini">Google Gemini (Primary — fallback to OpenAI & Agent Router)</option>
+              <option value="openai">OpenAI (Primary — fallback to Gemini & Agent Router)</option>
+            </select>
+          </label>
+          {saving && <span className="field-hint">Saving preference...</span>}
+          {savedMessage && <span className="badge badge-green">{savedMessage}</span>}
+        </div>
+      </div>
+    </section>
+  );
+}
+
 export function SettingsConnections({
   settings,
 }: {
   settings: SettingsData;
 }) {
-  const openai = settings.providers.find((provider) => provider.provider === "openai");
+  const agentrouter = settings.providers.find((provider) => provider.provider === "agentrouter");
   const gemini = settings.providers.find((provider) => provider.provider === "gemini");
+  const openai = settings.providers.find((provider) => provider.provider === "openai");
   const gmail = settings.providers.find((provider) => provider.provider === "gmail");
 
   if (!openai || !gemini || !gmail) {
@@ -569,13 +670,18 @@ export function SettingsConnections({
   return (
     <section style={{ display: "grid", gap: 14, marginBottom: 14 }}>
       <div>
-        <h2 className="panel-title" style={{ marginBottom: 6 }}>AI providers</h2>
+        <h2 className="panel-title" style={{ marginBottom: 6 }}>AI Providers & Fallback</h2>
         <p className="page-sub" style={{ margin: 0 }}>
-          Enter your own API credentials. CV parsing is available only after a provider is configured.
+          Configure API credentials for Agent Router, Google Gemini, or OpenAI. If any provider is missing or fails, KaziScout automatically routes to your fallback.
         </p>
       </div>
-      <AiProviderCard provider="openai" connection={openai} />
+
+      <DefaultAiProviderSelector currentDefault={settings.defaultAiProvider} />
+
+      {agentrouter && <AiProviderCard provider="agentrouter" connection={agentrouter} />}
       <AiProviderCard provider="gemini" connection={gemini} />
+      <AiProviderCard provider="openai" connection={openai} />
+
       <div>
         <h2 className="panel-title" style={{ marginBottom: 6 }}>Mailbox connection</h2>
         <p className="page-sub" style={{ margin: 0 }}>
@@ -586,3 +692,4 @@ export function SettingsConnections({
     </section>
   );
 }
+

@@ -10,6 +10,7 @@ import type { SettingsStatusApplicationMode } from './settingsStatusApplicationM
 
 export interface SettingsStatus {
   providers: ProviderConnection[];
+  defaultAiProvider?: string;
   applicationMode: SettingsStatusApplicationMode;
   duplicateProtection: boolean;
   gmailRedirectUri: string;

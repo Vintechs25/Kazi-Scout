@@ -13,10 +13,10 @@
  */
 
 import { z } from "@workspace/api-zod";
-import { db, integrationSettingsTable, jobsTable } from "@workspace/db";
+import { db, integrationSettingsTable, jobsTable, systemStateTable } from "@workspace/db";
 import { eq } from "drizzle-orm";
 import { decryptCredentials } from "./credential-encryption";
-import { normalizeModelName } from "./provider-services";
+import { callAgentRouterEvaluation, normalizeModelName } from "./provider-services";
 import type { CandidateEvidenceProfile } from "./candidate-evidence";
 import type { NormalizedJob } from "./job-search-service";
 import type { JobRecord } from "@workspace/db";
@@ -250,101 +250,164 @@ async function callOpenAiEvaluation(
   const cleaned = cleanJsonText(rawText);
   return { data: JSON.parse(cleaned), modelUsed: cleanModel };
 }
-
+export type ProviderCreds = { apiKey: string; model: string; baseUrl?: string | null };
 /**
- * Evaluate single job fit using Strict AI-Verified Mode
+ * Evaluate single job fit using Strict AI-Verified Mode with fallback and default provider routing
  */
 export async function evaluateJobFit(
   job: NormalizedJob | JobRecord,
   evidence: CandidateEvidenceProfile,
   cvSnippet: string,
-  geminiCreds: { apiKey: string; model: string } | null,
-  openAiCreds: { apiKey: string; model: string } | null,
+  geminiCreds: ProviderCreds | null,
+  openAiCreds: ProviderCreds | null,
+  agentRouterCreds?: ProviderCreds | null,
+  defaultProvider: string = "auto",
 ): Promise<AiEvaluation> {
   const now = new Date().toISOString();
   const prompt = buildEvaluationPrompt(job, evidence, cvSnippet);
 
-  // 1. Try Gemini (preferred primary AI provider)
-  if (geminiCreds?.apiKey && geminiCreds?.model) {
-    try {
-      const gemResult = await callGeminiEvaluation(geminiCreds.apiKey, geminiCreds.model, prompt);
-      const raw = gemResult.data;
-      const rawObj = (typeof raw === "object" && raw !== null ? raw : {}) as Record<string, unknown>;
-
-      // Post-process to ensure hard rules:
-      let decision = (rawObj.decision as AiEvaluationDecision) || "POTENTIAL_MATCH";
-      let matchScore = typeof rawObj.matchScore === "number" ? rawObj.matchScore : 50;
-      const hardFailure = Boolean(rawObj.hardEligibilityFailure);
-
-      if (hardFailure) {
-        decision = "INELIGIBLE";
-        matchScore = Math.min(matchScore, 30);
-      } else if (decision === "STRONG_MATCH" && matchScore < 80) {
-        decision = "POTENTIAL_MATCH";
-      }
-
-      const parsed = aiEvaluationSchema.safeParse({
-        ...rawObj,
-        decision,
-        matchScore,
-        hardEligibilityFailure: hardFailure,
-        hardFailureReason: rawObj.hardFailureReason ?? (hardFailure ? "Ineligible based on experience or location" : null),
-        isAiVerified: true,
-        providerUsed: "gemini",
-        modelUsed: gemResult.modelUsed || geminiCreds.model,
-        evaluatedAt: now,
-        evidenceFingerprint: evidence.evidenceFingerprint,
-      });
-
-      if (parsed.success) {
-        return parsed.data;
-      }
-    } catch (err) {
-      console.warn(`[AiJobEvaluator] Gemini evaluation failed on "${job.title}":`, err);
+  // Determine provider attempt order based on user default and availability
+  let providerOrder: Array<"agentrouter" | "gemini" | "openai"> = [];
+  if (defaultProvider === "agentrouter") {
+    providerOrder = ["agentrouter", "gemini", "openai"];
+  } else if (defaultProvider === "openai") {
+    providerOrder = ["openai", "gemini", "agentrouter"];
+  } else if (defaultProvider === "gemini") {
+    providerOrder = ["gemini", "openai", "agentrouter"];
+  } else {
+    // "auto": Prefer Gemini if available, otherwise Agent Router or OpenAI fallback
+    if (geminiCreds?.apiKey) {
+      providerOrder = ["gemini", "agentrouter", "openai"];
+    } else if (agentRouterCreds?.apiKey) {
+      providerOrder = ["agentrouter", "openai", "gemini"];
+    } else {
+      providerOrder = ["openai", "gemini", "agentrouter"];
     }
   }
 
-  // 2. Try OpenAI Fallback
-  if (openAiCreds?.apiKey && openAiCreds?.model) {
-    try {
-      const oaiResult = await callOpenAiEvaluation(openAiCreds.apiKey, openAiCreds.model, prompt);
-      const raw = oaiResult.data;
-      const rawObj = (typeof raw === "object" && raw !== null ? raw : {}) as Record<string, unknown>;
+  for (const prov of providerOrder) {
+    if (prov === "agentrouter" && agentRouterCreds?.apiKey && agentRouterCreds?.model) {
+      try {
+        const arResult = await callAgentRouterEvaluation(
+          agentRouterCreds.apiKey,
+          agentRouterCreds.model,
+          prompt,
+          agentRouterCreds.baseUrl,
+        );
+        const raw = arResult.data;
+        const rawObj = (typeof raw === "object" && raw !== null ? raw : {}) as Record<string, unknown>;
 
-      let decision = (rawObj.decision as AiEvaluationDecision) || "POTENTIAL_MATCH";
-      let matchScore = typeof rawObj.matchScore === "number" ? rawObj.matchScore : 50;
-      const hardFailure = Boolean(rawObj.hardEligibilityFailure);
+        let decision = (rawObj.decision as AiEvaluationDecision) || "POTENTIAL_MATCH";
+        let matchScore = typeof rawObj.matchScore === "number" ? rawObj.matchScore : 50;
+        const hardFailure = Boolean(rawObj.hardEligibilityFailure);
 
-      if (hardFailure) {
-        decision = "INELIGIBLE";
-        matchScore = Math.min(matchScore, 30);
-      } else if (decision === "STRONG_MATCH" && matchScore < 80) {
-        decision = "POTENTIAL_MATCH";
+        if (hardFailure) {
+          decision = "INELIGIBLE";
+          matchScore = Math.min(matchScore, 30);
+        } else if (decision === "STRONG_MATCH" && matchScore < 80) {
+          decision = "POTENTIAL_MATCH";
+        }
+
+        const parsed = aiEvaluationSchema.safeParse({
+          ...rawObj,
+          decision,
+          matchScore,
+          hardEligibilityFailure: hardFailure,
+          hardFailureReason: rawObj.hardFailureReason ?? (hardFailure ? "Ineligible based on experience or location" : null),
+          isAiVerified: true,
+          providerUsed: "agentrouter",
+          modelUsed: arResult.modelUsed || agentRouterCreds.model,
+          evaluatedAt: now,
+          evidenceFingerprint: evidence.evidenceFingerprint,
+        });
+
+        if (parsed.success) {
+          return parsed.data;
+        }
+      } catch (err) {
+        console.warn(`[AiJobEvaluator] Agent Router evaluation failed on "${job.title}":`, err);
       }
+    }
 
-      const parsed = aiEvaluationSchema.safeParse({
-        ...rawObj,
-        decision,
-        matchScore,
-        hardEligibilityFailure: hardFailure,
-        hardFailureReason: rawObj.hardFailureReason ?? (hardFailure ? "Ineligible based on experience or location" : null),
-        isAiVerified: true,
-        providerUsed: "openai",
-        modelUsed: oaiResult.modelUsed || openAiCreds.model,
-        evaluatedAt: now,
-        evidenceFingerprint: evidence.evidenceFingerprint,
-      });
+    if (prov === "gemini" && geminiCreds?.apiKey && geminiCreds?.model) {
+      try {
+        const gemResult = await callGeminiEvaluation(geminiCreds.apiKey, geminiCreds.model, prompt);
+        const raw = gemResult.data;
+        const rawObj = (typeof raw === "object" && raw !== null ? raw : {}) as Record<string, unknown>;
 
-      if (parsed.success) {
-        return parsed.data;
+        // Post-process to ensure hard rules:
+        let decision = (rawObj.decision as AiEvaluationDecision) || "POTENTIAL_MATCH";
+        let matchScore = typeof rawObj.matchScore === "number" ? rawObj.matchScore : 50;
+        const hardFailure = Boolean(rawObj.hardEligibilityFailure);
+
+        if (hardFailure) {
+          decision = "INELIGIBLE";
+          matchScore = Math.min(matchScore, 30);
+        } else if (decision === "STRONG_MATCH" && matchScore < 80) {
+          decision = "POTENTIAL_MATCH";
+        }
+
+        const parsed = aiEvaluationSchema.safeParse({
+          ...rawObj,
+          decision,
+          matchScore,
+          hardEligibilityFailure: hardFailure,
+          hardFailureReason: rawObj.hardFailureReason ?? (hardFailure ? "Ineligible based on experience or location" : null),
+          isAiVerified: true,
+          providerUsed: "gemini",
+          modelUsed: gemResult.modelUsed || geminiCreds.model,
+          evaluatedAt: now,
+          evidenceFingerprint: evidence.evidenceFingerprint,
+        });
+
+        if (parsed.success) {
+          return parsed.data;
+        }
+      } catch (err) {
+        console.warn(`[AiJobEvaluator] Gemini evaluation failed on "${job.title}":`, err);
       }
-    } catch (err) {
-      console.warn(`[AiJobEvaluator] OpenAI evaluation failed on "${job.title}":`, err);
+    }
+
+    if (prov === "openai" && openAiCreds?.apiKey && openAiCreds?.model) {
+      try {
+        const oaiResult = await callOpenAiEvaluation(openAiCreds.apiKey, openAiCreds.model, prompt);
+        const raw = oaiResult.data;
+        const rawObj = (typeof raw === "object" && raw !== null ? raw : {}) as Record<string, unknown>;
+
+        let decision = (rawObj.decision as AiEvaluationDecision) || "POTENTIAL_MATCH";
+        let matchScore = typeof rawObj.matchScore === "number" ? rawObj.matchScore : 50;
+        const hardFailure = Boolean(rawObj.hardEligibilityFailure);
+
+        if (hardFailure) {
+          decision = "INELIGIBLE";
+          matchScore = Math.min(matchScore, 30);
+        } else if (decision === "STRONG_MATCH" && matchScore < 80) {
+          decision = "POTENTIAL_MATCH";
+        }
+
+        const parsed = aiEvaluationSchema.safeParse({
+          ...rawObj,
+          decision,
+          matchScore,
+          hardEligibilityFailure: hardFailure,
+          hardFailureReason: rawObj.hardFailureReason ?? (hardFailure ? "Ineligible based on experience or location" : null),
+          isAiVerified: true,
+          providerUsed: "openai",
+          modelUsed: oaiResult.modelUsed || openAiCreds.model,
+          evaluatedAt: now,
+          evidenceFingerprint: evidence.evidenceFingerprint,
+        });
+
+        if (parsed.success) {
+          return parsed.data;
+        }
+      } catch (err) {
+        console.warn(`[AiJobEvaluator] OpenAI evaluation failed on "${job.title}":`, err);
+      }
     }
   }
 
-  // 3. Strict Mode Failure: When all configured AI providers fail, qualification STOPS.
-  // We do NOT silently produce false AI-verified scores or keyword matches.
+  // Strict Mode Failure: When all configured AI providers fail, qualification STOPS.
   return {
     decision: "INSUFFICIENT_INFORMATION",
     matchScore: 0,
@@ -378,12 +441,18 @@ export async function batchEvaluateQualifiedJobs(
   const results = new Map<string, AiEvaluation>();
   if (jobs.length === 0) return results;
 
-  // Retrieve integration credentials once for the batch
-  const integrations = await db.select().from(integrationSettingsTable);
+  // Retrieve integration credentials and default AI provider preference
+  const [integrations, [state]] = await Promise.all([
+    db.select().from(integrationSettingsTable),
+    db.select().from(systemStateTable).where(eq(systemStateTable.id, "agent")).limit(1),
+  ]);
+  const defaultProvider = state?.defaultAiProvider || "auto";
+
   const geminiRow = integrations.find((i) => i.provider === "gemini" && i.model);
   const openAiRow = integrations.find((i) => i.provider === "openai" && i.model);
+  const agentRouterRow = integrations.find((i) => i.provider === "agentrouter" && i.model);
 
-  let geminiCreds: { apiKey: string; model: string } | null = null;
+  let geminiCreds: ProviderCreds | null = null;
   if (geminiRow?.encryptedCredentials && geminiRow?.model) {
     try {
       const c = decryptCredentials<{ apiKey?: string }>(geminiRow.encryptedCredentials);
@@ -391,11 +460,21 @@ export async function batchEvaluateQualifiedJobs(
     } catch {}
   }
 
-  let openAiCreds: { apiKey: string; model: string } | null = null;
+  let openAiCreds: ProviderCreds | null = null;
   if (openAiRow?.encryptedCredentials && openAiRow?.model) {
     try {
       const c = decryptCredentials<{ apiKey?: string }>(openAiRow.encryptedCredentials);
       if (c.apiKey) openAiCreds = { apiKey: c.apiKey, model: openAiRow.model };
+    } catch {}
+  }
+
+  let agentRouterCreds: ProviderCreds | null = null;
+  if (agentRouterRow?.encryptedCredentials && agentRouterRow?.model) {
+    try {
+      const c = decryptCredentials<{ apiKey?: string }>(agentRouterRow.encryptedCredentials);
+      if (c.apiKey) {
+        agentRouterCreds = { apiKey: c.apiKey, model: agentRouterRow.model, baseUrl: agentRouterRow.baseUrl };
+      }
     } catch {}
   }
 
@@ -442,6 +521,8 @@ export async function batchEvaluateQualifiedJobs(
             cvSnippet,
             geminiCreds,
             openAiCreds,
+            agentRouterCreds,
+            defaultProvider,
           );
           results.set(job.id, evalResult);
         } catch (err) {
@@ -467,11 +548,17 @@ export async function evaluateSingleJob(
     cvSnippet !== undefined ? Promise.resolve({ text: cvSnippet }) : (await import("./cv-storage")).getVerifiedMasterCv(),
   ]);
 
-  const integrations = await db.select().from(integrationSettingsTable);
+  const [integrations, [state]] = await Promise.all([
+    db.select().from(integrationSettingsTable),
+    db.select().from(systemStateTable).where(eq(systemStateTable.id, "agent")).limit(1),
+  ]);
+  const defaultProvider = state?.defaultAiProvider || "auto";
+
   const geminiRow = integrations.find((i) => i.provider === "gemini" && i.model);
   const openAiRow = integrations.find((i) => i.provider === "openai" && i.model);
+  const agentRouterRow = integrations.find((i) => i.provider === "agentrouter" && i.model);
 
-  let geminiCreds: { apiKey: string; model: string } | null = null;
+  let geminiCreds: ProviderCreds | null = null;
   if (geminiRow?.encryptedCredentials && geminiRow?.model) {
     try {
       const c = decryptCredentials<{ apiKey?: string }>(geminiRow.encryptedCredentials);
@@ -479,11 +566,21 @@ export async function evaluateSingleJob(
     } catch {}
   }
 
-  let openAiCreds: { apiKey: string; model: string } | null = null;
+  let openAiCreds: ProviderCreds | null = null;
   if (openAiRow?.encryptedCredentials && openAiRow?.model) {
     try {
       const c = decryptCredentials<{ apiKey?: string }>(openAiRow.encryptedCredentials);
       if (c.apiKey) openAiCreds = { apiKey: c.apiKey, model: openAiRow.model };
+    } catch {}
+  }
+
+  let agentRouterCreds: ProviderCreds | null = null;
+  if (agentRouterRow?.encryptedCredentials && agentRouterRow?.model) {
+    try {
+      const c = decryptCredentials<{ apiKey?: string }>(agentRouterRow.encryptedCredentials);
+      if (c.apiKey) {
+        agentRouterCreds = { apiKey: c.apiKey, model: agentRouterRow.model, baseUrl: agentRouterRow.baseUrl };
+      }
     } catch {}
   }
 
@@ -493,5 +590,7 @@ export async function evaluateSingleJob(
     cvDossier.text.slice(0, 3000),
     geminiCreds,
     openAiCreds,
+    agentRouterCreds,
+    defaultProvider,
   );
 }

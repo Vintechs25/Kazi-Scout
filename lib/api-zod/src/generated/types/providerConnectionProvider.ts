@@ -13,4 +13,6 @@ export const ProviderConnectionProvider = {
   openai: 'openai',
   gemini: 'gemini',
   gmail: 'gmail',
+  agentrouter: 'agentrouter',
+  openrouter: 'openrouter',
 } as const;

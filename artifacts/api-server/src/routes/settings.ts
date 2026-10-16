@@ -10,6 +10,7 @@ import {
   SaveAiProviderBody,
   SaveAiProviderParams,
   SaveAiProviderResponse,
+  SetDefaultAiProviderBody,
   TestAiProviderParams,
   TestAiProviderResponse,
 } from "@workspace/api-zod";
@@ -32,7 +33,7 @@ import { testAiProvider } from "../lib/provider-services";
 const router: IRouter = Router();
 
 function connectionDetail(
-  provider: "openai" | "gemini" | "gmail",
+  provider: "openai" | "gemini" | "gmail" | "agentrouter" | "openrouter",
   row: IntegrationSettings | undefined,
 ): string {
   if (!row) {
@@ -49,6 +50,9 @@ function connectionDetail(
         ? `Read-only Gmail is connected as ${row.connectedEmail}.`
         : "Read-only Gmail is connected.";
     }
+    if (provider === "agentrouter") {
+      return `The Agent Router API key and ${row.model ?? "selected"} model were verified.`;
+    }
     return `The API key and ${row.model ?? "selected"} model were verified.`;
   }
   return provider === "gmail"
@@ -57,8 +61,9 @@ function connectionDetail(
 }
 
 function providerConnection(
-  provider: "openai" | "gemini" | "gmail",
+  provider: "openai" | "gemini" | "gmail" | "agentrouter" | "openrouter",
   row: IntegrationSettings | undefined,
+  defaultAiProvider?: string,
 ) {
   return {
     provider,
@@ -66,8 +71,10 @@ function providerConnection(
     detail: connectionDetail(provider, row),
     configured: Boolean(row),
     model: row?.model ?? null,
+    baseUrl: row?.baseUrl ?? null,
     clientId: row?.clientId ?? null,
     connectedEmail: row?.connectedEmail ?? null,
+    isDefault: defaultAiProvider === provider,
   };
 }
 
@@ -79,10 +86,12 @@ router.get("/settings", async (req, res): Promise<void> => {
   res.json(
     GetSettingsResponse.parse({
       providers: [
-        providerConnection("openai", byProvider.get("openai")),
-        providerConnection("gemini", byProvider.get("gemini")),
-        providerConnection("gmail", byProvider.get("gmail")),
+        providerConnection("agentrouter", byProvider.get("agentrouter"), state?.defaultAiProvider),
+        providerConnection("gemini", byProvider.get("gemini"), state?.defaultAiProvider),
+        providerConnection("openai", byProvider.get("openai"), state?.defaultAiProvider),
+        providerConnection("gmail", byProvider.get("gmail"), state?.defaultAiProvider),
       ],
+      defaultAiProvider: state?.defaultAiProvider ?? "auto",
       applicationMode: state?.applicationMode ?? "approval",
       duplicateProtection: true,
       gmailRedirectUri: gmailRedirectUri(req),
@@ -90,21 +99,45 @@ router.get("/settings", async (req, res): Promise<void> => {
   );
 });
 
-router.put("/settings/providers/:provider", async (req, res): Promise<void> => {
-  const params = SaveAiProviderParams.safeParse(req.params);
-  const body = SaveAiProviderBody.safeParse(req.body);
-  if (!params.success || !body.success) {
-    res.status(400).json({ error: "Enter an API key and model for OpenAI or Gemini." });
+router.patch("/settings/default-provider", async (req, res): Promise<void> => {
+  const body = SetDefaultAiProviderBody.safeParse(req.body);
+  if (!body.success) {
+    res.status(400).json({ error: "Invalid default provider. Choose auto, agentrouter, gemini, or openai." });
     return;
   }
 
   const updatedAt = new Date();
+  await db
+    .update(systemStateTable)
+    .set({
+      defaultAiProvider: body.data.provider,
+      updatedAt,
+    })
+    .where(eq(systemStateTable.id, "agent"));
+
+  res.json({
+    success: true,
+    defaultAiProvider: body.data.provider,
+  });
+});
+
+router.put("/settings/providers/:provider", async (req, res): Promise<void> => {
+  const params = SaveAiProviderParams.safeParse(req.params);
+  const body = SaveAiProviderBody.safeParse(req.body);
+  if (!params.success || !body.success) {
+    res.status(400).json({ error: "Enter an API key and model for OpenAI, Gemini, or Agent Router." });
+    return;
+  }
+
+  const updatedAt = new Date();
+  const baseUrl = body.data.baseUrl?.trim() || null;
   const [row] = await db
     .insert(integrationSettingsTable)
     .values({
       provider: params.data.provider,
       encryptedCredentials: encryptCredentials({ apiKey: body.data.apiKey }),
       model: body.data.model.trim(),
+      baseUrl,
       clientId: null,
       status: "CONFIGURED",
       connectedEmail: null,
@@ -116,6 +149,7 @@ router.put("/settings/providers/:provider", async (req, res): Promise<void> => {
       set: {
         encryptedCredentials: encryptCredentials({ apiKey: body.data.apiKey }),
         model: body.data.model.trim(),
+        baseUrl,
         clientId: null,
         status: "CONFIGURED",
         connectedEmail: null,
@@ -156,7 +190,7 @@ router.post("/settings/providers/:provider/test", async (req, res): Promise<void
     return;
   }
 
-  const result = await testAiProvider(params.data.provider, apiKey, row.model);
+  const result = await testAiProvider(params.data.provider, apiKey, row.model, row.baseUrl);
   const testedAt = new Date();
   await db
     .update(integrationSettingsTable)
@@ -178,7 +212,7 @@ router.post("/settings/providers/:provider/test", async (req, res): Promise<void
 router.delete("/settings/providers/:provider", async (req, res): Promise<void> => {
   const params = RemoveAiProviderParams.safeParse(req.params);
   if (!params.success) {
-    res.status(400).json({ error: "Choose OpenAI or Gemini." });
+    res.status(400).json({ error: "Choose OpenAI, Gemini, or Agent Router." });
     return;
   }
   await db
@@ -190,14 +224,15 @@ router.delete("/settings/providers/:provider", async (req, res): Promise<void> =
 router.post("/settings/providers/:provider/models", async (req, res): Promise<void> => {
   const params = SaveAiProviderParams.safeParse(req.params);
   if (!params.success) {
-    res.status(400).json({ error: "Choose OpenAI or Gemini." });
+    res.status(400).json({ error: "Choose OpenAI, Gemini, or Agent Router." });
     return;
   }
 
-  let { apiKey } = req.body as { apiKey?: string };
+  let { apiKey, baseUrl } = req.body as { apiKey?: string; baseUrl?: string };
+  let dbBaseUrl: string | null = null;
 
   // If no apiKey in request body, retrieve saved credentials from database
-  if (!apiKey || !apiKey.trim()) {
+  if (!apiKey || !apiKey.trim() || !baseUrl) {
     const [row] = await db
       .select()
       .from(integrationSettingsTable)
@@ -205,13 +240,16 @@ router.post("/settings/providers/:provider/models", async (req, res): Promise<vo
       .limit(1);
 
     if (row) {
-      try {
-        const credentials = decryptCredentials<{ apiKey?: unknown }>(row.encryptedCredentials);
-        if (typeof credentials.apiKey === "string" && credentials.apiKey.trim()) {
-          apiKey = credentials.apiKey.trim();
+      dbBaseUrl = row.baseUrl;
+      if (!apiKey || !apiKey.trim()) {
+        try {
+          const credentials = decryptCredentials<{ apiKey?: unknown }>(row.encryptedCredentials);
+          if (typeof credentials.apiKey === "string" && credentials.apiKey.trim()) {
+            apiKey = credentials.apiKey.trim();
+          }
+        } catch {
+          // Ignored
         }
-      } catch {
-        // Ignored
       }
     }
   }
@@ -222,7 +260,8 @@ router.post("/settings/providers/:provider/models", async (req, res): Promise<vo
   }
 
   const { listModels } = await import("../lib/provider-services");
-  const result = await listModels(params.data.provider, apiKey);
+  const effectiveBaseUrl = baseUrl || dbBaseUrl;
+  const result = await listModels(params.data.provider, apiKey, effectiveBaseUrl);
 
   if (!result.success) {
     res.status(400).json({ error: result.message || "Failed to list models." });

@@ -813,10 +813,11 @@ function SearchDirectiveBanner({ directiveData, onRefresh, isRefreshing, onViewE
 
   if (!directive) return null;
 
+  const isAgentRouter = source === 'agentrouter';
   const isGemini = source === 'gemini';
   const isOpenAI = source === 'openai';
-  const providerLabel = isGemini ? 'Gemini 3.6 Flash' : isOpenAI ? 'OpenAI GPT-4o' : 'Deterministic Rules';
-  const providerBadge = isGemini ? 'badge-green' : isOpenAI ? '' : 'badge-yellow';
+  const providerLabel = isAgentRouter ? 'Agent Router' : isGemini ? 'Gemini 3.6 Flash' : isOpenAI ? 'OpenAI GPT-4o' : 'Deterministic Rules';
+  const providerBadge = isAgentRouter ? 'badge-blue' : isGemini ? 'badge-green' : isOpenAI ? '' : 'badge-yellow';
 
   return (
     <div className="panel" style={{ marginBottom: 16, border: '1px solid rgba(59, 130, 246, 0.3)', background: 'rgba(59, 130, 246, 0.03)' }}>
@@ -2003,10 +2004,10 @@ function Cvs() {
   const [category, setCategory] = useState<string>('cv');
   const [docTitle, setDocTitle] = useState<string>('');
   const [uploading, setUploading] = useState(false);
-  const [provider, setProvider] = useState<'' | 'openai' | 'gemini'>('');
+  const [provider, setProvider] = useState<'' | 'openai' | 'gemini' | 'agentrouter'>('');
   const [consent, setConsent] = useState(false);
   const [parseTarget, setParseTarget] = useState<string | null>(null);
-  const [parseProvider, setParseProvider] = useState<'' | 'openai' | 'gemini'>('');
+  const [parseProvider, setParseProvider] = useState<'' | 'openai' | 'gemini' | 'agentrouter'>('');
   const [parseConsent, setParseConsent] = useState(false);
   const [parseError, setParseError] = useState('');
   const [selectedCvIds, setSelectedCvIds] = useState<string[]>([]);
@@ -2014,10 +2015,10 @@ function Cvs() {
   const [bulkCategory, setBulkCategory] = useState<string>('other');
 
   const aiProviders = (settingsQ.data?.providers ?? []).filter(
-    item => (item.provider === 'openai' || item.provider === 'gemini') && item.configured,
+    item => (item.provider === 'openai' || item.provider === 'gemini' || item.provider === 'agentrouter') && item.configured,
   );
 
-  const runParse = (cvId: string, selectedProvider: 'openai' | 'gemini', confirmed: boolean) => {
+  const runParse = (cvId: string, selectedProvider: 'openai' | 'gemini' | 'agentrouter', confirmed: boolean) => {
     setParseError('');
     parse.mutate(
       { id: cvId, data: { provider: selectedProvider, consent: confirmed } },
@@ -2180,7 +2181,7 @@ function Cvs() {
                   <span className="label">AI Provider</span>
                   <select className="field select" value={provider} onChange={e => setProvider(e.target.value as any)}>
                     <option value="">Do not parse profile (Store only)</option>
-                    {aiProviders.map(p => <option key={p.provider} value={p.provider}>{labelize(p.provider)}</option>)}
+                    {aiProviders.map(p => <option key={p.provider} value={p.provider}>{p.provider === 'agentrouter' ? 'Agent Router' : p.provider === 'gemini' ? 'Google Gemini' : 'OpenAI'}</option>)}
                   </select>
                 </label>
                 {provider && (
@@ -2310,7 +2311,7 @@ function Cvs() {
             <span className="label">AI provider</span>
             <select className="field select" value={parseProvider} onChange={event => setParseProvider(event.target.value as any)}>
               <option value="">Choose a configured provider</option>
-              {aiProviders.map(item => <option key={item.provider} value={item.provider}>{labelize(item.provider)}</option>)}
+              {aiProviders.map(item => <option key={item.provider} value={item.provider}>{item.provider === 'agentrouter' ? 'Agent Router' : item.provider === 'gemini' ? 'Google Gemini' : 'OpenAI'}</option>)}
             </select>
           </label>
           <label style={{ display: 'flex', gap: 9, alignItems: 'flex-start', margin: '14px 0' }}>
@@ -2517,7 +2518,7 @@ function Settings() {
         <div className="notice" style={{ background: 'rgba(239, 68, 68, 0.06)', borderColor: 'hsl(var(--destructive))' }}>
           <b>What will be deleted:</b> All CV files, diplomas, ID uploads, candidate facts, search profiles, job records, and applications.
           <br/>
-          <b>What is kept:</b> OpenAI & Gemini API keys, Google OAuth credentials, and your login password stay safely preserved.
+          <b>What is kept:</b> Agent Router, OpenAI & Gemini API keys, Google OAuth credentials, and your login password stay safely preserved.
         </div>
         <div>
           <Button

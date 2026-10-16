@@ -117,7 +117,7 @@ router.get("/jobs", async (req, res): Promise<void> => {
         eq(jobsTable.hardEligibilityFailure, true),
       ),
     );
-  } else if (tab === "applied" || parsed.data.status === "APPLIED") {
+  } else if (tab === "applied" || (parsed.data.status as string) === "APPLIED") {
     filters.push(
       appliedArray.length > 0
         ? or(eq(jobsTable.status, "APPLIED"), inArray(jobsTable.id, appliedArray))
