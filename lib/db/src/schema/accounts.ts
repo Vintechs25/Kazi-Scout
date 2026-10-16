@@ -3,9 +3,13 @@ import { createInsertSchema } from "drizzle-zod";
 
 export const accountsTable = sqliteTable("accounts", {
   id: text("id").primaryKey().$defaultFn(() => "local"),
+  email: text("email"),
+  name: text("name"),
+  profession: text("profession"),
   passwordSalt: text("password_salt").notNull(),
   passwordHash: text("password_hash").notNull(),
   createdAt: integer("created_at", { mode: "timestamp" }).notNull().$defaultFn(() => new Date()),
+  updatedAt: integer("updated_at", { mode: "timestamp" }).notNull().$defaultFn(() => new Date()),
 });
 
 export const insertAccountSchema = createInsertSchema(accountsTable).omit({ createdAt: true });

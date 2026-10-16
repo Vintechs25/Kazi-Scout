@@ -6,7 +6,7 @@ import {
   LayoutDashboard, LogOut, Plus, Search, Settings2, ShieldCheck, SlidersHorizontal, Sparkles,
   Trash2, UserRound, X, ExternalLink, Play, Pause, Square, RotateCw, LockKeyhole, ClipboardList,
   Mail, Paperclip, Copy, Calendar, Send, UploadCloud, Download, CheckCircle2, AlertCircle, FileCheck, Layers,
-  Globe, MapPin, Target, PanelLeftClose, PanelLeftOpen, Menu,
+  Globe, MapPin, Target, PanelLeftClose, PanelLeftOpen, Menu, Eye, EyeOff, UserPlus, LogIn,
 } from 'lucide-react';
 import {
   useHealthCheck, useGetAuthStatus, useSetupLocalAccount, useLoginLocalAccount, useLogoutLocalAccount,
@@ -76,6 +76,7 @@ function ChipInput({ label, initial = '', onChange }: any) {
 function AppShell({ children, health }: { children: React.ReactNode; health: any }) {
   const [path] = useLocation();
   const logout = useLogoutLocalAccount();
+  const authQuery = useGetAuthStatus();
   const qc = useQueryClient();
   const [collapsed, setCollapsed] = useState(() => {
     try {
@@ -224,6 +225,25 @@ function AppShell({ children, health }: { children: React.ReactNode; health: any
               </a>
             </div>
           </div>
+          {(() => {
+            const authStatus = authQuery.data as any;
+            const user = authStatus?.user;
+            if (!user) return null;
+            return (
+              <div style={{
+                marginTop: 8,
+                padding: '6px 8px',
+                borderRadius: 6,
+                background: 'rgba(255,255,255,0.06)',
+                fontSize: 11,
+                color: '#e2e8f0',
+                display: collapsed ? 'none' : 'block'
+              }}>
+                <div style={{ fontWeight: 600, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{user.name || 'Candidate'}</div>
+                <div style={{ fontSize: 10, color: '#94a3b8', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{user.email}</div>
+              </div>
+            );
+          })()}
           <button
             className="nav-link"
             style={{
@@ -293,7 +313,7 @@ function AppShell({ children, health }: { children: React.ReactNode; health: any
               <span style={{ color: '#10b981', fontWeight: 700 }}>{currentNav.label}</span>
             </div>
 
-            <span style={{
+            <span className="hide-on-mobile" style={{
               fontSize: 10,
               fontWeight: 600,
               padding: '2px 8px',
@@ -346,8 +366,8 @@ function AppShell({ children, health }: { children: React.ReactNode; health: any
                             ? 'Ephemeral Local Storage'
                             : 'Local Engine Online'}
                   </span>
-                  <span className="mono" style={{ color: 'hsl(var(--muted-foreground))' }}>·</span>
-                  <span style={{ color: isEphemeral ? '#b45309' : 'hsl(var(--muted-foreground))', fontSize: 11 }}>
+                  <span className="mono hide-on-mobile" style={{ color: 'hsl(var(--muted-foreground))' }}>·</span>
+                  <span className="hide-on-mobile" style={{ color: isEphemeral ? '#b45309' : 'hsl(var(--muted-foreground))', fontSize: 11 }}>
                     {isTurso ? 'Persistent' : isEphemeral ? 'Data resets on restart' : 'Private by default'}
                   </span>
                 </div>
@@ -408,8 +428,8 @@ function AuthGate() {
   const [, setLoc] = useLocation();
   const needsRedirect = Boolean(auth.data && !auth.data.authenticated);
   useEffect(() => {
-    if (needsRedirect) setLoc(auth.data?.setupRequired ? '/setup' : '/login');
-  }, [needsRedirect, auth.data?.setupRequired, setLoc]);
+    if (needsRedirect) setLoc('/login');
+  }, [needsRedirect, setLoc]);
   if (auth.isLoading) return <div className="auth-main"><div style={{ width: 320 }}><div className="skeleton-block"/></div></div>;
   if (auth.isError) return <div className="auth-main"><ErrorState error={auth.error} retry={auth.refetch}/></div>;
   if (needsRedirect) return <div className="auth-main"><div style={{ width: 320 }}><div className="skeleton-block"/></div></div>;
@@ -2567,24 +2587,104 @@ function Settings() {
   </>}</main>;
 }
 
-function AuthPage({ setup = false }: { setup?: boolean }) {
-  const auth = useGetAuthStatus(); const setupMutation = useSetupLocalAccount(); const loginMutation = useLoginLocalAccount();
+function AuthPage({ initialMode = 'login' }: { initialMode?: 'login' | 'register' }) {
+  const [mode, setMode] = useState<'login' | 'register'>(initialMode);
+  const [showPassword, setShowPassword] = useState(false);
+  const [loading, setLoading] = useState(false);
+  const [errorMsg, setErrorMsg] = useState<string | null>(null);
+
+  // Sign In inputs
+  const [loginEmail, setLoginEmail] = useState('');
+  const [loginPassword, setLoginPassword] = useState('');
+
+  // Register inputs
+  const [name, setName] = useState('');
+  const [email, setEmail] = useState('');
+  const [profession, setProfession] = useState('Healthcare & Medicine');
+  const [password, setPassword] = useState('');
+  const [confirmPassword, setConfirmPassword] = useState('');
+
+  const auth = useGetAuthStatus();
   const [, setLoc] = useLocation();
-  const mutation = setup ? setupMutation : loginMutation;
-  const shouldRedirect = Boolean(
-    auth.data &&
-      (auth.data.authenticated || auth.data.setupRequired !== setup),
-  );
+
   useEffect(() => {
-    if (!auth.data) return;
-    if (auth.data.authenticated) setLoc('/dashboard');
-    else if (auth.data.setupRequired !== setup) {
-      setLoc(auth.data.setupRequired ? '/setup' : '/login');
+    if (auth.data?.authenticated) {
+      setLoc('/dashboard');
     }
-  }, [auth.data?.authenticated, auth.data?.setupRequired, setup, setLoc]);
-  if (auth.isLoading) return <div className="auth-main"><div style={{ width:350 }}><div className="skeleton-block"/></div></div>;
-  if (auth.isError) return <div className="auth-main"><ErrorState error={auth.error} retry={auth.refetch}/></div>;
-  if (shouldRedirect) return <div className="auth-main"><div style={{ width:350 }}><div className="skeleton-block"/></div></div>;
+  }, [auth.data?.authenticated, setLoc]);
+
+  useEffect(() => {
+    setMode(initialMode);
+    setErrorMsg(null);
+  }, [initialMode]);
+
+  const handleLogin = async (e: React.FormEvent) => {
+    e.preventDefault();
+    setErrorMsg(null);
+    setLoading(true);
+    try {
+      const res = await fetch('/api/auth/login', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        credentials: 'include',
+        body: JSON.stringify({ email: loginEmail, password: loginPassword }),
+      });
+      const data = await res.json();
+      if (!res.ok) {
+        throw new Error(data.error || 'Failed to sign in. Please verify your email and password.');
+      }
+      await queryClient.invalidateQueries();
+      setLoc('/dashboard');
+    } catch (err: any) {
+      setErrorMsg(err.message || 'Sign in failed');
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const handleRegister = async (e: React.FormEvent) => {
+    e.preventDefault();
+    setErrorMsg(null);
+    if (!name.trim()) {
+      setErrorMsg('Please enter your full name.');
+      return;
+    }
+    if (password.length < 8) {
+      setErrorMsg('Password must be at least 8 characters.');
+      return;
+    }
+    if (password !== confirmPassword) {
+      setErrorMsg('Passwords do not match. Please verify your password confirmation.');
+      return;
+    }
+    setLoading(true);
+    try {
+      const res = await fetch('/api/auth/register', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        credentials: 'include',
+        body: JSON.stringify({
+          name: name.trim(),
+          email: email.trim(),
+          profession: profession.trim(),
+          password,
+        }),
+      });
+      const data = await res.json();
+      if (!res.ok) {
+        throw new Error(data.error || 'Registration failed. Please try again.');
+      }
+      await queryClient.invalidateQueries();
+      setLoc('/dashboard');
+    } catch (err: any) {
+      setErrorMsg(err.message || 'Registration failed');
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  if (auth.isLoading) return <div className="auth-main"><div style={{ width: 350 }}><div className="skeleton-block"/></div></div>;
+
   return (
     <div className="auth-screen">
       <aside className="auth-aside">
@@ -2593,7 +2693,7 @@ function AuthPage({ setup = false }: { setup?: boolean }) {
             <img src="/kaziscout-brand-tight.png" alt="KaziScout" style={{ height: 50, width: 'auto', maxWidth: 260, objectFit: 'contain', display: 'block' }} />
           </div>
           <div style={{ fontSize: 13, color: '#e2eee7', fontWeight: 600, letterSpacing: '-0.01em', marginBottom: 6 }}>
-            Find the right work. Apply with confidence.
+            Universal Career Discovery & Application Automation
           </div>
           <div style={{ fontSize: 11, color: '#9db4a9' }}>
             Powered by{' '}
@@ -2608,19 +2708,22 @@ function AuthPage({ setup = false }: { setup?: boolean }) {
           </div>
         </div>
         <div>
-          <div className="eyebrow" style={{ color: '#a9c4b4' }}>A private workspace</div>
+          <div className="eyebrow" style={{ color: '#a9c4b4' }}>Universal Candidate Desk</div>
           <div style={{ font: '700 32px Manrope', letterSpacing: '-.05em', marginTop: 10, lineHeight: 1.15 }}>
-            Kenya's Intelligent<br />Career Discovery Desk.
+            Kenya's Precision<br />Career Discovery Desk.
           </div>
-          <p style={{ color: '#bdc9c4', fontSize: 13, lineHeight: 1.7, maxWidth: 310, marginTop: 12 }}>
-            A local-first desk for tracking verified Kenyan opportunities across all 47 counties, managing credentials, and generating tailored applications.
+          <p style={{ color: '#bdc9c4', fontSize: 13, lineHeight: 1.7, maxWidth: 330, marginTop: 12 }}>
+            Engineered for professionals across Medicine, Law, Accounting, Engineering, Education, Technology, and Operations across all 47 counties and global remote markets.
           </p>
         </div>
-        <div className="field-hint" style={{ color: '#a9b7b5' }}>Local account · Your applications are never sent automatically</div>
+        <div className="field-hint" style={{ color: '#a9b7b5' }}>
+          Secure, verified candidate profile · Verified against authentic job postings
+        </div>
       </aside>
+
       <main className="auth-main">
         <div className="auth-box">
-          <div style={{ marginBottom: 24 }}>
+          <div style={{ marginBottom: 20 }}>
             <div style={{ display: 'inline-flex', alignItems: 'center', gap: 12, marginBottom: 8 }}>
               <img src="/kaziscout-icon.png" alt="KaziScout" style={{ width: 44, height: 44, borderRadius: 10, boxShadow: '0 4px 12px rgba(0,0,0,0.1)' }} />
               <div>
@@ -2639,50 +2742,241 @@ function AuthPage({ setup = false }: { setup?: boolean }) {
                 target="_blank"
                 rel="noopener noreferrer"
                 style={{ color: '#10b981', fontWeight: 600, textDecoration: 'none' }}
-                onMouseEnter={e => { (e.currentTarget as HTMLElement).style.textDecoration = 'underline'; }}
-                onMouseLeave={e => { (e.currentTarget as HTMLElement).style.textDecoration = 'none'; }}
               >
                 Vintech Systems & Consulting
               </a>
             </div>
           </div>
-          <div className="eyebrow">{setup ? 'First-time setup' : 'Welcome back'}</div>
-          <h1 className="auth-title">{setup ? 'Create your local password' : 'Sign in to your desk'}</h1>
-          <p className="page-sub" style={{ lineHeight: 1.6, marginBottom: 24 }}>
-            {setup ? 'This password protects your personal workspace on this device.' : 'Your workspace is ready when you are.'}
+
+          {/* Auth Mode Toggle Tabs */}
+          <div className="auth-tab-group">
+            <button
+              type="button"
+              className={`auth-tab ${mode === 'login' ? 'active' : ''}`}
+              onClick={() => { setMode('login'); setErrorMsg(null); }}
+            >
+              <LogIn size={13} style={{ marginRight: 6, display: 'inline', verticalAlign: '-1px' }} />
+              Sign In
+            </button>
+            <button
+              type="button"
+              className={`auth-tab ${mode === 'register' ? 'active' : ''}`}
+              onClick={() => { setMode('register'); setErrorMsg(null); }}
+            >
+              <UserPlus size={13} style={{ marginRight: 6, display: 'inline', verticalAlign: '-1px' }} />
+              Create Account
+            </button>
+          </div>
+
+          <div className="eyebrow">{mode === 'login' ? 'Welcome back' : 'Candidate Registration'}</div>
+          <h1 className="auth-title" style={{ fontSize: 26, margin: '8px 0 6px' }}>
+            {mode === 'login' ? 'Sign in to your desk' : 'Create your career account'}
+          </h1>
+          <p className="page-sub" style={{ lineHeight: 1.5, marginBottom: 20, fontSize: 12 }}>
+            {mode === 'login'
+              ? 'Access your saved jobs, applications, and verified CV credentials.'
+              : 'Target verified opportunities matched to your actual qualifications and career preferences.'}
           </p>
-          <form onSubmit={e => {
-            e.preventDefault();
-            const password = String(new FormData(e.currentTarget).get('password'));
-            mutation.mutate({ data: { password } }, {
-              onSuccess: () => {
-                queryClient.invalidateQueries();
-                setLoc('/dashboard');
-              }
-            });
-          }}>
-            <input type="text" name="username" value="local" autoComplete="username" readOnly tabIndex={-1} aria-hidden="true" style={{ position: 'absolute', width: 1, height: 1, padding: 0, margin: -1, overflow: 'hidden', clip: 'rect(0, 0, 0, 0)', whiteSpace: 'nowrap', border: 0 }} />
-            <label className="form-item">
-              <span className="label">Password</span>
-              <input name="password" className="field" type="password" minLength={12} maxLength={256} required autoComplete={setup ? 'new-password' : 'current-password'} placeholder="At least 12 characters" />
-            </label>
-            {setup && <p className="field-hint" style={{ marginTop: 7 }}>Use 12 or more characters. Keep it somewhere safe.</p>}
-            {mutation.isError && <div className="notice" style={{ marginTop: 12 }}>{errText(mutation.error)}</div>}
-            <Button type="submit" variant="primary" disabled={mutation.isPending} style={{ width: '100%', justifyContent: 'center', marginTop: 18 }}>
-              {mutation.isPending ? 'Please wait…' : setup ? 'Set up local account' : 'Sign in'}
-              <ChevronRight size={15} />
-            </Button>
-          </form>
-          <div style={{ marginTop: 22, fontSize: 11, color: 'hsl(var(--muted-foreground))', display: 'flex', gap: 7, alignItems: 'center' }}>
-            <LockKeyhole size={13} /> Password authentication is handled by your local workspace.
+
+          {errorMsg && (
+            <div className="notice" style={{ background: 'rgba(239, 68, 68, 0.1)', color: '#b91c1c', border: '1px solid rgba(239, 68, 68, 0.25)', marginBottom: 16 }}>
+              {errorMsg}
+            </div>
+          )}
+
+          {mode === 'login' ? (
+            <form onSubmit={handleLogin} style={{ display: 'grid', gap: 14 }}>
+              <label className="form-item">
+                <span className="label">Email or Username</span>
+                <input
+                  type="text"
+                  className="field"
+                  required
+                  autoComplete="username"
+                  placeholder="name@example.com"
+                  value={loginEmail}
+                  onChange={e => setLoginEmail(e.target.value)}
+                />
+              </label>
+
+              <label className="form-item">
+                <span className="label">Password</span>
+                <div className="password-wrap">
+                  <input
+                    type={showPassword ? 'text' : 'password'}
+                    className="field"
+                    required
+                    autoComplete="current-password"
+                    placeholder="Enter your password"
+                    value={loginPassword}
+                    onChange={e => setLoginPassword(e.target.value)}
+                    style={{ paddingRight: 38 }}
+                  />
+                  <button
+                    type="button"
+                    className="password-toggle"
+                    onClick={() => setShowPassword(v => !v)}
+                    title={showPassword ? 'Hide password' : 'Show password'}
+                  >
+                    {showPassword ? <EyeOff size={15} /> : <Eye size={15} />}
+                  </button>
+                </div>
+              </label>
+
+              <Button
+                type="submit"
+                variant="primary"
+                disabled={loading}
+                style={{ width: '100%', justifyContent: 'center', marginTop: 8 }}
+              >
+                {loading ? 'Signing in…' : 'Sign in to Workspace'}
+                <ChevronRight size={15} />
+              </Button>
+
+              <div style={{ textAlign: 'center', marginTop: 12, fontSize: 12, color: 'hsl(var(--muted-foreground))' }}>
+                Don't have an account yet?{' '}
+                <button
+                  type="button"
+                  onClick={() => { setMode('register'); setErrorMsg(null); }}
+                  style={{ background: 'none', border: 'none', color: '#10b981', fontWeight: 600, cursor: 'pointer', padding: 0 }}
+                >
+                  Create an account
+                </button>
+              </div>
+            </form>
+          ) : (
+            <form onSubmit={handleRegister} style={{ display: 'grid', gap: 12 }}>
+              <label className="form-item">
+                <span className="label">Full Name</span>
+                <input
+                  type="text"
+                  className="field"
+                  required
+                  placeholder="e.g. Dr. Sarah Kimani, David Mwangi"
+                  value={name}
+                  onChange={e => setName(e.target.value)}
+                />
+              </label>
+
+              <label className="form-item">
+                <span className="label">Email Address</span>
+                <input
+                  type="email"
+                  className="field"
+                  required
+                  autoComplete="email"
+                  placeholder="name@example.com"
+                  value={email}
+                  onChange={e => setEmail(e.target.value)}
+                />
+              </label>
+
+              <label className="form-item">
+                <span className="label">Career Discipline / Domain</span>
+                <select
+                  className="field select"
+                  value={profession}
+                  onChange={e => setProfession(e.target.value)}
+                  style={{ background: 'hsl(var(--card))' }}
+                >
+                  <option value="Healthcare & Medicine">Healthcare, Medicine & Surgery</option>
+                  <option value="Nursing & Patient Care">Nursing & Clinical Care</option>
+                  <option value="Pharmacy & Pharmacology">Pharmacy & Pharmaceuticals</option>
+                  <option value="Law & Legal Services">Law & Legal Counsel</option>
+                  <option value="Finance, Accounting & Audit">Finance, Accounting & Audit</option>
+                  <option value="Civil & Structural Engineering">Civil & Structural Engineering</option>
+                  <option value="Mechanical & Industrial Engineering">Mechanical Engineering</option>
+                  <option value="Electrical & Power Systems">Electrical & Power Engineering</option>
+                  <option value="Education, Academia & Teaching">Education & Academia</option>
+                  <option value="Technology & Software Engineering">Technology & Software</option>
+                  <option value="Operations, Supply Chain & Logistics">Operations & Supply Chain</option>
+                  <option value="Marketing & Communications">Marketing & Communications</option>
+                  <option value="Human Resources & Administration">Human Resources & Administration</option>
+                  <option value="Other Professional Services">Other Professional Field</option>
+                </select>
+                <span className="field-hint">Used to calibrate initial discovery. Refined automatically when your CV is uploaded.</span>
+              </label>
+
+              <label className="form-item">
+                <span className="label">Password</span>
+                <div className="password-wrap">
+                  <input
+                    type={showPassword ? 'text' : 'password'}
+                    className="field"
+                    required
+                    minLength={8}
+                    autoComplete="new-password"
+                    placeholder="At least 8 characters"
+                    value={password}
+                    onChange={e => setPassword(e.target.value)}
+                    style={{ paddingRight: 38 }}
+                  />
+                  <button
+                    type="button"
+                    className="password-toggle"
+                    onClick={() => setShowPassword(v => !v)}
+                    title={showPassword ? 'Hide password' : 'Show password'}
+                  >
+                    {showPassword ? <EyeOff size={15} /> : <Eye size={15} />}
+                  </button>
+                </div>
+              </label>
+
+              <label className="form-item">
+                <span className="label">Confirm Password</span>
+                <input
+                  type={showPassword ? 'text' : 'password'}
+                  className="field"
+                  required
+                  minLength={8}
+                  autoComplete="new-password"
+                  placeholder="Re-enter your password"
+                  value={confirmPassword}
+                  onChange={e => setConfirmPassword(e.target.value)}
+                />
+              </label>
+
+              <Button
+                type="submit"
+                variant="primary"
+                disabled={loading}
+                style={{ width: '100%', justifyContent: 'center', marginTop: 8 }}
+              >
+                {loading ? 'Creating account…' : 'Create Account & Start Discovery'}
+                <ChevronRight size={15} />
+              </Button>
+
+              <div style={{ textAlign: 'center', marginTop: 12, fontSize: 12, color: 'hsl(var(--muted-foreground))' }}>
+                Already have an account?{' '}
+                <button
+                  type="button"
+                  onClick={() => { setMode('login'); setErrorMsg(null); }}
+                  style={{ background: 'none', border: 'none', color: '#10b981', fontWeight: 600, cursor: 'pointer', padding: 0 }}
+                >
+                  Sign in here
+                </button>
+              </div>
+            </form>
+          )}
+
+          <div style={{ marginTop: 20, fontSize: 11, color: 'hsl(var(--muted-foreground))', display: 'flex', gap: 7, alignItems: 'center' }}>
+            <LockKeyhole size={13} /> Secure authentication · Tailored strictly to your verified qualifications.
           </div>
         </div>
       </main>
     </div>
   );
 }
+
 function Router() {
-  return <Switch><Route path="/setup"><AuthPage setup/></Route><Route path="/login"><AuthPage/></Route><Route><AuthGate/></Route></Switch>;
+  return (
+    <Switch>
+      <Route path="/setup"><AuthPage initialMode="register"/></Route>
+      <Route path="/register"><AuthPage initialMode="register"/></Route>
+      <Route path="/login"><AuthPage initialMode="login"/></Route>
+      <Route><AuthGate/></Route>
+    </Switch>
+  );
 }
 function App() { return <QueryClientProvider client={queryClient}><Router/></QueryClientProvider>; }
 export default App;

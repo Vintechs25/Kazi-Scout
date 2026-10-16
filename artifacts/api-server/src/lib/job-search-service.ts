@@ -506,7 +506,6 @@ async function fetchCareerPointKenyaJobs(limit = 40, keywords: string[] = []): P
 async function fetchJobWebKenyaJobs(limit = 40): Promise<NormalizedJob[]> {
   try {
     const feedUrls = [
-      "https://jobwebkenya.com/category/ict-jobs-in-kenya/feed/",
       "https://jobwebkenya.com/feed/",
     ];
 
@@ -668,13 +667,9 @@ async function fetchWorkingNomadsJobs(limit = 40): Promise<NormalizedJob[]> {
     const items = Array.isArray(data) ? data : [];
 
     return items
-      .filter((item) => {
-        const cat = (item.category_name || "").toLowerCase();
-        return cat.includes("dev") || cat.includes("software") || cat.includes("system") || cat.includes("support") || cat.includes("tech");
-      })
       .map((item: any, idx: number) => {
-        const title = String(item.title || "Software Developer").trim();
-        const company = String(item.company_name || "Tech Group").trim();
+        const title = String(item.title || "Professional Vacancy").trim();
+        const company = String(item.company_name || "Hiring Organization").trim();
         const desc = cleanHtml(String(item.description || ""));
         const deadline = extractDeadlineDate(desc);
         const postedDate = parseJobDate(item.pub_date);
@@ -740,7 +735,7 @@ async function fetchWeWorkRemotelyJobs(limit = 40): Promise<NormalizedJob[]> {
       const rawTitle = titleMatch ? titleMatch[1].trim() : "";
       if (!rawTitle) continue;
 
-      let company = "Tech Company";
+      let company = "Hiring Organization";
       let title = rawTitle;
       if (rawTitle.includes(": ")) {
         const parts = rawTitle.split(": ");
@@ -799,8 +794,8 @@ async function fetchHimalayasJobs(limit = 40): Promise<NormalizedJob[]> {
 
     return items
       .map((item: any, idx: number) => {
-        const title = String(item.title || "Developer").trim();
-        const company = String(item.companyName || "Tech Corp").trim();
+        const title = String(item.title || "Professional Vacancy").trim();
+        const company = String(item.companyName || "Hiring Organization").trim();
         const desc = cleanHtml(String(item.description || ""));
         const deadline = item.expiresAt ? parseJobDate(item.expiresAt) : extractDeadlineDate(desc);
         const postedDate = parseJobDate(item.pubDate || item.createdAt);
@@ -846,8 +841,8 @@ async function fetchArbeitnowJobs(limit = 40): Promise<NormalizedJob[]> {
     const items = data.data || [];
     return items
       .map((item: any, idx: number) => {
-        const title = String(item.title || "Software Engineer").trim();
-        const company = String(item.company_name || "Tech Company").trim();
+        const title = String(item.title || "Professional Vacancy").trim();
+        const company = String(item.company_name || "Hiring Organization").trim();
         const desc = cleanHtml(String(item.description || ""));
         const deadline = extractDeadlineDate(desc);
         const postedDate = item.created_at ? parseJobDate(item.created_at * 1000) : new Date();
@@ -890,8 +885,8 @@ async function fetchJobicyJobs(limit = 40): Promise<NormalizedJob[]> {
     const items = data.jobs || [];
     return items
       .map((item: any, idx: number) => {
-        const title = String(item.jobTitle || "Developer").trim();
-        const company = String(item.companyName || "Tech Corp").trim();
+        const title = String(item.jobTitle || "Professional Vacancy").trim();
+        const company = String(item.companyName || "Hiring Organization").trim();
         const desc = cleanHtml(String(item.jobDescription || ""));
         const deadline = extractDeadlineDate(desc);
         const postedDate = parseJobDate(item.pubDate);
@@ -936,8 +931,8 @@ async function fetchRemotiveJobs(limit = 40): Promise<NormalizedJob[]> {
     const items = data.jobs || [];
     return items
       .map((item: any, idx: number) => {
-        const title = String(item.title || "Engineer").trim();
-        const company = String(item.company_name || "Remote Team").trim();
+        const title = String(item.title || "Professional Vacancy").trim();
+        const company = String(item.company_name || "Hiring Organization").trim();
         const desc = cleanHtml(String(item.description || ""));
         const deadline = extractDeadlineDate(desc);
         const postedDate = parseJobDate(item.publication_date);
