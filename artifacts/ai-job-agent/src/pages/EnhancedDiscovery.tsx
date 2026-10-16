@@ -222,6 +222,37 @@ export function EnhancedDiscovery() {
     queryFn: getEnabledRoles,
   });
 
+  const { data: candidateProfile } = useQuery({
+    queryKey: ['candidate-profile'],
+    queryFn: async () => {
+      try {
+        const res = await fetch('/api/candidate-profile', { credentials: 'include' });
+        if (res.ok) return await res.json();
+      } catch {}
+      return null;
+    },
+  });
+
+  const profileRoles: string[] = Array.isArray(candidateProfile?.targetRoles)
+    ? candidateProfile.targetRoles.filter((r: any) => typeof r === 'string' && r.trim().length > 0)
+    : [];
+
+  const LEGACY_IT_ROLES = new Set([
+    'it support specialist',
+    'ict officer',
+    'junior systems administrator',
+    'junior software developer',
+    'help desk technician',
+    'it intern',
+  ]);
+
+  const rawApiRoles = rolesData?.roles || [];
+  const cleanApiRoles = rawApiRoles.filter((r: string) => !LEGACY_IT_ROLES.has(r.toLowerCase().trim()));
+
+  const activeRoles: string[] = cleanApiRoles.length > 0
+    ? cleanApiRoles
+    : (profileRoles.length > 0 ? profileRoles : rawApiRoles);
+
   const runDiscoveryMutation = useMutation({
     mutationFn: runDiscovery,
   });
@@ -231,6 +262,7 @@ export function EnhancedDiscovery() {
     setLastResult(null);
     try {
       const result = await runDiscoveryMutation.mutateAsync({
+        roles: activeRoles,
         aggressiveMode,
         verifyRequirements,
         maxJobs,
@@ -307,7 +339,7 @@ export function EnhancedDiscovery() {
             </div>
           </div>
           <span className="badge badge-green">
-            {rolesData?.roles?.length || 0} Approved Roles
+            {activeRoles.length} Target Roles
           </span>
         </div>
         <div className="panel-body">
@@ -315,13 +347,13 @@ export function EnhancedDiscovery() {
           <div style={{ marginBottom: 18 }}>
             <span className="label" style={{ display: 'block', marginBottom: 8 }}>Roles to Search:</span>
             <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
-              {(rolesData?.roles || []).map((role, idx) => (
+              {activeRoles.map((role, idx) => (
                 <span key={idx} className="pill-badge badge-green" style={{ fontSize: 12 }}>
                   <Target size={12}/> {role}
                 </span>
               ))}
-              {(!rolesData?.roles || rolesData.roles.length === 0) && (
-                <span className="field-hint">No roles currently approved. <Link href="/roles" style={{ color: 'hsl(var(--primary))' }}>Approve roles &rarr;</Link></span>
+              {activeRoles.length === 0 && (
+                <span className="field-hint">No roles currently set. Add your career roles in <Link href="/profile" style={{ color: 'hsl(var(--primary))' }}>Candidate Profile</Link> or <Link href="/roles" style={{ color: 'hsl(var(--primary))' }}>Role Management</Link>.</span>
               )}
             </div>
           </div>
@@ -367,7 +399,7 @@ export function EnhancedDiscovery() {
             <button
               className="btn btn-primary btn-lg"
               onClick={handleRunDiscovery}
-              disabled={isRunning || !rolesData?.roles?.length}
+              disabled={isRunning || !activeRoles.length}
               style={{ minWidth: 220, justifyContent: 'center' }}
             >
               {isRunning ? (

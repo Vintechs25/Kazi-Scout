@@ -9,7 +9,7 @@ import {
   SetupLocalAccountBody,
   SetupLocalAccountResponse,
 } from "@workspace/api-zod";
-import { accountsTable, candidateProfilesTable, db } from "@workspace/db";
+import { accountsTable, candidateProfilesTable, userRolePreferencesTable, db } from "@workspace/db";
 import {
   createSessionCookie,
   expiredSessionCookie,
@@ -143,13 +143,49 @@ router.post("/auth/register", async (req, res): Promise<void> => {
 
     // Initialize candidate profile with identity and career preference
     try {
-      await db.insert(candidateProfilesTable).values({
-        id: accountId,
+      const initProfile = {
         fullName: name.trim(),
         email: normalizedEmail,
         targetRoles: profession ? [String(profession).trim()] : [],
         updatedAt: new Date(),
-      });
+      };
+      for (const targetId of [accountId, "primary", "local"]) {
+        await db.insert(candidateProfilesTable).values({
+          id: targetId,
+          ...initProfile,
+        }).onConflictDoUpdate({
+          target: candidateProfilesTable.id,
+          set: initProfile,
+        }).catch(() => {});
+      }
+
+      if (profession && String(profession).trim()) {
+        const profTitle = String(profession).trim();
+        for (const targetId of [accountId, "primary", "local"]) {
+          await db.delete(userRolePreferencesTable).where(eq(userRolePreferencesTable.accountId, targetId)).catch(() => {});
+          await db.insert(userRolePreferencesTable).values({
+            id: randomBytes(16).toString("hex"),
+            accountId: targetId,
+            roleTitle: profTitle,
+            source: "manual",
+            enabled: 1,
+            priority: "high",
+            weight: 100,
+            searchQueries: [profTitle, `${profTitle} Kenya`],
+            keywords: [],
+            exclusionKeywords: [],
+            minSalary: null,
+            maxSalary: null,
+            locationPreferences: ["Kenya", "Remote"],
+            remoteOnly: 0,
+            experienceLevel: ["Mid-Level", "Senior"],
+            industryPreferences: [],
+            companySize: [],
+            createdAt: new Date(),
+            updatedAt: new Date(),
+          } as any).catch(() => {});
+        }
+      }
     } catch (profErr) {
       console.warn("[Auth] Candidate profile pre-seed notice:", profErr);
     }

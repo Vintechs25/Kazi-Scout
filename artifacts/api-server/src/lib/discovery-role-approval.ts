@@ -14,7 +14,7 @@
 import { randomUUID } from "node:crypto";
 import { z } from "@workspace/api-zod";
 import { db } from "@workspace/db";
-import { eq, and, desc } from "drizzle-orm";
+import { eq, and, desc, or } from "drizzle-orm";
 import {
   userRolePreferencesTable,
   userDiscoverySettingsTable,
@@ -438,32 +438,146 @@ export async function initializeRolePreferencesFromCv(
   return preferences;
 }
 
+const LEGACY_BIASED_ROLES = new Set([
+  "it support specialist",
+  "ict officer",
+  "junior systems administrator",
+  "junior software developer",
+  "help desk technician",
+  "it intern",
+]);
+
 /**
- * Get all role preferences for a user
+ * Get all role preferences for a user, dynamically prioritizing the candidate profile's actual verified target roles
  */
 export async function getUserRolePreferences(
   accountId: string,
 ): Promise<UserRolePreference[]> {
-  const records = await db
+  // 1. Fetch Candidate Profile for this user (checking accountId, "primary", or "local")
+  let profileTargetRoles: string[] = [];
+  try {
+    const candidateProfiles = await db
+      .select({ targetRoles: candidateProfilesTable.targetRoles })
+      .from(candidateProfilesTable)
+      .where(or(
+        eq(candidateProfilesTable.id, accountId),
+        eq(candidateProfilesTable.id, "primary"),
+        eq(candidateProfilesTable.id, "local")
+      ))
+      .limit(1);
+
+    if (candidateProfiles.length > 0 && Array.isArray(candidateProfiles[0].targetRoles)) {
+      profileTargetRoles = candidateProfiles[0].targetRoles
+        .filter((r): r is string => typeof r === "string" && r.trim().length > 0)
+        .map(r => r.trim());
+    }
+  } catch (err) {
+    console.warn("[Role Approval] Error checking candidate profile:", err);
+  }
+
+  // 2. Query existing records for this account
+  let records = await db
     .select()
     .from(userRolePreferencesTable)
-    .where(eq(userRolePreferencesTable.accountId, accountId))
+    .where(or(
+      eq(userRolePreferencesTable.accountId, accountId),
+      eq(userRolePreferencesTable.accountId, "local")
+    ))
     .orderBy(desc(userRolePreferencesTable.updatedAt));
-  
+
+  // 3. Detect if all existing records are obsolete hardcoded IT legacy placeholders
+  const hasOnlyLegacyBiased = records.length > 0 && records.every(r => 
+    LEGACY_BIASED_ROLES.has(r.roleTitle.toLowerCase().trim())
+  );
+
+  // If candidate profile has specified target roles and either:
+  // - records are empty, OR
+  // - records only consist of the obsolete legacy IT rows, OR
+  // - none of the profile target roles are present in the preferences
+  if (profileTargetRoles.length > 0 && (records.length === 0 || hasOnlyLegacyBiased)) {
+    // Purge the obsolete legacy records
+    if (hasOnlyLegacyBiased) {
+      await db
+        .delete(userRolePreferencesTable)
+        .where(or(
+          eq(userRolePreferencesTable.accountId, accountId),
+          eq(userRolePreferencesTable.accountId, "local"),
+          eq(userRolePreferencesTable.accountId, "primary")
+        ))
+        .catch(() => {});
+    }
+
+    // Auto-populate from candidate profile's verified target roles!
+    const newPreferences: UserRolePreference[] = [];
+    const now = new Date().toISOString();
+    for (let i = 0; i < profileTargetRoles.length; i++) {
+      const roleTitle = profileTargetRoles[i];
+      const pref: UserRolePreference = {
+        id: randomUUID(),
+        accountId,
+        roleTitle,
+        source: "manual",
+        enabled: i < 5,
+        priority: i < 2 ? "high" : i < 4 ? "medium" : "low",
+        weight: Math.max(100 - i * 15, 20),
+        searchQueries: generateSearchQueriesFromRoles([roleTitle]),
+        keywords: [],
+        exclusionKeywords: [],
+        minSalary: null,
+        maxSalary: null,
+        locationPreferences: ["Kenya", "Remote"],
+        remoteOnly: false,
+        experienceLevel: ["All Levels", "Mid-Level", "Senior"],
+        industryPreferences: [],
+        companySize: [],
+        createdAt: now,
+        updatedAt: now,
+      };
+      newPreferences.push(pref);
+      await db.insert(userRolePreferencesTable).values(userRolePreferenceToDb(pref)).catch(() => {});
+    }
+    return newPreferences;
+  }
+
   if (records.length === 0) {
     // Initialize from CV if not exists
     const initialized = await initializeRolePreferencesFromCv(accountId);
     if (initialized.length > 0) {
       return initialized;
     }
+    // Final fallback to candidate profile roles
+    if (profileTargetRoles.length > 0) {
+      return profileTargetRoles.map((roleTitle, i) => ({
+        id: randomUUID(),
+        accountId,
+        roleTitle,
+        source: "manual",
+        enabled: true,
+        priority: "high",
+        weight: 80,
+        searchQueries: generateSearchQueriesFromRoles([roleTitle]),
+        keywords: [],
+        exclusionKeywords: [],
+        minSalary: null,
+        maxSalary: null,
+        locationPreferences: ["Kenya", "Remote"],
+        remoteOnly: false,
+        experienceLevel: ["All Levels", "Mid-Level", "Senior"],
+        industryPreferences: [],
+        companySize: [],
+        createdAt: new Date().toISOString(),
+        updatedAt: new Date().toISOString(),
+      }));
+    }
     return [];
   }
-  
+
   return records.map(dbToUserRolePreference);
 }
 
 /**
  * Get enabled roles for a user (used for discovery)
+ * Prioritizes candidate profile's target roles if enabled roles are empty or only legacy biased
  */
 export async function getUserEnabledRoles(
   accountId: string,
@@ -473,13 +587,47 @@ export async function getUserEnabledRoles(
   searchQueries: string[];
 }> {
   const preferences = await getUserRolePreferences(accountId);
-  const enabledRoles = preferences
+  let enabledRoles = preferences
     .filter(p => p.enabled)
     .sort((a, b) => {
       // Sort by priority then weight
       const priorityOrder = { high: 0, medium: 1, low: 2 };
       return priorityOrder[a.priority] - priorityOrder[b.priority] || b.weight - a.weight;
     });
+
+  // Filter out any legacy biased IT roles if candidate profile has target roles
+  try {
+    const [cp] = await db
+      .select({ targetRoles: candidateProfilesTable.targetRoles })
+      .from(candidateProfilesTable)
+      .where(or(
+        eq(candidateProfilesTable.id, accountId),
+        eq(candidateProfilesTable.id, "primary"),
+        eq(candidateProfilesTable.id, "local")
+      ))
+      .limit(1);
+
+    const cpRoles = Array.isArray(cp?.targetRoles)
+      ? cp.targetRoles.filter((r): r is string => Boolean(r && typeof r === "string" && r.trim().length > 0))
+      : [];
+
+    if (cpRoles.length > 0) {
+      const filtered = enabledRoles.filter(p => !LEGACY_BIASED_ROLES.has(p.roleTitle.toLowerCase().trim()));
+      if (filtered.length > 0) {
+        enabledRoles = filtered;
+      } else {
+        // Use candidate profile target roles directly!
+        const searchQueries = generateSearchQueriesFromRoles(cpRoles);
+        return {
+          roles: cpRoles,
+          preferences: [],
+          searchQueries,
+        };
+      }
+    }
+  } catch (err) {
+    console.warn("[Role Approval] Error checking candidate profile in getUserEnabledRoles:", err);
+  }
   
   const searchQueries = enabledRoles.flatMap(p => p.searchQueries);
   

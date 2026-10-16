@@ -438,36 +438,39 @@ export async function syncParsedProfileToWorkspace(
   try {
     const roles = Array.isArray(draft.targetRoles) && draft.targetRoles.length > 0 ? draft.targetRoles : [];
     if (roles.length > 0) {
-      await db
-        .delete(userRolePreferencesTable)
-        .where(eq(userRolePreferencesTable.accountId, "primary"));
-
-      for (let i = 0; i < roles.length; i++) {
-        const roleTitle = roles[i];
+      const syncAccounts = ["primary", "local"];
+      for (const accId of syncAccounts) {
         await db
-          .insert(userRolePreferencesTable)
-          .values({
-            id: randomUUID(),
-            accountId: "primary",
-            roleTitle,
-            source: "cv",
-            enabled: i < 5,
-            priority: i < 2 ? "high" : i < 4 ? "medium" : "low",
-            weight: Math.max(100 - i * 15, 20),
-            searchQueries: [roleTitle, `${roleTitle} ${profileToSave.country || "Kenya"}`],
-            keywords: (draft.skills || []).slice(0, 5),
-            exclusionKeywords: [],
-            minSalary: draft.minimumSalary ?? null,
-            maxSalary: null,
-            locationPreferences: [profileToSave.country || "Kenya", "Remote"],
-            remoteOnly: false,
-            experienceLevel: (draft.yearsExperience || 0) >= 8 ? ["Senior", "Lead", "Consultant"] : ["Mid-Level", "Junior"],
-            industryPreferences: draft.industries || [],
-            companySize: [],
-            createdAt: updatedAt,
-            updatedAt,
-          })
-          .onConflictDoNothing();
+          .delete(userRolePreferencesTable)
+          .where(eq(userRolePreferencesTable.accountId, accId));
+
+        for (let i = 0; i < roles.length; i++) {
+          const roleTitle = roles[i];
+          await db
+            .insert(userRolePreferencesTable)
+            .values({
+              id: randomUUID(),
+              accountId: accId,
+              roleTitle,
+              source: "cv",
+              enabled: i < 5,
+              priority: i < 2 ? "high" : i < 4 ? "medium" : "low",
+              weight: Math.max(100 - i * 15, 20),
+              searchQueries: [roleTitle, `${roleTitle} ${profileToSave.country || "Kenya"}`],
+              keywords: (draft.skills || []).slice(0, 5),
+              exclusionKeywords: [],
+              minSalary: draft.minimumSalary ?? null,
+              maxSalary: null,
+              locationPreferences: [profileToSave.country || "Kenya", "Remote"],
+              remoteOnly: false,
+              experienceLevel: (draft.yearsExperience || 0) >= 8 ? ["Senior", "Lead", "Consultant"] : ["Mid-Level", "Junior"],
+              industryPreferences: draft.industries || [],
+              companySize: [],
+              createdAt: updatedAt,
+              updatedAt,
+            })
+            .onConflictDoNothing();
+        }
       }
     }
   } catch (err) {
