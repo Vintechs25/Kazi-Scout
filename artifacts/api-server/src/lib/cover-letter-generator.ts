@@ -40,20 +40,35 @@ export async function loadAllCandidateDocumentContext(storageDir: string): Promi
   for (const doc of allDocs) {
     const cat = (doc as any).category || "cv";
     categories.push(cat);
-    const filePath = path.resolve(storageDir, doc.storageName);
+    let text = (doc.extractedText || "").trim();
 
-    if (fs.existsSync(filePath)) {
-      try {
-        const fileBuffer = fs.readFileSync(filePath);
-        const { text } = await extractCvText(fileBuffer, doc.fileType as any);
-        if (text && text.trim()) {
-          docSnippets.push(`--- DOCUMENT: ${doc.fileName} (Category: ${cat.toUpperCase()}) ---\n${text.slice(0, 8000)}`);
-          if (text.includes("Zetech") || text.includes("Diploma") || text.includes("Computer Science")) {
-            educationFound = "Diploma in Computer Science - Zetech University";
-          }
+    if (!text) {
+      let fileBuffer: Buffer | null = null;
+      const filePath = path.resolve(storageDir, doc.storageName);
+      if (fs.existsSync(filePath)) {
+        try {
+          fileBuffer = fs.readFileSync(filePath);
+        } catch {}
+      } else if (doc.fileData) {
+        try {
+          fileBuffer = Buffer.from(doc.fileData, "base64");
+        } catch {}
+      }
+
+      if (fileBuffer) {
+        try {
+          const res = await extractCvText(fileBuffer, doc.fileType as any);
+          text = (res?.text || "").trim();
+        } catch (err) {
+          console.warn(`[DocumentContext] Failed to read ${doc.fileName}:`, err);
         }
-      } catch (err) {
-        console.warn(`[DocumentContext] Failed to read ${doc.fileName}:`, err);
+      }
+    }
+
+    if (text) {
+      docSnippets.push(`--- DOCUMENT: ${doc.fileName} (Category: ${cat.toUpperCase()}) ---\n${text.slice(0, 8000)}`);
+      if (text.includes("Zetech") || text.includes("Diploma") || text.includes("Computer Science")) {
+        educationFound = "Diploma in Computer Science - Zetech University";
       }
     }
   }

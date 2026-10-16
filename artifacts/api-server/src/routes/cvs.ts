@@ -100,7 +100,23 @@ router.get("/cvs/:id/file", async (req, res): Promise<void> => {
     return;
   }
   const filePath = path.resolve(storageDir, record.storageName);
-  res.download(filePath, record.fileName);
+  if (fs.existsSync(filePath)) {
+    res.download(filePath, record.fileName);
+    return;
+  }
+  if (record.fileData) {
+    const buffer = Buffer.from(record.fileData, "base64");
+    const mimeType = record.fileType === "docx"
+      ? "application/vnd.openxmlformats-officedocument.wordprocessingml.document"
+      : record.fileType === "pdf"
+      ? "application/pdf"
+      : "application/octet-stream";
+    res.setHeader("Content-Type", mimeType);
+    res.setHeader("Content-Disposition", `inline; filename="${encodeURIComponent(record.fileName)}"`);
+    res.send(buffer);
+    return;
+  }
+  res.status(404).json({ error: "Document file not found on disk or cloud storage." });
 });
 
 router.put("/cvs/:id", async (req, res): Promise<void> => {
@@ -153,6 +169,25 @@ router.post("/cvs", upload.single("file"), async (req, res): Promise<void> => {
     .basename(file.originalname)
     .replace(/[\u0000-\u001f\u007f]/g, "")
     .slice(0, 240);
+
+  let fileData: string | null = null;
+  let extractedText: string | null = null;
+
+  try {
+    const bytes = await readFile(file.path);
+    fileData = bytes.toString("base64");
+    try {
+      const extRes = await extractCvText(bytes, fileType as any);
+      if (extRes?.text) {
+        extractedText = extRes.text;
+      }
+    } catch (extErr: any) {
+      req.log.warn({ extErr: extErr?.message }, "Initial CV text extraction on upload failed");
+    }
+  } catch (readErr: any) {
+    req.log.warn({ readErr: readErr?.message }, "Failed reading uploaded file buffer");
+  }
+
   const [record] = await db
     .insert(cvsTable)
     .values({
@@ -163,6 +198,8 @@ router.post("/cvs", upload.single("file"), async (req, res): Promise<void> => {
       category,
       title,
       sizeBytes: file.size,
+      fileData,
+      extractedText,
       isMaster,
       uploadedAt: new Date(),
     })
@@ -544,23 +581,60 @@ router.post("/cvs/:id/parse", async (req, res): Promise<void> => {
     return;
   }
 
-  const filePath = path.resolve(storageDir, path.basename(cv.storageName));
-  if (!filePath.startsWith(`${storageDir}${path.sep}`)) {
-    res.status(404).json({ error: "CV file not found." });
-    return;
+  let extracted: { text: string; truncated: boolean } = { text: "", truncated: false };
+
+  // 1. If CV text is already extracted and stored in DB, use it directly!
+  if (cv.extractedText && cv.extractedText.trim().length > 30) {
+    extracted = { text: cv.extractedText.trim(), truncated: false };
+  } else {
+    // 2. Obtain file bytes from DB or disk
+    let bytes: Buffer | null = null;
+    if (cv.fileData) {
+      try {
+        bytes = Buffer.from(cv.fileData, "base64");
+      } catch (err: any) {
+        req.log.warn({ err: err?.message }, "Failed to decode cv.fileData from database");
+      }
+    }
+
+    if (!bytes) {
+      const filePath = path.resolve(storageDir, path.basename(cv.storageName));
+      if (filePath.startsWith(`${storageDir}${path.sep}`) && fs.existsSync(filePath)) {
+        try {
+          bytes = await readFile(filePath);
+        } catch (fileErr: any) {
+          req.log.warn({ fileErr: fileErr?.message, filePath }, "Physical CV file not found on disk");
+        }
+      }
+    }
+
+    if (!bytes) {
+      res.status(422).json({
+        error: "This document was uploaded to a temporary serverless container before persistent cloud storage was enabled. Please delete and re-upload your CV once to store it permanently in the cloud database.",
+      });
+      return;
+    }
+
+    try {
+      extracted = await extractCvText(bytes, cv.fileType);
+      if (extracted?.text) {
+        // Cache extracted text into database for instant future operations
+        await db
+          .update(cvsTable)
+          .set({ extractedText: extracted.text })
+          .where(eq(cvsTable.id, cv.id))
+          .catch(() => {});
+      }
+    } catch (err: any) {
+      req.log.error({ err: err?.message }, "Failed to extract CV text");
+      res.status(422).json({ error: "The CV could not be read. Try another PDF or DOCX file." });
+      return;
+    }
   }
 
-  let extracted: { text: string; truncated: boolean };
-  try {
-    const bytes = await readFile(filePath);
-    extracted = await extractCvText(bytes, cv.fileType);
-  } catch {
-    res.status(422).json({ error: "The CV could not be read. Try another PDF or DOCX file." });
-    return;
-  }
   if (!extracted.text) {
     res.status(422).json({
-      error: "No selectable text was found. Scanned PDFs need OCR before they can be parsed.",
+      error: "No selectable text was found. Scanned PDFs need OCR or a digital PDF/DOCX file.",
     });
     return;
   }

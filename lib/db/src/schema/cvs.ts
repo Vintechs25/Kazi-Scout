@@ -10,6 +10,8 @@ export const cvsTable = sqliteTable("cvs", {
   category: text("category").notNull().default("cv"),
   title: text("title"),
   sizeBytes: integer("size_bytes").notNull(),
+  fileData: text("file_data"),
+  extractedText: text("extracted_text"),
   isMaster: integer("is_master", { mode: "boolean" }).notNull().default(false),
   uploadedAt: integer("uploaded_at", { mode: "timestamp" }).notNull(),
 });

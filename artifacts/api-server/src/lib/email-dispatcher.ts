@@ -130,9 +130,21 @@ export async function sendApplicationEmail(
             contentType: doc.fileType === "pdf" ? "application/pdf" : "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
             data: fileData,
           });
-          console.log(`[EmailDispatcher] Attached: "${doc.fileName}" (${doc.storageName}), ${fileData.length} bytes`);
+          console.log(`[EmailDispatcher] Attached from disk: "${doc.fileName}" (${doc.storageName}), ${fileData.length} bytes`);
+        } else if (doc.fileData) {
+          try {
+            const fileData = Buffer.from(doc.fileData, "base64");
+            attachments.push({
+              filename: doc.fileName,
+              contentType: doc.fileType === "pdf" ? "application/pdf" : "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
+              data: fileData,
+            });
+            console.log(`[EmailDispatcher] Attached from cloud DB: "${doc.fileName}", ${fileData.length} bytes`);
+          } catch (err: any) {
+            console.error(`[EmailDispatcher] Failed to decode base64 fileData for "${doc.fileName}":`, err?.message);
+          }
         } else {
-          console.warn(`[EmailDispatcher] File not found on disk: "${doc.fileName}" at ${filePath}`);
+          console.warn(`[EmailDispatcher] File not found on disk or cloud DB: "${doc.fileName}" at ${filePath}`);
         }
       }
     }
