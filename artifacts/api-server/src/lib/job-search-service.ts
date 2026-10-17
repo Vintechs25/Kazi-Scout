@@ -1594,18 +1594,32 @@ export async function saveDiscoveredJobs(
   return { saved, duplicates, updates, rejectedByGate };
 }
 
-export async function matchJobsWithProfile(jobs: JobRecord[]): Promise<JobRecord[]> {
+export async function matchJobsWithProfile(jobs: JobRecord[], targetAccountId = "local"): Promise<JobRecord[]> {
+  const profileCondition = (targetAccountId === "local" || targetAccountId === "primary")
+    ? or(eq(candidateProfilesTable.id, "primary"), eq(candidateProfilesTable.id, "local"))
+    : eq(candidateProfilesTable.id, targetAccountId);
+
   const [profile] = await db
     .select()
     .from(candidateProfilesTable)
-    .where(eq(candidateProfilesTable.id, "primary"))
+    .where(profileCondition)
     .limit(1);
 
-  // Identify all jobs that have submitted applications
+  // Identify all jobs that have submitted applications for this account
+  const appCondition = (targetAccountId === "local" || targetAccountId === "primary")
+    ? and(
+        or(eq(applicationsTable.accountId, "local"), isNull(applicationsTable.accountId)),
+        inArray(applicationsTable.status, ["SUBMITTED", "EMAIL_SENT", "AWAITING_RESPONSE", "RECRUITER_RESPONSE", "INTERVIEW", "ASSESSMENT", "OFFER"])
+      )
+    : and(
+        eq(applicationsTable.accountId, targetAccountId),
+        inArray(applicationsTable.status, ["SUBMITTED", "EMAIL_SENT", "AWAITING_RESPONSE", "RECRUITER_RESPONSE", "INTERVIEW", "ASSESSMENT", "OFFER"])
+      );
+
   const submittedApps = await db
     .select({ jobId: applicationsTable.jobId })
     .from(applicationsTable)
-    .where(inArray(applicationsTable.status, ["SUBMITTED", "EMAIL_SENT", "AWAITING_RESPONSE", "RECRUITER_RESPONSE", "INTERVIEW", "ASSESSMENT", "OFFER"]));
+    .where(appCondition);
   const appliedJobIds = new Set(submittedApps.map((a) => a.jobId));
 
   return jobs.map((job) => {

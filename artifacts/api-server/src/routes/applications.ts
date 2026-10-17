@@ -13,7 +13,7 @@ import fs from "node:fs";
 const router: IRouter = Router();
 
 function getAccountId(req: any, res: any): string {
-  return res?.locals?.accountId || getAuthenticatedAccountId(req) || "local";
+  return res?.locals?.accountId || getAuthenticatedAccountId(req) || "";
 }
 
 async function getProfileForAccount(accountId: string) {
@@ -50,6 +50,10 @@ const storageDir = getStorageDir();
  */
 router.get("/applications", async (req, res): Promise<void> => {
   const accountId = getAccountId(req, res);
+  if (!accountId) {
+    res.json([]);
+    return;
+  }
   const appAccountFilter = accountId === "local"
     ? or(eq(applicationsTable.accountId, "local"), isNull(applicationsTable.accountId))
     : eq(applicationsTable.accountId, accountId);

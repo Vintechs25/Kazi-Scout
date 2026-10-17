@@ -28,7 +28,7 @@ export class SourceDiscoveryEngine {
   /**
    * Discovers candidate sources based on candidate evidence and seed queries.
    */
-  public static async runDiscoveryRun(options: { maxCandidates?: number } = {}): Promise<{
+  public static async runDiscoveryRun(options: { maxCandidates?: number; accountId?: string } = {}): Promise<{
     proposalsGenerated: number;
     proposals: DiscoveredSourceProposal[];
   }> {
@@ -38,7 +38,7 @@ export class SourceDiscoveryEngine {
     // 1. Generate targeted queries from candidate evidence
     const queries = [...this.defaultSeedQueries];
     try {
-      const candidate = await getOrGenerateCandidateEvidence();
+      const candidate = await getOrGenerateCandidateEvidence(options.accountId || "local");
       if (candidate?.targetRoleFamilies?.length) {
         for (const role of candidate.targetRoleFamilies.slice(0, 3)) {
           queries.push(`Kenya ${role} official careers`);

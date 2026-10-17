@@ -112,7 +112,7 @@ export const requireSameOrigin: RequestHandler = (req, res, next) => {
 };
 
 export const requireAuth: RequestHandler = (req, res, next) => {
-  const accountId = verifySession(req.cookies?.[sessionCookieName]);
+  const accountId = getAuthenticatedAccountId(req);
   if (!accountId) {
     res.status(401).json({ error: "Sign in to use the local job workspace." });
     return;

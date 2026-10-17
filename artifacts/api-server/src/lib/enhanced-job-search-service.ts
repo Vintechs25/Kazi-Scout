@@ -896,7 +896,7 @@ export async function matchJobToUserEnhanced(
   };
 }> {
   // Get user's CV data
-  const candidateEvidence = await getOrGenerateCandidateEvidence();
+  const candidateEvidence = await getOrGenerateCandidateEvidence(accountId);
   
   // Get user's enabled roles
   const { roles: enabledRoles } = await getUserEnabledRoles(accountId);

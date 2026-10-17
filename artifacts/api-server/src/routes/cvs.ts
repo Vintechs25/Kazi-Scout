@@ -43,7 +43,7 @@ import fs from "node:fs";
 const router: IRouter = Router();
 
 function getAccountId(req: any, res: any): string {
-  return res?.locals?.accountId || getAuthenticatedAccountId(req) || "local";
+  return res?.locals?.accountId || getAuthenticatedAccountId(req) || "";
 }
 
 function getStorageDir(): string {
@@ -89,6 +89,10 @@ const upload = multer({
 
 router.get("/cvs", async (req, res): Promise<void> => {
   const accountId = getAccountId(req, res);
+  if (!accountId) {
+    res.json([]);
+    return;
+  }
   const condition = accountId === "local"
     ? or(eq(cvsTable.accountId, "local"), isNull(cvsTable.accountId))
     : eq(cvsTable.accountId, accountId);

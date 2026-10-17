@@ -6,8 +6,8 @@ import { getAuthenticatedAccountId } from "../lib/auth";
 
 const router: IRouter = Router();
 
-function getAccountId(req: any, res: any): string {
-  return res?.locals?.accountId || getAuthenticatedAccountId(req) || "local";
+function getAccountId(req: any, res: any): string | null {
+  return res?.locals?.accountId || getAuthenticatedAccountId(req);
 }
 
 const submittedStatuses = new Set([
@@ -29,6 +29,10 @@ const responseStatuses = new Set([
 
 router.get("/dashboard", async (req, res): Promise<void> => {
   const accountId = getAccountId(req, res);
+  if (!accountId) {
+    res.status(401).json({ error: "Sign in to access your dashboard metrics." });
+    return;
+  }
   const jobAccountFilter = accountId === "local"
     ? or(eq(jobsTable.accountId, "local"), isNull(jobsTable.accountId))
     : eq(jobsTable.accountId, accountId);

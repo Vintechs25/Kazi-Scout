@@ -28,12 +28,16 @@ import { getAuthenticatedAccountId } from "../lib/auth";
 const router: IRouter = Router();
 
 function getAccountId(req: any, res: any): string {
-  return res?.locals?.accountId || getAuthenticatedAccountId(req) || "local";
+  return res?.locals?.accountId || getAuthenticatedAccountId(req) || "";
 }
 
 router.get("/jobs/directive", async (req, res): Promise<void> => {
   try {
     const accountId = getAccountId(req, res);
+    if (!accountId) {
+      res.status(401).json({ error: "Unauthorized" });
+      return;
+    }
     const directive = await getOrGenerateSearchDirective(accountId);
     res.json(directive);
   } catch (err: any) {
@@ -44,6 +48,10 @@ router.get("/jobs/directive", async (req, res): Promise<void> => {
 router.post("/jobs/directive/refresh", async (req, res): Promise<void> => {
   try {
     const accountId = getAccountId(req, res);
+    if (!accountId) {
+      res.status(401).json({ error: "Unauthorized" });
+      return;
+    }
     const directive = await getOrGenerateSearchDirective(accountId, true);
     res.json(directive);
   } catch (err: any) {
@@ -76,6 +84,10 @@ router.get("/jobs", async (req, res): Promise<void> => {
   }
 
   const accountId = getAccountId(req, res);
+  if (!accountId) {
+    res.json([]);
+    return;
+  }
   const appAccountFilter = accountId === "local"
     ? or(eq(applicationsTable.accountId, "local"), isNull(applicationsTable.accountId))
     : eq(applicationsTable.accountId, accountId);
@@ -579,6 +591,10 @@ router.delete("/jobs/:id", async (req, res): Promise<void> => {
 router.post("/jobs/wipe", async (req, res): Promise<void> => {
   try {
     const accountId = getAccountId(req, res);
+    if (!accountId) {
+      res.status(401).json({ error: "Unauthorized" });
+      return;
+    }
     const jobAccountFilter = accountId === "local"
       ? or(eq(jobsTable.accountId, "local"), isNull(jobsTable.accountId))
       : eq(jobsTable.accountId, accountId);
@@ -597,6 +613,10 @@ router.post("/jobs/wipe", async (req, res): Promise<void> => {
 router.post("/jobs/clean-all", async (req, res): Promise<void> => {
   try {
     const accountId = getAccountId(req, res);
+    if (!accountId) {
+      res.status(401).json({ error: "Unauthorized" });
+      return;
+    }
     const result = await discoverAndMatchJobs(75, accountId);
     res.json({ success: true, ...result });
   } catch (err) {
@@ -608,6 +628,10 @@ router.post("/jobs/clean-all", async (req, res): Promise<void> => {
 router.post("/jobs/re-evaluate", async (req, res): Promise<void> => {
   try {
     const accountId = getAccountId(req, res);
+    if (!accountId) {
+      res.status(401).json({ error: "Unauthorized" });
+      return;
+    }
     const cvDossier = await getVerifiedMasterCv(accountId);
     if (!cvDossier.loaded || !cvDossier.cvRecord) {
       res.status(400).json({

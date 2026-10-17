@@ -370,9 +370,13 @@ export async function initializeRolePreferencesFromCv(
   // If no CV parsing results found, fallback to candidate profile target roles
   if (candidateRoles.length === 0) {
     try {
+      const candidateProfileFilter = (accountId === "local" || accountId === "primary")
+        ? or(eq(candidateProfilesTable.id, "primary"), eq(candidateProfilesTable.id, "local"))
+        : eq(candidateProfilesTable.id, accountId);
       const profiles = await db
         .select()
         .from(candidateProfilesTable)
+        .where(candidateProfileFilter)
         .limit(1);
       if (profiles.length > 0) {
         const targetRoles = profiles[0].targetRoles;
@@ -453,17 +457,17 @@ const LEGACY_BIASED_ROLES = new Set([
 export async function getUserRolePreferences(
   accountId: string,
 ): Promise<UserRolePreference[]> {
-  // 1. Fetch Candidate Profile for this user (checking accountId, "primary", or "local")
+  // 1. Fetch Candidate Profile for this user (strictly scoped to accountId)
   let profileTargetRoles: string[] = [];
   try {
+    const profileFilter = (accountId === "local" || accountId === "primary")
+      ? or(eq(candidateProfilesTable.id, "primary"), eq(candidateProfilesTable.id, "local"))
+      : eq(candidateProfilesTable.id, accountId);
+
     const candidateProfiles = await db
       .select({ targetRoles: candidateProfilesTable.targetRoles })
       .from(candidateProfilesTable)
-      .where(or(
-        eq(candidateProfilesTable.id, accountId),
-        eq(candidateProfilesTable.id, "primary"),
-        eq(candidateProfilesTable.id, "local")
-      ))
+      .where(profileFilter)
       .limit(1);
 
     if (candidateProfiles.length > 0 && Array.isArray(candidateProfiles[0].targetRoles)) {
@@ -476,13 +480,14 @@ export async function getUserRolePreferences(
   }
 
   // 2. Query existing records for this account
+  const roleAccountFilter = (accountId === "local" || accountId === "primary")
+    ? or(eq(userRolePreferencesTable.accountId, "local"), eq(userRolePreferencesTable.accountId, "primary"))
+    : eq(userRolePreferencesTable.accountId, accountId);
+
   let records = await db
     .select()
     .from(userRolePreferencesTable)
-    .where(or(
-      eq(userRolePreferencesTable.accountId, accountId),
-      eq(userRolePreferencesTable.accountId, "local")
-    ))
+    .where(roleAccountFilter)
     .orderBy(desc(userRolePreferencesTable.updatedAt));
 
   // 3. Detect if all existing records are obsolete hardcoded IT legacy placeholders
@@ -499,11 +504,7 @@ export async function getUserRolePreferences(
     if (hasOnlyLegacyBiased) {
       await db
         .delete(userRolePreferencesTable)
-        .where(or(
-          eq(userRolePreferencesTable.accountId, accountId),
-          eq(userRolePreferencesTable.accountId, "local"),
-          eq(userRolePreferencesTable.accountId, "primary")
-        ))
+        .where(eq(userRolePreferencesTable.accountId, accountId))
         .catch(() => {});
     }
 
@@ -597,14 +598,14 @@ export async function getUserEnabledRoles(
 
   // Filter out any legacy biased IT roles if candidate profile has target roles
   try {
+    const cpFilter = (accountId === "local" || accountId === "primary")
+      ? or(eq(candidateProfilesTable.id, "primary"), eq(candidateProfilesTable.id, "local"))
+      : eq(candidateProfilesTable.id, accountId);
+
     const [cp] = await db
       .select({ targetRoles: candidateProfilesTable.targetRoles })
       .from(candidateProfilesTable)
-      .where(or(
-        eq(candidateProfilesTable.id, accountId),
-        eq(candidateProfilesTable.id, "primary"),
-        eq(candidateProfilesTable.id, "local")
-      ))
+      .where(cpFilter)
       .limit(1);
 
     const cpRoles = Array.isArray(cp?.targetRoles)
@@ -634,11 +635,10 @@ export async function getUserEnabledRoles(
   }
 
   if (enabledRoles.length === 0) {
-    const fallback = ["Software Developer", "IT Specialist", "Project Coordinator"];
     return {
-      roles: fallback,
+      roles: [],
       preferences: [],
-      searchQueries: generateSearchQueriesFromRoles(fallback),
+      searchQueries: [],
     };
   }
   
@@ -746,7 +746,10 @@ export async function removeRolePreference(
   
   await db
     .delete(userRolePreferencesTable)
-    .where(eq(userRolePreferencesTable.id, roleId));
+    .where(and(
+      eq(userRolePreferencesTable.id, roleId),
+      eq(userRolePreferencesTable.accountId, accountId)
+    ));
   
   return true;
 }

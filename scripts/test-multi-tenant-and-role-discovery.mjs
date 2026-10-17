@@ -253,6 +253,38 @@ await runTest("Dashboard Stats Isolation: Alice has activity and counts; Bob sho
   assert.equal(resBobDash.data.applicationsSubmitted, 0, "Bob submitted applications must be 0");
 });
 
+await runTest("Discovery & Role Approval Multi-Tenant Isolation: Bob never inherits Surgeon or another account's roles/runs", async () => {
+  // Bob checks his enabled roles - MUST be empty, NEVER inheriting Dr. Beatrice's surgeon roles or primary profile
+  const resBobRoles = await apiRequest("/api/user/roles/enabled", {
+    headers: { Cookie: bobCookie },
+  });
+  assert.equal(resBobRoles.status, 200);
+  assert.equal(resBobRoles.data.success, true);
+  const bobRoles = resBobRoles.data.roles || [];
+  assert.ok(
+    !bobRoles.some(r => r.toLowerCase().includes("surgeon") || r.toLowerCase().includes("medical")),
+    `Bob must NEVER see surgeon roles in /api/user/roles/enabled, got: ${JSON.stringify(bobRoles)}`,
+  );
+
+  // Bob checks discovery history - MUST be empty, NEVER seeing other accounts' runs
+  const resBobHistory = await apiRequest("/api/discovery/history", {
+    headers: { Cookie: bobCookie },
+  });
+  assert.equal(resBobHistory.status, 200);
+  assert.equal(resBobHistory.data.success, true);
+  assert.equal(resBobHistory.data.runs.length, 0, "Bob's discovery history must be 0 initially");
+
+  // Bob checks discovery statistics - MUST be clean zeroes
+  const resBobStats = await apiRequest("/api/discovery/statistics", {
+    headers: { Cookie: bobCookie },
+  });
+  assert.equal(resBobStats.status, 200);
+  assert.equal(resBobStats.data.success, true);
+  assert.equal(resBobStats.data.totalDiscoveries, 0, "Bob total discoveries must be 0");
+  assert.equal(resBobStats.data.totalJobsDiscovered, 0, "Bob total jobs discovered must be 0");
+  assert.equal(resBobStats.data.totalMatches, 0, "Bob total matches must be 0");
+});
+
 await runTest("Search Directive Isolation: Alice's directive reflects Accounting; Bob's is separate", async () => {
   const resAliceDirective = await apiRequest("/api/jobs/directive", {
     headers: { Cookie: aliceCookie },

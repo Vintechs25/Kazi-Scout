@@ -34,7 +34,11 @@ const emptyProfile = {
 };
 
 router.get("/candidate-profile", async (req, res): Promise<void> => {
-  const accountId = res.locals.accountId || getAuthenticatedAccountId(req) || "local";
+  const accountId = res.locals.accountId || getAuthenticatedAccountId(req);
+  if (!accountId) {
+    res.json(GetCandidateProfileResponse.parse(emptyProfile));
+    return;
+  }
 
   const [profile] = await db
     .select()
@@ -43,7 +47,7 @@ router.get("/candidate-profile", async (req, res): Promise<void> => {
     .limit(1);
 
   if (!profile) {
-    // For single-tenant desktop or initial seed fallback
+    // Only for explicit local/primary desktop mode
     if (accountId === "local" || accountId === "primary") {
       const [fallback] = await db
         .select()
@@ -77,7 +81,11 @@ router.put("/candidate-profile", async (req, res): Promise<void> => {
     res.status(400).json({ error: parsed.error.message });
     return;
   }
-  const accountId = res.locals.accountId || getAuthenticatedAccountId(req) || "local";
+  const accountId = res.locals.accountId || getAuthenticatedAccountId(req);
+  if (!accountId) {
+    res.status(401).json({ error: "Sign in to update your candidate profile." });
+    return;
+  }
   const updatedAt = new Date();
 
   const [profile] = await db
@@ -148,7 +156,11 @@ router.put("/candidate-profile", async (req, res): Promise<void> => {
 
 router.get("/candidate-profile/evidence", async (req, res): Promise<void> => {
   try {
-    const accountId = getAuthenticatedAccountId(req) || "local";
+    const accountId = getAuthenticatedAccountId(req);
+    if (!accountId) {
+      res.status(401).json({ error: "Unauthorized" });
+      return;
+    }
     const { getOrGenerateCandidateEvidence, getCandidateEvidenceDiagnostics } = await import(
       "../lib/candidate-evidence"
     );
@@ -162,7 +174,11 @@ router.get("/candidate-profile/evidence", async (req, res): Promise<void> => {
 
 router.post("/candidate-profile/evidence/refresh", async (req, res): Promise<void> => {
   try {
-    const accountId = getAuthenticatedAccountId(req) || "local";
+    const accountId = getAuthenticatedAccountId(req);
+    if (!accountId) {
+      res.status(401).json({ error: "Unauthorized" });
+      return;
+    }
     const { getOrGenerateCandidateEvidence, getCandidateEvidenceDiagnostics } = await import(
       "../lib/candidate-evidence"
     );
@@ -176,7 +192,11 @@ router.post("/candidate-profile/evidence/refresh", async (req, res): Promise<voi
 
 router.put("/candidate-profile/evidence", async (req, res): Promise<void> => {
   try {
-    const accountId = getAuthenticatedAccountId(req) || "local";
+    const accountId = getAuthenticatedAccountId(req);
+    if (!accountId) {
+      res.status(401).json({ error: "Unauthorized" });
+      return;
+    }
     const { saveCandidateEvidenceOverride, getCandidateEvidenceDiagnostics } = await import(
       "../lib/candidate-evidence"
     );
@@ -190,7 +210,11 @@ router.put("/candidate-profile/evidence", async (req, res): Promise<void> => {
 
 router.get("/candidate-profile/diagnostics", async (req, res): Promise<void> => {
   try {
-    const accountId = getAuthenticatedAccountId(req) || "local";
+    const accountId = getAuthenticatedAccountId(req);
+    if (!accountId) {
+      res.status(401).json({ error: "Unauthorized" });
+      return;
+    }
     const { getCandidateEvidenceDiagnostics } = await import("../lib/candidate-evidence");
     const diagnostics = await getCandidateEvidenceDiagnostics(accountId);
     res.json(diagnostics);
