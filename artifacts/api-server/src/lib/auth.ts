@@ -121,8 +121,29 @@ export const requireAuth: RequestHandler = (req, res, next) => {
   next();
 };
 
-export function getAuthenticatedAccountId(cookieValue: unknown): string | null {
-  return verifySession(cookieValue);
+export function getAuthenticatedAccountId(reqOrCookieValue: unknown): string | null {
+  if (typeof reqOrCookieValue === "string") {
+    return verifySession(reqOrCookieValue);
+  }
+  if (typeof reqOrCookieValue === "object" && reqOrCookieValue !== null) {
+    const req = reqOrCookieValue as any;
+    const cookie = req.cookies?.[sessionCookieName];
+    if (cookie) {
+      const fromCookie = verifySession(cookie);
+      if (fromCookie) return fromCookie;
+    }
+    // Also check signed cookie or headers if present
+    const rawCookie = req.headers?.cookie;
+    if (typeof rawCookie === "string") {
+      const match = rawCookie.match(new RegExp(`(?:^|;\\s*)${sessionCookieName}=([^;]+)`));
+      if (match && match[1]) {
+        const decoded = decodeURIComponent(match[1]);
+        const fromHeader = verifySession(decoded);
+        if (fromHeader) return fromHeader;
+      }
+    }
+  }
+  return null;
 }
 
 export function expiredSessionCookie(): string {

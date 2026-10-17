@@ -423,7 +423,7 @@ export async function discoverJobsWithCvGuidance(
     let validationRejectedCount = 0;
 
     // Fetch directive dynamically tailored to active searched roles
-    const directive = await getOrGenerateSearchDirective(false, rolesToSearch);
+    const directive = await getOrGenerateSearchDirective(accountId, false, rolesToSearch);
     
     // Scrape each source
     for (const source of sourcesToScrape) {
@@ -590,7 +590,7 @@ export async function discoverJobsWithCvGuidance(
     }
     
     // Match discovered jobs against searched roles & candidate profile
-    const candidateEvidence = await getOrGenerateCandidateEvidence();
+    const candidateEvidence = await getOrGenerateCandidateEvidence(accountId);
     
     for (const job of discoveredJobs) {
       // 1. Calculate role match against active search roles
@@ -673,6 +673,7 @@ export async function discoverJobsWithCvGuidance(
           .insert(jobsTable)
           .values({
             id: job.id,
+            accountId,
             title: job.title,
             company: job.company,
             normalizedCompany: job.normalizedCompany,
@@ -694,7 +695,7 @@ export async function discoverJobsWithCvGuidance(
             discoveredAt: job.discoveredAt || new Date(),
           })
           .onConflictDoUpdate({
-            target: jobsTable.fingerprint,
+            target: [jobsTable.accountId, jobsTable.fingerprint],
             set: {
               matchScore: cvMatchScore,
               matchedSkills,

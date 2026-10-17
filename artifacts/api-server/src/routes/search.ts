@@ -4,7 +4,7 @@
  */
 
 import { Router, type IRouter } from "express";
-import { desc, eq, and, or, like, gt } from "drizzle-orm";
+import { desc, eq, and, or, like, gt, isNull } from "drizzle-orm";
 import { db, jobsTable, searchProfilesTable, applicationsTable } from "@workspace/db";
 import type {
   ManualSearchBody,
@@ -30,19 +30,29 @@ import { autoApplyToHighMatchJobs } from "../lib/application-service";
 import { batchEvaluateQualifiedJobs } from "../lib/ai-job-evaluator";
 import { getVerifiedMasterCv } from "../lib/cv-storage";
 import { getOrGenerateCandidateEvidence } from "../lib/candidate-evidence";
+import { getAuthenticatedAccountId } from "../lib/auth";
 
 const router: IRouter = Router();
+
+function getAccountId(req: any, res: any): string {
+  return res?.locals?.accountId || getAuthenticatedAccountId(req) || "local";
+}
 
 /**
  * GET /search/filters
  * Get current search filters from active search profiles
  */
-router.get("/search/filters", async (_req, res): Promise<void> => {
+router.get("/search/filters", async (req, res): Promise<void> => {
   try {
+    const accountId = getAccountId(req, res);
+    const accountFilter = accountId === "local"
+      ? or(eq(searchProfilesTable.accountId, "local"), isNull(searchProfilesTable.accountId))
+      : eq(searchProfilesTable.accountId, accountId);
+
     const searchProfiles = await db
       .select()
       .from(searchProfilesTable)
-      .where(eq(searchProfilesTable.enabled, true));
+      .where(and(eq(searchProfilesTable.enabled, true), accountFilter));
 
     // Combine all active search profile filters
     const combinedFilter = {
@@ -106,10 +116,16 @@ router.put("/search/filters", async (req, res): Promise<void> => {
   }
 
   try {
-    // Get all search profiles
+    const accountId = getAccountId(req, res);
+    const accountFilter = accountId === "local"
+      ? or(eq(searchProfilesTable.accountId, "local"), isNull(searchProfilesTable.accountId))
+      : eq(searchProfilesTable.accountId, accountId);
+
+    // Get all search profiles for this account
     const searchProfiles = await db
       .select()
-      .from(searchProfilesTable);
+      .from(searchProfilesTable)
+      .where(accountFilter);
 
     // If no profiles exist, create a default one
     if (searchProfiles.length === 0) {
@@ -117,6 +133,7 @@ router.put("/search/filters", async (req, res): Promise<void> => {
         .insert(searchProfilesTable)
         .values({
           id: crypto.randomUUID(),
+          accountId,
           name: "Default Search",
           keywords: body.filters.keywords,
           locations: body.filters.locations,
@@ -152,7 +169,7 @@ router.put("/search/filters", async (req, res): Promise<void> => {
           excludedKeywords: body.filters.excludeKeywords,
           employmentTypes: body.filters.jobTypes,
         })
-        .where(eq(searchProfilesTable.id, firstProfile.id));
+        .where(and(eq(searchProfilesTable.id, firstProfile.id), accountFilter));
 
       const response: SaveSearchFiltersResponse = {
         profileId: firstProfile.id,
@@ -165,6 +182,7 @@ router.put("/search/filters", async (req, res): Promise<void> => {
         .insert(searchProfilesTable)
         .values({
           id: crypto.randomUUID(),
+          accountId,
           name: "New Search Profile",
           keywords: body.filters.keywords,
           locations: body.filters.locations,
@@ -205,6 +223,7 @@ router.post("/search/manual", async (req, res): Promise<void> => {
   }
 
   try {
+    const accountId = getAccountId(req, res);
     const filter: JobSearchFilter = {
       keywords: body.keywords || [],
       locations: body.locations || [],
@@ -220,9 +239,9 @@ router.post("/search/manual", async (req, res): Promise<void> => {
     // Filter jobs
     const filteredJobs = filterJobs(jobs, filter);
 
-    // Load verified CV and evidence profile
-    const cvDossier = await getVerifiedMasterCv();
-    const evidence = await getOrGenerateCandidateEvidence();
+    // Load verified CV and evidence profile for this account
+    const cvDossier = await getVerifiedMasterCv(accountId);
+    const evidence = await getOrGenerateCandidateEvidence(accountId);
 
     const jobsToEvaluate = filteredJobs.slice(0, 25);
     const aiResults = await batchEvaluateQualifiedJobs(
@@ -291,10 +310,12 @@ router.post("/search/apply-auto", async (req, res): Promise<void> => {
   }
 
   try {
+    const accountId = getAccountId(req, res);
     const result = await autoApplyToHighMatchJobs(
       body.minMatchScore || 80,
       body.maxApplications || 10,
       body.template || "kenya-focused",
+      accountId,
     );
 
     const response: TriggerAutoApplyResponse = {
@@ -322,10 +343,18 @@ router.post("/search/apply-auto", async (req, res): Promise<void> => {
  * GET /search/stats
  * Get job search statistics
  */
-router.get("/search/stats", async (_req, res): Promise<void> => {
+router.get("/search/stats", async (req, res): Promise<void> => {
   try {
-    // Get all jobs
-    const allJobs = await db.select().from(jobsTable);
+    const accountId = getAccountId(req, res);
+    const jobAccountFilter = accountId === "local"
+      ? or(eq(jobsTable.accountId, "local"), isNull(jobsTable.accountId))
+      : eq(jobsTable.accountId, accountId);
+    const appAccountFilter = accountId === "local"
+      ? or(eq(applicationsTable.accountId, "local"), isNull(applicationsTable.accountId))
+      : eq(applicationsTable.accountId, accountId);
+
+    // Get all jobs for this account
+    const allJobs = await db.select().from(jobsTable).where(jobAccountFilter);
     
     // Calculate job stats
     const jobStats: JobStats = {
@@ -342,7 +371,7 @@ router.get("/search/stats", async (_req, res): Promise<void> => {
       ).length,
     };
 
-    // Get recent jobs
+    // Get recent jobs for this account
     const recentJobs = await db
       .select({
         id: jobsTable.id,
@@ -352,11 +381,12 @@ router.get("/search/stats", async (_req, res): Promise<void> => {
         discoveredAt: jobsTable.discoveredAt,
       })
       .from(jobsTable)
+      .where(jobAccountFilter)
       .orderBy(desc(jobsTable.discoveredAt))
       .limit(5);
 
-    // Get all applications
-    const allApps = await db.select().from(applicationsTable);
+    // Get all applications for this account
+    const allApps = await db.select().from(applicationsTable).where(appAccountFilter);
     
     // Calculate application stats
     const appStats: ApplicationStats = {
@@ -366,7 +396,7 @@ router.get("/search/stats", async (_req, res): Promise<void> => {
       offers: allApps.filter((app: any) => app.status === "OFFER").length,
     };
 
-    // Get high match jobs
+    // Get high match jobs for this account
     const highMatchJobs = await db
       .select({
         id: jobsTable.id,
@@ -375,7 +405,7 @@ router.get("/search/stats", async (_req, res): Promise<void> => {
         matchScore: jobsTable.matchScore,
       })
       .from(jobsTable)
-      .where(gt(jobsTable.matchScore, 70 as any))
+      .where(and(jobAccountFilter, gt(jobsTable.matchScore, 70 as any)))
       .orderBy(desc(jobsTable.matchScore))
       .limit(5);
 

@@ -4,7 +4,7 @@
  * Supports CV and document attachments
  */
 
-import { eq, and, or, gt, desc } from "drizzle-orm";
+import { eq, and, or, gt, desc, isNull } from "drizzle-orm";
 import { db, jobsTable, applicationsTable, cvsTable, candidateProfilesTable, integrationSettingsTable } from "@workspace/db";
 import { decryptCredentials } from "./credential-encryption";
 import type { JobRecord, Application } from "@workspace/db";
@@ -207,11 +207,15 @@ export async function sendEmailViaGmail(message: GmailMessage): Promise<SendEmai
 /**
  * Get candidate profile for application
  */
-async function getCandidateProfile() {
+async function getCandidateProfile(accountId: string = "local") {
   const [profile] = await db
     .select()
     .from(candidateProfilesTable)
-    .where(eq(candidateProfilesTable.id, "primary"))
+    .where(
+      accountId === "local"
+        ? or(eq(candidateProfilesTable.id, "primary"), eq(candidateProfilesTable.id, "local"))
+        : eq(candidateProfilesTable.id, accountId)
+    )
     .limit(1);
 
   if (!profile) {
@@ -286,10 +290,11 @@ export async function prepareApplicationEmail(
   job: JobRecord,
   templateId: string = "standard",
   cvId?: string,
+  accountId: string = "local",
 ): Promise<GmailMessage | null> {
   try {
     // Get candidate profile
-    const profile = await getCandidateProfile();
+    const profile = await getCandidateProfile(accountId);
 
     // Get template
     const template = DEFAULT_TEMPLATES.find(t => t.id === templateId) || DEFAULT_TEMPLATES[0];
@@ -319,11 +324,15 @@ export async function prepareApplicationEmail(
           contentType: cvAttachment.contentType,
         });
       } else {
-        // Get default/master CV
+        // Get default/master CV for account
+        const cvAccountFilter = accountId === "local"
+          ? or(eq(cvsTable.accountId, "local"), isNull(cvsTable.accountId))
+          : eq(cvsTable.accountId, accountId);
+
         const [masterCV] = await db
           .select()
           .from(cvsTable)
-          .where(eq(cvsTable.isMaster, true))
+          .where(and(eq(cvsTable.isMaster, true), cvAccountFilter))
           .limit(1);
 
         if (masterCV) {
@@ -356,17 +365,25 @@ export async function autoApplyToJob(
   jobId: string,
   templateId: string = "standard",
   cvId?: string,
+  accountId: string = "local",
 ): Promise<{
   success: boolean;
   applicationId?: string;
   messageId?: string;
   error?: string;
 }> {
+  const jobAccountFilter = accountId === "local"
+    ? or(eq(jobsTable.accountId, "local"), isNull(jobsTable.accountId))
+    : eq(jobsTable.accountId, accountId);
+  const appAccountFilter = accountId === "local"
+    ? or(eq(applicationsTable.accountId, "local"), isNull(applicationsTable.accountId))
+    : eq(applicationsTable.accountId, accountId);
+
   // Get the job
   const [job] = await db
     .select()
     .from(jobsTable)
-    .where(eq(jobsTable.id, jobId))
+    .where(and(eq(jobsTable.id, jobId), jobAccountFilter))
     .limit(1);
 
   if (!job) {
@@ -380,7 +397,7 @@ export async function autoApplyToJob(
   const [existingApplication] = await db
     .select()
     .from(applicationsTable)
-    .where(eq(applicationsTable.jobId, jobId))
+    .where(and(eq(applicationsTable.jobId, jobId), appAccountFilter))
     .limit(1);
 
   if (existingApplication) {
@@ -391,7 +408,7 @@ export async function autoApplyToJob(
   }
 
   // Prepare email
-  const email = await prepareApplicationEmail(job, templateId, cvId);
+  const email = await prepareApplicationEmail(job, templateId, cvId, accountId);
   if (!email) {
     return {
       success: false,
@@ -415,6 +432,7 @@ export async function autoApplyToJob(
   try {
     await db.insert(applicationsTable).values({
       id: applicationId,
+      accountId,
       jobId: job.id,
       method: "email" as const,
       status: "SUBMITTED" as const,
@@ -427,7 +445,7 @@ export async function autoApplyToJob(
     await db
       .update(jobsTable)
       .set({ status: "APPLIED" as any })
-      .where(eq(jobsTable.id, job.id));
+      .where(and(eq(jobsTable.id, job.id), jobAccountFilter));
 
     return {
       success: true,
@@ -450,6 +468,7 @@ export async function autoApplyToHighMatchJobs(
   minScore: number = 80,
   maxApplications: number = 10,
   templateId: string = "kenya-focused",
+  accountId: string = "local",
 ): Promise<{
   applied: number;
   skipped: number;
@@ -476,12 +495,23 @@ export async function autoApplyToHighMatchJobs(
   let skipped = 0;
   let errors = 0;
 
+  const jobAccountFilter = accountId === "local"
+    ? or(eq(jobsTable.accountId, "local"), isNull(jobsTable.accountId))
+    : eq(jobsTable.accountId, accountId);
+  const appAccountFilter = accountId === "local"
+    ? or(eq(applicationsTable.accountId, "local"), isNull(applicationsTable.accountId))
+    : eq(applicationsTable.accountId, accountId);
+  const cvAccountFilter = accountId === "local"
+    ? or(eq(cvsTable.accountId, "local"), isNull(cvsTable.accountId))
+    : eq(cvsTable.accountId, accountId);
+
   // Get high-match jobs that haven't been applied to yet
   const allJobs = await db
     .select()
     .from(jobsTable)
     .where(
       and(
+        jobAccountFilter,
         gt(jobsTable.matchScore, minScore),
         eq(jobsTable.status, "MATCHED" as const), // Only matched jobs
       ),
@@ -495,7 +525,7 @@ export async function autoApplyToHighMatchJobs(
       const [existingApp] = await db
         .select({ id: applicationsTable.id })
         .from(applicationsTable)
-        .where(eq(applicationsTable.jobId, job.id))
+        .where(and(eq(applicationsTable.jobId, job.id), appAccountFilter))
         .limit(1);
       return existingApp ? null : job;
     })
@@ -505,13 +535,13 @@ export async function autoApplyToHighMatchJobs(
   const [masterCV] = await db
     .select()
     .from(cvsTable)
-    .where(eq(cvsTable.isMaster, true as const))
+    .where(and(eq(cvsTable.isMaster, true as const), cvAccountFilter))
     .limit(1);
 
   for (const job of jobs) {
     try {
       // Apply to job
-      const result = await autoApplyToJob(job.id, templateId, masterCV?.id);
+      const result = await autoApplyToJob(job.id, templateId, masterCV?.id, accountId);
 
       if (result.success) {
         applied++;

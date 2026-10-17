@@ -39,7 +39,7 @@ const KENYAN_GENERAL_JOB_BOARDS: SourceDefinition[] = [
   {
     id: "brightermonday",
     name: "BrighterMonday Kenya",
-    canonicalUrl: "https://www.brightermonday.co.ke/jobs/software-data",
+    canonicalUrl: "https://www.brightermonday.co.ke/jobs",
     category: "KENYAN_JOB_BOARD",
     country: "Kenya",
     region: "East Africa",
@@ -55,7 +55,7 @@ const KENYAN_GENERAL_JOB_BOARDS: SourceDefinition[] = [
     authenticationRequired: false,
     rateLimit: 30,
     config: {
-      searchUrl: "https://www.brightermonday.co.ke/jobs/software-data",
+      searchUrl: "https://www.brightermonday.co.ke/jobs",
       pagination: "numeric",
       jobSelector: ".job-card",
       titleSelector: ".job-title",
@@ -69,7 +69,7 @@ const KENYAN_GENERAL_JOB_BOARDS: SourceDefinition[] = [
   {
     id: "myjobmag",
     name: "MyJobMag Kenya",
-    canonicalUrl: "https://www.myjobmag.co.ke/jobs-by-field/information-technology",
+    canonicalUrl: "https://www.myjobmag.co.ke/jobs",
     category: "KENYAN_JOB_BOARD",
     country: "Kenya",
     integrationType: "STRUCTURED_HTML",
@@ -83,7 +83,7 @@ const KENYAN_GENERAL_JOB_BOARDS: SourceDefinition[] = [
     authenticationRequired: false,
     rateLimit: 60,
     config: {
-      searchUrl: "https://www.myjobmag.co.ke/jobs-by-field/information-technology",
+      searchUrl: "https://www.myjobmag.co.ke/jobs",
       careersUrl: "https://www.myjobmag.co.ke/jobs",
     },
   },

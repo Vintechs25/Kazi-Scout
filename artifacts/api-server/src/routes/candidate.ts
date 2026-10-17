@@ -34,25 +34,32 @@ const emptyProfile = {
 };
 
 router.get("/candidate-profile", async (req, res): Promise<void> => {
-  const accountId = getAuthenticatedAccountId(req.cookies?.[sessionCookieName]);
+  const accountId = res.locals.accountId || getAuthenticatedAccountId(req) || "local";
 
-  const conditions = [
-    eq(candidateProfilesTable.id, "primary"),
-    eq(candidateProfilesTable.id, "local"),
-  ];
-  if (accountId) {
-    conditions.unshift(eq(candidateProfilesTable.id, accountId));
-  }
-
-  const profiles = await db
+  const [profile] = await db
     .select()
     .from(candidateProfilesTable)
-    .where(or(...conditions))
-    .orderBy(desc(candidateProfilesTable.updatedAt))
+    .where(eq(candidateProfilesTable.id, accountId))
     .limit(1);
 
-  const profile = profiles[0];
   if (!profile) {
+    // For single-tenant desktop or initial seed fallback
+    if (accountId === "local" || accountId === "primary") {
+      const [fallback] = await db
+        .select()
+        .from(candidateProfilesTable)
+        .where(or(eq(candidateProfilesTable.id, "primary"), eq(candidateProfilesTable.id, "local")))
+        .limit(1);
+      if (fallback) {
+        res.json(
+          GetCandidateProfileResponse.parse({
+            ...fallback,
+            updatedAt: fallback.updatedAt?.toISOString() ?? null,
+          }),
+        );
+        return;
+      }
+    }
     res.json(GetCandidateProfileResponse.parse(emptyProfile));
     return;
   }
@@ -70,71 +77,54 @@ router.put("/candidate-profile", async (req, res): Promise<void> => {
     res.status(400).json({ error: parsed.error.message });
     return;
   }
-  const accountId = getAuthenticatedAccountId(req.cookies?.[sessionCookieName]);
+  const accountId = res.locals.accountId || getAuthenticatedAccountId(req) || "local";
   const updatedAt = new Date();
 
   const [profile] = await db
     .insert(candidateProfilesTable)
-    .values({ id: "primary", ...parsed.data, updatedAt })
+    .values({ id: accountId, ...parsed.data, updatedAt })
     .onConflictDoUpdate({
       target: candidateProfilesTable.id,
       set: { ...parsed.data, updatedAt },
     })
     .returning();
 
-  if (accountId && accountId !== "primary") {
-    await db
-      .insert(candidateProfilesTable)
-      .values({ id: accountId, ...parsed.data, updatedAt })
-      .onConflictDoUpdate({
-        target: candidateProfilesTable.id,
-        set: { ...parsed.data, updatedAt },
-      })
-      .catch(() => {});
-  }
-
-  // Dynamically sync updated target roles directly to discovery role queue
+  // Dynamically sync updated target roles directly to discovery role queue strictly for this account
   const targetRoles = Array.isArray(parsed.data.targetRoles) ? parsed.data.targetRoles : [];
   if (targetRoles.length > 0) {
     try {
-      const accountsToSync = ["primary", "local"];
-      if (accountId && !accountsToSync.includes(accountId)) {
-        accountsToSync.push(accountId);
-      }
-      for (const accId of accountsToSync) {
-        await db
-          .delete(userRolePreferencesTable)
-          .where(eq(userRolePreferencesTable.accountId, accId))
-          .catch(() => {});
+      await db
+        .delete(userRolePreferencesTable)
+        .where(eq(userRolePreferencesTable.accountId, accountId))
+        .catch(() => {});
 
-        for (let i = 0; i < targetRoles.length; i++) {
-          const roleTitle = targetRoles[i];
-          if (!roleTitle || typeof roleTitle !== "string" || !roleTitle.trim()) continue;
-          await db
-            .insert(userRolePreferencesTable)
-            .values({
-              id: crypto.randomUUID(),
-              accountId: accId,
-              roleTitle: roleTitle.trim(),
-              source: "manual",
-              enabled: i < 5,
-              priority: i < 2 ? "high" : i < 4 ? "medium" : "low",
-              weight: Math.max(100 - i * 15, 20),
-              searchQueries: [roleTitle.trim(), `${roleTitle.trim()} Kenya`],
-              keywords: (parsed.data.skills || []).slice(0, 5),
-              exclusionKeywords: [],
-              minSalary: parsed.data.minimumSalary ?? null,
-              maxSalary: null,
-              locationPreferences: [parsed.data.country || "Kenya", "Remote"],
-              remoteOnly: false,
-              experienceLevel: (parsed.data.yearsExperience || 0) >= 8 ? ["Senior", "Lead", "Consultant"] : ["Mid-Level", "Junior"],
-              industryPreferences: parsed.data.industries || [],
-              companySize: [],
-              createdAt: updatedAt,
-              updatedAt,
-            })
-            .catch(() => {});
-        }
+      for (let i = 0; i < targetRoles.length; i++) {
+        const roleTitle = targetRoles[i];
+        if (!roleTitle || typeof roleTitle !== "string" || !roleTitle.trim()) continue;
+        await db
+          .insert(userRolePreferencesTable)
+          .values({
+            id: crypto.randomUUID(),
+            accountId,
+            roleTitle: roleTitle.trim(),
+            source: "manual",
+            enabled: i < 5,
+            priority: i < 2 ? "high" : i < 4 ? "medium" : "low",
+            weight: Math.max(100 - i * 15, 20),
+            searchQueries: [roleTitle.trim(), `${roleTitle.trim()} Kenya`],
+            keywords: (parsed.data.skills || []).slice(0, 5),
+            exclusionKeywords: [],
+            minSalary: parsed.data.minimumSalary ?? null,
+            maxSalary: null,
+            locationPreferences: [parsed.data.country || "Kenya", "Remote"],
+            remoteOnly: false,
+            experienceLevel: (parsed.data.yearsExperience || 0) >= 8 ? ["Senior", "Lead", "Consultant"] : ["Mid-Level", "Junior"],
+            industryPreferences: parsed.data.industries || [],
+            companySize: [],
+            createdAt: updatedAt,
+            updatedAt,
+          })
+          .catch(() => {});
       }
     } catch (err) {
       console.warn("[Candidate] Failed to sync target roles to userRolePreferences:", err);
@@ -143,6 +133,7 @@ router.put("/candidate-profile", async (req, res): Promise<void> => {
 
   await db.insert(activityTable).values({
     id: crypto.randomUUID(),
+    accountId,
     kind: "profile",
     message: "Updated candidate profile.",
     createdAt: updatedAt,
@@ -155,26 +146,28 @@ router.put("/candidate-profile", async (req, res): Promise<void> => {
   );
 });
 
-router.get("/candidate-profile/evidence", async (_req, res): Promise<void> => {
+router.get("/candidate-profile/evidence", async (req, res): Promise<void> => {
   try {
+    const accountId = getAuthenticatedAccountId(req) || "local";
     const { getOrGenerateCandidateEvidence, getCandidateEvidenceDiagnostics } = await import(
       "../lib/candidate-evidence"
     );
-    const evidence = await getOrGenerateCandidateEvidence();
-    const diagnostics = await getCandidateEvidenceDiagnostics();
+    const evidence = await getOrGenerateCandidateEvidence(accountId);
+    const diagnostics = await getCandidateEvidenceDiagnostics(accountId);
     res.json({ evidence, diagnostics });
   } catch (err: any) {
     res.status(500).json({ error: err.message || "Failed to load candidate evidence profile" });
   }
 });
 
-router.post("/candidate-profile/evidence/refresh", async (_req, res): Promise<void> => {
+router.post("/candidate-profile/evidence/refresh", async (req, res): Promise<void> => {
   try {
+    const accountId = getAuthenticatedAccountId(req) || "local";
     const { getOrGenerateCandidateEvidence, getCandidateEvidenceDiagnostics } = await import(
       "../lib/candidate-evidence"
     );
-    const evidence = await getOrGenerateCandidateEvidence(true);
-    const diagnostics = await getCandidateEvidenceDiagnostics();
+    const evidence = await getOrGenerateCandidateEvidence(accountId, true);
+    const diagnostics = await getCandidateEvidenceDiagnostics(accountId);
     res.json({ evidence, diagnostics });
   } catch (err: any) {
     res.status(500).json({ error: err.message || "Failed to refresh candidate evidence profile" });
@@ -183,21 +176,23 @@ router.post("/candidate-profile/evidence/refresh", async (_req, res): Promise<vo
 
 router.put("/candidate-profile/evidence", async (req, res): Promise<void> => {
   try {
+    const accountId = getAuthenticatedAccountId(req) || "local";
     const { saveCandidateEvidenceOverride, getCandidateEvidenceDiagnostics } = await import(
       "../lib/candidate-evidence"
     );
-    const saved = saveCandidateEvidenceOverride(req.body);
-    const diagnostics = await getCandidateEvidenceDiagnostics();
+    const saved = saveCandidateEvidenceOverride(req.body, accountId);
+    const diagnostics = await getCandidateEvidenceDiagnostics(accountId);
     res.json({ evidence: saved, diagnostics });
   } catch (err: any) {
     res.status(400).json({ error: err.message || "Invalid candidate evidence profile update" });
   }
 });
 
-router.get("/candidate-profile/diagnostics", async (_req, res): Promise<void> => {
+router.get("/candidate-profile/diagnostics", async (req, res): Promise<void> => {
   try {
+    const accountId = getAuthenticatedAccountId(req) || "local";
     const { getCandidateEvidenceDiagnostics } = await import("../lib/candidate-evidence");
-    const diagnostics = await getCandidateEvidenceDiagnostics();
+    const diagnostics = await getCandidateEvidenceDiagnostics(accountId);
     res.json(diagnostics);
   } catch (err: any) {
     res.status(500).json({ error: err.message || "Failed to get CV diagnostics" });

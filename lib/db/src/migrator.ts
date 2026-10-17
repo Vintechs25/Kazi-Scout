@@ -200,6 +200,22 @@ export async function synchronizeDatabaseSchema(executor: DatabaseExecutor): Pro
       }
     }
 
+    // Safe index upgrade: drop legacy non-composite unique indexes on jobs table
+    if (cfg.name === "jobs") {
+      if (existingIndexes.has("jobs_fingerprint_unique")) {
+        try {
+          await executor.execute('DROP INDEX IF EXISTS "jobs_fingerprint_unique";');
+          existingIndexes.delete("jobs_fingerprint_unique");
+        } catch {}
+      }
+      if (existingIndexes.has("jobs_source_external_id_unique")) {
+        try {
+          await executor.execute('DROP INDEX IF EXISTS "jobs_source_external_id_unique";');
+          existingIndexes.delete("jobs_source_external_id_unique");
+        } catch {}
+      }
+    }
+
     // 8. Ensure all table indexes exist
     for (const idx of cfg.indexes) {
       const idxName = idx.config.name;

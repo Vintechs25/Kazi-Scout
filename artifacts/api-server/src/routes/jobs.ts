@@ -1,5 +1,5 @@
 import { Router, type IRouter } from "express";
-import { and, desc, eq, gte, inArray, like, ne, or } from "drizzle-orm";
+import { and, desc, eq, gte, inArray, isNull, like, ne, or } from "drizzle-orm";
 import {
   CreateJobBody,
   CreateJobResponse,
@@ -23,21 +23,28 @@ import { batchEvaluateQualifiedJobs } from "../lib/ai-job-evaluator";
 import { getVerifiedMasterCv } from "../lib/cv-storage";
 import { getOrGenerateCandidateEvidence } from "../lib/candidate-evidence";
 import { verifyJobRequirementsForUser } from "../lib/job-search-service-enhanced";
+import { getAuthenticatedAccountId } from "../lib/auth";
 
 const router: IRouter = Router();
 
-router.get("/jobs/directive", async (_req, res): Promise<void> => {
+function getAccountId(req: any, res: any): string {
+  return res?.locals?.accountId || getAuthenticatedAccountId(req) || "local";
+}
+
+router.get("/jobs/directive", async (req, res): Promise<void> => {
   try {
-    const directive = await getOrGenerateSearchDirective();
+    const accountId = getAccountId(req, res);
+    const directive = await getOrGenerateSearchDirective(accountId);
     res.json(directive);
   } catch (err: any) {
     res.status(500).json({ error: err.message || "Failed to retrieve search directive" });
   }
 });
 
-router.post("/jobs/directive/refresh", async (_req, res): Promise<void> => {
+router.post("/jobs/directive/refresh", async (req, res): Promise<void> => {
   try {
-    const directive = await getOrGenerateSearchDirective(true);
+    const accountId = getAccountId(req, res);
+    const directive = await getOrGenerateSearchDirective(accountId, true);
     res.json(directive);
   } catch (err: any) {
     res.status(500).json({ error: err.message || "Failed to refresh search directive" });
@@ -68,20 +75,31 @@ router.get("/jobs", async (req, res): Promise<void> => {
     return;
   }
 
-  // Find all jobs that have submitted applications
+  const accountId = getAccountId(req, res);
+  const appAccountFilter = accountId === "local"
+    ? or(eq(applicationsTable.accountId, "local"), isNull(applicationsTable.accountId))
+    : eq(applicationsTable.accountId, accountId);
+  const jobAccountFilter = accountId === "local"
+    ? or(eq(jobsTable.accountId, "local"), isNull(jobsTable.accountId))
+    : eq(jobsTable.accountId, accountId);
+
+  // Find all jobs that have submitted applications for this account
   const submittedApps = await db
     .select({ jobId: applicationsTable.jobId })
     .from(applicationsTable)
     .where(
-      inArray(applicationsTable.status, [
-        "SUBMITTED",
-        "EMAIL_SENT",
-        "AWAITING_RESPONSE",
-        "RECRUITER_RESPONSE",
-        "INTERVIEW",
-        "ASSESSMENT",
-        "OFFER",
-      ]),
+      and(
+        appAccountFilter,
+        inArray(applicationsTable.status, [
+          "SUBMITTED",
+          "EMAIL_SENT",
+          "AWAITING_RESPONSE",
+          "RECRUITER_RESPONSE",
+          "INTERVIEW",
+          "ASSESSMENT",
+          "OFFER",
+        ]),
+      ),
     );
   const appliedJobIds = new Set(submittedApps.map((a) => a.jobId));
   const appliedArray = Array.from(appliedJobIds);
@@ -89,7 +107,7 @@ router.get("/jobs", async (req, res): Promise<void> => {
   const tab = (req.query.tab as string | undefined)?.toLowerCase();
   const minScoreParam = req.query.minScore ? Number(req.query.minScore) : undefined;
 
-  const filters = [];
+  const filters = [jobAccountFilter];
 
   // Tab-based or status-based filtering
   if (tab === "strong" || req.query.aiDecision === "STRONG_MATCH") {
@@ -129,9 +147,14 @@ router.get("/jobs", async (req, res): Promise<void> => {
     // Default Active View: Strict AI-Verified mode hides rejected, ineligible, and hard failures
     filters.push(
       ne(jobsTable.status, "REJECTED"),
-      ne(jobsTable.aiDecision, "NOT_A_MATCH"),
-      ne(jobsTable.aiDecision, "INELIGIBLE"),
-      eq(jobsTable.hardEligibilityFailure, false),
+      or(
+        isNull(jobsTable.aiDecision),
+        and(ne(jobsTable.aiDecision, "NOT_A_MATCH"), ne(jobsTable.aiDecision, "INELIGIBLE")),
+      ),
+      or(
+        isNull(jobsTable.hardEligibilityFailure),
+        eq(jobsTable.hardEligibilityFailure, false),
+      ),
     );
   }
 
@@ -193,6 +216,11 @@ router.post("/jobs", async (req, res): Promise<void> => {
     return;
   }
 
+  const accountId = getAccountId(req, res);
+  const jobAccountFilter = accountId === "local"
+    ? or(eq(jobsTable.accountId, "local"), isNull(jobsTable.accountId))
+    : eq(jobsTable.accountId, accountId);
+
   const input = parsed.data;
   const normalizedCompany = normalizeCompany(input.company);
   const normalizedTitle = normalizeText(input.title);
@@ -202,7 +230,7 @@ router.post("/jobs", async (req, res): Promise<void> => {
   const [fingerprintMatch] = await db
     .select({ id: jobsTable.id })
     .from(jobsTable)
-    .where(eq(jobsTable.fingerprint, fingerprint))
+    .where(and(jobAccountFilter, eq(jobsTable.fingerprint, fingerprint)))
     .limit(1);
   if (fingerprintMatch) {
     duplicateResponse(res, fingerprintMatch.id);
@@ -214,6 +242,7 @@ router.post("/jobs", async (req, res): Promise<void> => {
       .from(jobsTable)
       .where(
         and(
+          jobAccountFilter,
           eq(jobsTable.source, input.source),
           eq(jobsTable.externalJobId, input.externalJobId),
         ),
@@ -232,6 +261,7 @@ router.post("/jobs", async (req, res): Promise<void> => {
       .insert(jobsTable)
       .values({
         id,
+        accountId,
         ...input,
         normalizedCompany,
         normalizedTitle,
@@ -243,6 +273,7 @@ router.post("/jobs", async (req, res): Promise<void> => {
       .returning();
     await db.insert(activityTable).values({
       id: crypto.randomUUID(),
+      accountId,
       kind: "job",
       message: `Added ${job.title} at ${job.company}.`,
       createdAt: now,
@@ -254,15 +285,18 @@ router.post("/jobs", async (req, res): Promise<void> => {
         .select({ id: jobsTable.id })
         .from(jobsTable)
         .where(
-          input.externalJobId
-            ? or(
-                eq(jobsTable.fingerprint, fingerprint),
-                and(
-                  eq(jobsTable.source, input.source),
-                  eq(jobsTable.externalJobId, input.externalJobId),
-                ),
-              )
-            : eq(jobsTable.fingerprint, fingerprint),
+          and(
+            jobAccountFilter,
+            input.externalJobId
+              ? or(
+                  eq(jobsTable.fingerprint, fingerprint),
+                  and(
+                    eq(jobsTable.source, input.source),
+                    eq(jobsTable.externalJobId, input.externalJobId),
+                  ),
+                )
+              : eq(jobsTable.fingerprint, fingerprint),
+          ),
         )
         .limit(1);
       if (existing) {
@@ -280,7 +314,18 @@ router.get("/jobs/:id", async (req, res): Promise<void> => {
     res.status(400).json({ error: params.error.message });
     return;
   }
-  const [job] = await db.select().from(jobsTable).where(eq(jobsTable.id, params.data.id));
+  const accountId = getAccountId(req, res);
+  const jobAccountFilter = accountId === "local"
+    ? or(eq(jobsTable.accountId, "local"), isNull(jobsTable.accountId))
+    : eq(jobsTable.accountId, accountId);
+  const appAccountFilter = accountId === "local"
+    ? or(eq(applicationsTable.accountId, "local"), isNull(applicationsTable.accountId))
+    : eq(applicationsTable.accountId, accountId);
+
+  const [job] = await db
+    .select()
+    .from(jobsTable)
+    .where(and(eq(jobsTable.id, params.data.id), jobAccountFilter));
   if (!job) {
     res.status(404).json({ error: "Job not found." });
     return;
@@ -291,6 +336,7 @@ router.get("/jobs/:id", async (req, res): Promise<void> => {
     .from(applicationsTable)
     .where(
       and(
+        appAccountFilter,
         eq(applicationsTable.jobId, job.id),
         inArray(applicationsTable.status, ["SUBMITTED", "EMAIL_SENT", "AWAITING_RESPONSE", "RECRUITER_RESPONSE", "INTERVIEW", "ASSESSMENT", "OFFER"]),
       ),
@@ -327,10 +373,15 @@ router.patch("/jobs/:id", async (req, res): Promise<void> => {
     res.status(400).json({ error: "Invalid job update." });
     return;
   }
+  const accountId = getAccountId(req, res);
+  const jobAccountFilter = accountId === "local"
+    ? or(eq(jobsTable.accountId, "local"), isNull(jobsTable.accountId))
+    : eq(jobsTable.accountId, accountId);
+
   const [job] = await db
     .update(jobsTable)
     .set({ status: body.data.status })
-    .where(eq(jobsTable.id, params.data.id))
+    .where(and(eq(jobsTable.id, params.data.id), jobAccountFilter))
     .returning();
   if (!job) {
     res.status(404).json({ error: "Job not found." });
@@ -338,6 +389,7 @@ router.patch("/jobs/:id", async (req, res): Promise<void> => {
   }
   await db.insert(activityTable).values({
     id: crypto.randomUUID(),
+    accountId,
     kind: "job",
     message: `${job.title} at ${job.company} marked ${job.status.toLowerCase().replaceAll("_", " ")}.`,
     createdAt: new Date(),
@@ -352,7 +404,15 @@ router.post("/jobs/:id/track", async (req, res): Promise<void> => {
     res.status(400).json({ error: "Invalid application tracking request." });
     return;
   }
-  const [job] = await db.select().from(jobsTable).where(eq(jobsTable.id, params.data.id));
+  const accountId = getAccountId(req, res);
+  const jobAccountFilter = accountId === "local"
+    ? or(eq(jobsTable.accountId, "local"), isNull(jobsTable.accountId))
+    : eq(jobsTable.accountId, accountId);
+  const appAccountFilter = accountId === "local"
+    ? or(eq(applicationsTable.accountId, "local"), isNull(applicationsTable.accountId))
+    : eq(applicationsTable.accountId, accountId);
+
+  const [job] = await db.select().from(jobsTable).where(and(eq(jobsTable.id, params.data.id), jobAccountFilter));
   if (!job) {
     res.status(404).json({ error: "Job not found." });
     return;
@@ -361,7 +421,7 @@ router.post("/jobs/:id/track", async (req, res): Promise<void> => {
   const [existingApplication] = await db
     .select()
     .from(applicationsTable)
-    .where(eq(applicationsTable.jobId, job.id))
+    .where(and(eq(applicationsTable.jobId, job.id), appAccountFilter))
     .limit(1);
   if (existingApplication) {
     res.status(200).json(
@@ -377,7 +437,8 @@ router.post("/jobs/:id/track", async (req, res): Promise<void> => {
   const existingApplications = await db
     .select({ job: jobsTable, application: applicationsTable })
     .from(applicationsTable)
-    .innerJoin(jobsTable, eq(applicationsTable.jobId, jobsTable.id));
+    .innerJoin(jobsTable, eq(applicationsTable.jobId, jobsTable.id))
+    .where(appAccountFilter);
   const similarApplication = existingApplications.find(({ job: otherJob }) =>
     isPotentialDuplicate(job, otherJob),
   );
@@ -396,6 +457,7 @@ router.post("/jobs/:id/track", async (req, res): Promise<void> => {
       .insert(applicationsTable)
       .values({
         id,
+        accountId,
         jobId: job.id,
         method: body.data.method,
         status: "NEEDS_REVIEW",
@@ -413,6 +475,7 @@ router.post("/jobs/:id/track", async (req, res): Promise<void> => {
   }
   await db.insert(activityTable).values({
     id: crypto.randomUUID(),
+    accountId,
     kind: "application",
     message: `Prepared a review record for ${job.title} at ${job.company}. Nothing was submitted.`,
     createdAt: now,
@@ -439,6 +502,14 @@ router.post("/jobs/bulk", async (req, res): Promise<void> => {
     return;
   }
 
+  const accountId = getAccountId(req, res);
+  const jobAccountFilter = accountId === "local"
+    ? or(eq(jobsTable.accountId, "local"), isNull(jobsTable.accountId))
+    : eq(jobsTable.accountId, accountId);
+  const appAccountFilter = accountId === "local"
+    ? or(eq(applicationsTable.accountId, "local"), isNull(applicationsTable.accountId))
+    : eq(applicationsTable.accountId, accountId);
+
   try {
     if (action === "status") {
       const allowedStatuses = ["DISCOVERED", "MATCHED", "SHORTLISTED", "APPLIED", "REJECTED", "IGNORED", "NEEDS_REVIEW"];
@@ -448,18 +519,17 @@ router.post("/jobs/bulk", async (req, res): Promise<void> => {
       }
       await db.update(jobsTable)
         .set({ status: status as any })
-        .where(inArray(jobsTable.id, validIds));
+        .where(and(inArray(jobsTable.id, validIds), jobAccountFilter));
 
       res.json({ success: true, count: validIds.length, action: "status", status });
     } else if (action === "delete") {
-      await db.delete(applicationsTable).where(inArray(applicationsTable.jobId, validIds)).catch(() => {});
+      await db.delete(applicationsTable).where(and(inArray(applicationsTable.jobId, validIds), appAccountFilter)).catch(() => {});
       await db.delete(jobProvenanceTable).where(inArray(jobProvenanceTable.jobId, validIds)).catch(() => {});
       await db.delete(jobRequirementVerificationsTable).where(inArray(jobRequirementVerificationsTable.jobId, validIds)).catch(() => {});
-      await db.delete(jobsTable).where(inArray(jobsTable.id, validIds));
+      await db.delete(jobsTable).where(and(inArray(jobsTable.id, validIds), jobAccountFilter));
 
       res.json({ success: true, count: validIds.length, action: "delete" });
     } else if (action === "verify") {
-      const accountId = res.locals.accountId || "primary";
       const results: Record<string, any> = {};
       for (const id of validIds) {
         try {
@@ -484,10 +554,18 @@ router.delete("/jobs/:id", async (req, res): Promise<void> => {
     res.status(400).json({ error: "Job ID is required." });
     return;
   }
+  const accountId = getAccountId(req, res);
+  const jobAccountFilter = accountId === "local"
+    ? or(eq(jobsTable.accountId, "local"), isNull(jobsTable.accountId))
+    : eq(jobsTable.accountId, accountId);
+  const appAccountFilter = accountId === "local"
+    ? or(eq(applicationsTable.accountId, "local"), isNull(applicationsTable.accountId))
+    : eq(applicationsTable.accountId, accountId);
+
   try {
     // Delete associated applications first to avoid foreign key violations
-    await db.delete(applicationsTable).where(eq(applicationsTable.jobId, id));
-    const [deleted] = await db.delete(jobsTable).where(eq(jobsTable.id, id)).returning();
+    await db.delete(applicationsTable).where(and(eq(applicationsTable.jobId, id), appAccountFilter));
+    const [deleted] = await db.delete(jobsTable).where(and(eq(jobsTable.id, id), jobAccountFilter)).returning();
     if (!deleted) {
       res.status(404).json({ error: "Job not found." });
       return;
@@ -498,21 +576,28 @@ router.delete("/jobs/:id", async (req, res): Promise<void> => {
   }
 });
 
-router.post("/jobs/wipe", async (_req, res): Promise<void> => {
+router.post("/jobs/wipe", async (req, res): Promise<void> => {
   try {
-    await db.delete(applicationsTable);
-    await db.delete(jobsTable);
-    res.json({ success: true, message: "All job records and associated applications have been wiped." });
+    const accountId = getAccountId(req, res);
+    const jobAccountFilter = accountId === "local"
+      ? or(eq(jobsTable.accountId, "local"), isNull(jobsTable.accountId))
+      : eq(jobsTable.accountId, accountId);
+    const appAccountFilter = accountId === "local"
+      ? or(eq(applicationsTable.accountId, "local"), isNull(applicationsTable.accountId))
+      : eq(applicationsTable.accountId, accountId);
+
+    await db.delete(applicationsTable).where(appAccountFilter);
+    await db.delete(jobsTable).where(jobAccountFilter);
+    res.json({ success: true, message: "Job records and associated applications have been wiped for your account." });
   } catch (err) {
     res.status(500).json({ error: err instanceof Error ? err.message : "Failed to wipe job records." });
   }
 });
 
-router.post("/jobs/clean-all", async (_req, res): Promise<void> => {
+router.post("/jobs/clean-all", async (req, res): Promise<void> => {
   try {
-    // Preserve all applications, applied jobs, and shortlist history
-    // Run discoverAndMatchJobs with the new CV-aware directive & qualification gate
-    const result = await discoverAndMatchJobs();
+    const accountId = getAccountId(req, res);
+    const result = await discoverAndMatchJobs(75, accountId);
     res.json({ success: true, ...result });
   } catch (err) {
     console.error("Error during clean-all:", err);
@@ -520,18 +605,22 @@ router.post("/jobs/clean-all", async (_req, res): Promise<void> => {
   }
 });
 
-router.post("/jobs/re-evaluate", async (_req, res): Promise<void> => {
+router.post("/jobs/re-evaluate", async (req, res): Promise<void> => {
   try {
-    const cvDossier = await getVerifiedMasterCv();
+    const accountId = getAccountId(req, res);
+    const cvDossier = await getVerifiedMasterCv(accountId);
     if (!cvDossier.loaded || !cvDossier.cvRecord) {
       res.status(400).json({
         error: `Master CV verification failed: ${cvDossier.error || "Cannot load master CV file"}. Re-evaluation aborted.`,
       });
       return;
     }
-    const evidence = await getOrGenerateCandidateEvidence();
-    const directive = await getOrGenerateSearchDirective();
-    const allJobs = await db.select().from(jobsTable);
+    const evidence = await getOrGenerateCandidateEvidence(accountId);
+    const directive = await getOrGenerateSearchDirective(accountId);
+    const jobAccountFilter = accountId === "local"
+      ? or(eq(jobsTable.accountId, "local"), isNull(jobsTable.accountId))
+      : eq(jobsTable.accountId, accountId);
+    const allJobs = await db.select().from(jobsTable).where(jobAccountFilter);
 
     let rejectedByGate = 0;
     const candidatesForAi = [];

@@ -64,7 +64,24 @@ export class StructuredHtmlAdapter implements IJobConnector {
       /\b(it|ict|tech|software|developer|programmer|engineer|network|cloud|sysadmin|cyber)\b/i.test(k)
     );
 
+    const keywords = filter?.keywords || [];
+    const roleQueryUrls: string[] = [];
+    if (keywords.length > 0) {
+      for (const k of keywords.slice(0, 3)) {
+        if (source.id === "brightermonday") {
+          roleQueryUrls.push(`https://www.brightermonday.co.ke/jobs?q=${encodeURIComponent(k)}`);
+        } else if (source.id === "myjobmag") {
+          roleQueryUrls.push(`https://www.myjobmag.co.ke/search/jobs?q=${encodeURIComponent(k)}`);
+        } else if (source.id === "jobwebkenya") {
+          roleQueryUrls.push(`https://jobwebkenya.com/?s=${encodeURIComponent(k)}`);
+        } else if (source.id === "kenyajob") {
+          roleQueryUrls.push(`https://www.kenyajob.com/job-vacancies-search-kenya?motcle=${encodeURIComponent(k)}`);
+        }
+      }
+    }
+
     const candidateUrls: string[] = Array.from(new Set([
+      ...roleQueryUrls,
       config.vacanciesUrl,
       config.careersUrl,
       config.allJobs,
@@ -95,6 +112,7 @@ export class StructuredHtmlAdapter implements IJobConnector {
           if (!rawUrl) return null;
           let u = rawUrl.trim();
           if (u.startsWith("javascript:") || u.startsWith("#") || u.startsWith("mailto:")) return null;
+          if (/\b(?:create|employer|account|login|signup|register|pricing)\b/i.test(u)) return null;
           if (u.startsWith("//")) return "https:" + u;
           if (u.startsWith("/")) return `${origin}${u}`;
           if (!u.startsWith("http")) return `${origin}/${u}`;

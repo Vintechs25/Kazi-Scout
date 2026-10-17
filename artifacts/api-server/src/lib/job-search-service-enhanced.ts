@@ -15,7 +15,7 @@
  */
 
 import { randomUUID } from "node:crypto";
-import { and, desc, eq, gt, gte, inArray, like, ne, or } from "drizzle-orm";
+import { and, desc, eq, gt, gte, inArray, isNull, like, ne, or } from "drizzle-orm";
 import {
   db,
   jobsTable,
@@ -105,20 +105,46 @@ export async function discoverAndMatchJobsEnhanced(
   if (!rolesToSearch || rolesToSearch.length === 0) {
     try {
       const parsedCv = (await getParsedCv(accountId)) as any;
-      if (parsedCv?.roles && Array.isArray(parsedCv.roles) && parsedCv.roles.length > 0) {
-        rolesToSearch = parsedCv.roles.map((r: any) => r.roleTitle || r.title).filter(Boolean);
+      if (parsedCv?.primaryRoles && Array.isArray(parsedCv.primaryRoles) && parsedCv.primaryRoles.length > 0) {
+        rolesToSearch = parsedCv.primaryRoles;
+      } else if (parsedCv?.extractedRoles && Array.isArray(parsedCv.extractedRoles) && parsedCv.extractedRoles.length > 0) {
+        rolesToSearch = parsedCv.extractedRoles.map((r: any) => r.roleTitle || r.title).filter(Boolean);
       } else if (parsedCv?.targetRoles && Array.isArray(parsedCv.targetRoles) && parsedCv.targetRoles.length > 0) {
         rolesToSearch = parsedCv.targetRoles;
+      } else if (parsedCv?.roles && Array.isArray(parsedCv.roles) && parsedCv.roles.length > 0) {
+        rolesToSearch = parsedCv.roles.map((r: any) => r.roleTitle || r.title).filter(Boolean);
       }
 
       if (!rolesToSearch || rolesToSearch.length === 0) {
         const [candidateProfile] = await db
           .select()
           .from(candidateProfilesTable)
-          .where(or(eq(candidateProfilesTable.id, accountId), eq(candidateProfilesTable.id, "primary")))
+          .where(accountId === "local" 
+            ? or(eq(candidateProfilesTable.id, "local"), eq(candidateProfilesTable.id, "primary"))
+            : eq(candidateProfilesTable.id, accountId))
           .limit(1);
         if (candidateProfile?.targetRoles && Array.isArray(candidateProfile.targetRoles) && candidateProfile.targetRoles.length > 0) {
           rolesToSearch = candidateProfile.targetRoles;
+        }
+      }
+
+      // If still empty, check if user has a master CV in cvsTable and parse it
+      if (!rolesToSearch || rolesToSearch.length === 0) {
+        const cvCondition = accountId === "local"
+          ? or(eq(cvsTable.accountId, "local"), isNull(cvsTable.accountId))
+          : eq(cvsTable.accountId, accountId);
+        const [cvRec] = await db
+          .select()
+          .from(cvsTable)
+          .where(cvCondition)
+          .orderBy(desc(cvsTable.isMaster), desc(cvsTable.uploadedAt))
+          .limit(1);
+        if (cvRec?.extractedText && cvRec.extractedText.length >= 20) {
+          const { parseCvLocally } = await import("../routes/cvs");
+          const localDraft = parseCvLocally(cvRec.extractedText);
+          if (Array.isArray(localDraft.targetRoles) && localDraft.targetRoles.length > 0) {
+            rolesToSearch = localDraft.targetRoles as string[];
+          }
         }
       }
     } catch {
@@ -203,6 +229,7 @@ export async function discoverAndMatchJobsEnhanced(
   // Log activity
   await db.insert(activityTable).values({
     id: randomUUID(),
+    accountId,
     kind: "discovery",
     message: `Enhanced discovery: Found ${discoveryResult.discovered} jobs, ${discoveryResult.matched} matches for roles: ${rolesToSearch.join(', ')}`,
     createdAt: new Date(),

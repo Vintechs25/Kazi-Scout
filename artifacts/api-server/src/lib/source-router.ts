@@ -41,15 +41,20 @@ export class SourceRouter {
    * Resolve a candidate profile into a structured profile object
    */
   static async resolveStructuredProfile(profileId: string = "primary", activeRoles?: string[]): Promise<StructuredProfile> {
-    const [profile] = await db
+    let [profile] = await db
       .select()
       .from(candidateProfilesTable)
-      .where(or(
-        eq(candidateProfilesTable.id, profileId),
-        eq(candidateProfilesTable.id, "primary"),
-        eq(candidateProfilesTable.id, "local")
-      ))
+      .where(eq(candidateProfilesTable.id, profileId))
       .limit(1);
+
+    if (!profile && profileId === "local") {
+      const [primaryProfile] = await db
+        .select()
+        .from(candidateProfilesTable)
+        .where(eq(candidateProfilesTable.id, "primary"))
+        .limit(1);
+      profile = primaryProfile;
+    }
 
     const targetRoles = [
       ...(Array.isArray(activeRoles) && activeRoles.length > 0 ? activeRoles : []),

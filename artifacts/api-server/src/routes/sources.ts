@@ -298,7 +298,7 @@ router.get("/jobs/:id/provenance", async (req, res) => {
 // 14. Get routed/selected sources for profile
 router.get("/sources-selected", async (req, res) => {
   try {
-    const profileId = (req.query.profileId as string) || "primary";
+    const profileId = (req.query.profileId as string) || (res.locals as any)?.accountId || "local";
     const selected = await SourceRouter.routeSourcesForProfile(profileId);
     res.json({
       profileId,
@@ -314,7 +314,8 @@ router.get("/sources-selected", async (req, res) => {
 // 15. Set source mode (AUTO, PINNED, EXCLUDED) for profile
 router.post("/sources/:id/mode", async (req, res) => {
   try {
-    const { mode, profileId = "primary", reason } = req.body || {};
+    const defaultProfileId = (res.locals as any)?.accountId || "local";
+    const { mode, profileId = defaultProfileId, reason } = req.body || {};
     if (!["AUTO", "PINNED", "EXCLUDED"].includes(mode)) {
       res.status(400).json({ error: "mode must be AUTO, PINNED, or EXCLUDED" });
       return;

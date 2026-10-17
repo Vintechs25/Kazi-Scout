@@ -6,7 +6,7 @@
 
 import { readFile } from "node:fs/promises";
 import path from "node:path";
-import { and, desc, eq, gt, gte, inArray, like, ne, or } from "drizzle-orm";
+import { and, desc, eq, gt, gte, inArray, isNull, like, ne, or } from "drizzle-orm";
 import { db, jobsTable, searchProfilesTable, candidateProfilesTable, activityTable, applicationsTable, cvsTable, jobSourcesTable, jobProvenanceTable } from "@workspace/db";
 import { fingerprintJob, normalizeCompany, normalizeText } from "./job-deduplication";
 import { fetchAllAtsJobs } from "./ats-registry";
@@ -1636,7 +1636,7 @@ export async function matchJobsWithProfile(jobs: JobRecord[]): Promise<JobRecord
  * Main job search and discovery function
  * Cleans out old mock leftovers, discovers live jobs, and applies strict hard gates
  */
-export async function discoverAndMatchJobs(minMatchScoreThreshold = 75): Promise<{
+export async function discoverAndMatchJobs(minMatchScoreThreshold = 75, accountId = "local"): Promise<{
   discovered: number;
   duplicates: number;
   rejectedByGate: number;
@@ -1651,12 +1651,16 @@ export async function discoverAndMatchJobs(minMatchScoreThreshold = 75): Promise
   // 1. Get search directive
   let directive: SearchDirective;
   try {
-    directive = await getOrGenerateSearchDirective();
+    directive = await getOrGenerateSearchDirective(accountId);
   } catch {
     const [profile] = await db
       .select()
       .from(candidateProfilesTable)
-      .where(eq(candidateProfilesTable.id, "primary"))
+      .where(
+        accountId === "local"
+          ? or(eq(candidateProfilesTable.id, "primary"), eq(candidateProfilesTable.id, "local"))
+          : eq(candidateProfilesTable.id, accountId)
+      )
       .limit(1)
       .catch(() => [null]);
 
@@ -1675,17 +1679,22 @@ export async function discoverAndMatchJobs(minMatchScoreThreshold = 75): Promise
   // 2. Delegate to comprehensive CV-guided discovery pipeline
   const { discoverJobsWithCvGuidance } = await import("./enhanced-job-search-service");
   const discoveryResult = await discoverJobsWithCvGuidance({
-    accountId: "default",
+    accountId,
     verifyRequirements: true,
     maxJobs: 50,
   });
 
   // 3. Query high matches from database
+  const accountFilter = accountId === "local"
+    ? or(eq(jobsTable.accountId, "local"), isNull(jobsTable.accountId))
+    : eq(jobsTable.accountId, accountId);
+
   const highMatches = await db
     .select()
     .from(jobsTable)
     .where(
       and(
+        accountFilter,
         ne(jobsTable.status, "REJECTED"),
         gte(jobsTable.matchScore, minMatchScoreThreshold),
       ),

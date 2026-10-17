@@ -11,6 +11,7 @@ export const searchProfilesTable = sqliteTable("search_profiles", {
   minimumSalary: real("minimum_salary"),
   excludedKeywords: text("excluded_keywords", { mode: "json" }).$type<string[]>().notNull().default([]),
   employmentTypes: text("employment_types", { mode: "json" }).$type<string[]>().notNull().default([]),
+  accountId: text("account_id"),
   enabled: integer("enabled", { mode: "boolean" }).notNull().default(true),
   createdAt: integer("created_at", { mode: "timestamp" }).notNull(),
 });

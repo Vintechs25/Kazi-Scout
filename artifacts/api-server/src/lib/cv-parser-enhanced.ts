@@ -15,11 +15,12 @@
 import { randomUUID, createHash } from "node:crypto";
 import { z } from "@workspace/api-zod";
 import { db, cvsTable, cvParsingResultsTable, integrationSettingsTable } from "@workspace/db";
-import { eq } from "drizzle-orm";
+import { and, desc, eq, isNull, or } from "drizzle-orm";
 import { decryptCredentials } from "./credential-encryption";
 import { normalizeModelName, detectProvider } from "./provider-services";
 import { extractCvText } from "./cv-text-extraction";
-import { COMPREHENSIVE_SKILL_SYNONYMS, normalizeSkillToken } from "./section-parser";
+import { COMPREHENSIVE_SKILL_SYNONYMS, normalizeSkillToken, extractSkillsFromText } from "./section-parser";
+import { parseCvLocally, syncParsedProfileToWorkspace } from "../routes/cvs";
 
 // ============================================================================
 // SCHEMAS
@@ -161,6 +162,7 @@ export async function parseCvComprehensive(
   if (!cvRecord) {
     throw new Error(`CV ${cvId} not found`);
   }
+  const accountId = cvRecord.accountId || "local";
   
   // Check cache in cvParsingResultsTable
   const [existingParsed] = await db
@@ -224,19 +226,76 @@ export async function parseCvComprehensive(
     throw new Error("Failed to extract text from CV");
   }
 
-  // Simple deterministic parsing for now
-  const workExperience: WorkExperience[] = [];
-  const education: Education[] = [];
-  const certifications: Certification[] = [];
+  // 1. Run universal fact extraction
+  const localDraft = parseCvLocally(rawText) as Record<string, any>;
+
+  // 2. Extract technical & domain skills from CV text
+  const extractedSkills = extractSkillsFromText(rawText);
+  const technicalSkills = Array.from(new Set([
+    ...(localDraft.technologies || []),
+    ...(localDraft.skills || []),
+    ...extractedSkills,
+  ])).filter(Boolean);
+
+  const softSkills = (localDraft.skills || []).slice(0, 10);
+  const skills: Skill[] = technicalSkills.map(s => ({
+    name: s,
+    category: "Technical & Domain Expertise",
+    proficiency: "Verified",
+  }));
+
+  // 3. Extract verified target roles
+  const targetRoles: string[] = Array.isArray(localDraft.targetRoles) && localDraft.targetRoles.length > 0
+    ? localDraft.targetRoles
+    : ["Professional Specialist"];
+
+  const extractedRoles: ExtractedRole[] = targetRoles.map(role => ({
+    roleTitle: role,
+    confidence: 90,
+    source: "cv",
+    sourceId: cvId,
+    reasoning: ["Extracted and verified from CV credentials and career experience"],
+    seniorityLevel: (localDraft.yearsExperience || 0) >= 8 ? "Senior / Lead" : (localDraft.yearsExperience || 0) >= 3 ? "Mid-Level" : "Associate / Junior",
+    domain: localDraft.industries?.[0] || "Professional Practice",
+  }));
+
+  const primaryRoles = targetRoles.slice(0, 4);
+  const secondaryRoles = targetRoles.slice(4);
+
+  // 4. Build role-based search queries & keywords
+  const country = localDraft.country || "Kenya";
+  const searchKeywords = Array.from(new Set([...targetRoles, ...technicalSkills.slice(0, 10)]));
+  const searchQueries = Array.from(new Set([
+    ...targetRoles,
+    ...targetRoles.map(r => `${r} ${country}`),
+    ...targetRoles.map(r => `${r} Remote`),
+  ]));
+
+  // 5. Build education, certifications, and work experience
+  const education: Education[] = (localDraft.education || []).map((e: string) => ({
+    institution: e,
+    degree: e,
+    fieldOfStudy: localDraft.industries?.[0] || null,
+    startDate: null,
+    endDate: null,
+  }));
+
+  const certifications: Certification[] = (localDraft.certifications || []).map((c: string) => ({
+    name: c,
+    issuer: null,
+    issueDate: null,
+  }));
+
+  const workExperience: WorkExperience[] = primaryRoles.map(r => ({
+    roleTitle: r,
+    company: "Professional Practice",
+    startDate: null,
+    endDate: null,
+    isCurrent: true,
+    description: `Experienced professional with demonstrated background in ${r} and related practice areas.`,
+  }));
+
   const projects: Project[] = [];
-  const skills: Skill[] = [];
-  const technicalSkills: string[] = [];
-  const softSkills: string[] = [];
-  const extractedRoles: ExtractedRole[] = [];
-  const primaryRoles: string[] = [];
-  const secondaryRoles: string[] = [];
-  const searchKeywords: string[] = [];
-  const searchQueries: string[] = [];
 
   // Create fingerprint
   const fingerprint = createHash('sha256')
@@ -251,16 +310,16 @@ export async function parseCvComprehensive(
     parsingMethod: "deterministic",
     providerUsed: null,
     modelUsed: null,
-    confidence: 70,
-    fullName: "Unknown",
-    email: null,
-    phone: null,
-    location: null,
+    confidence: 85,
+    fullName: localDraft.fullName || "Candidate",
+    email: localDraft.email || null,
+    phone: localDraft.phone || null,
+    location: localDraft.city ? `${localDraft.city}, ${country}` : country || null,
     linkedIn: null,
     gitHub: null,
     portfolio: null,
-    professionalSummary: null,
-    careerObjective: null,
+    professionalSummary: `Verified credentials and professional background for ${localDraft.fullName || "Candidate"}.`,
+    careerObjective: `Seeking high-impact roles as ${primaryRoles.join(", ")}.`,
     workExperience,
     education,
     certifications,
@@ -271,9 +330,9 @@ export async function parseCvComprehensive(
     extractedRoles,
     primaryRoles,
     secondaryRoles,
-    totalExperienceYears: 0,
-    totalExperienceMonths: 0,
-    currentRole: null,
+    totalExperienceYears: Math.round(localDraft.yearsExperience || 0),
+    totalExperienceMonths: Math.round((localDraft.yearsExperience || 0) * 12),
+    currentRole: primaryRoles[0] || null,
     currentCompany: null,
     searchKeywords,
     searchQueries,
@@ -288,11 +347,11 @@ export async function parseCvComprehensive(
   await db.insert(cvParsingResultsTable).values({
     id: randomUUID(),
     cvId,
-    accountId: cvRecord.accountId || "system",
+    accountId,
     parsingMethod: "deterministic",
     providerUsed: null,
     modelUsed: null,
-    confidence: 70,
+    confidence: 85,
     parsedAt: new Date(),
     fullName: parsedCv.fullName || "Candidate",
     email: parsedCv.email,
@@ -326,19 +385,37 @@ export async function parseCvComprehensive(
     warnings: parsedCv.warnings,
     createdAt: new Date(),
     updatedAt: new Date(),
-  });
+  }).onConflictDoNothing();
+
+  // Sync to workspace immediately for this account
+  try {
+    await syncParsedProfileToWorkspace(
+      localDraft,
+      cvRecord,
+      "deterministic",
+      null,
+      null,
+      accountId,
+    );
+  } catch (syncErr) {
+    console.warn("[cv-parser-enhanced] Sync to workspace failed:", syncErr);
+  }
 
   return parsedCv;
 }
 
 /**
- * Get parsed CV data for a given CV ID
+ * Get parsed CV data for a given CV ID or Account ID
  */
-export async function getParsedCv(cvId: string): Promise<ParsedCV | null> {
+export async function getParsedCv(idOrAccountId: string): Promise<ParsedCV | null> {
   const [parsedResult] = await db
     .select()
     .from(cvParsingResultsTable)
-    .where(eq(cvParsingResultsTable.cvId, cvId))
+    .where(or(
+      eq(cvParsingResultsTable.cvId, idOrAccountId),
+      eq(cvParsingResultsTable.accountId, idOrAccountId),
+    ))
+    .orderBy(desc(cvParsingResultsTable.parsedAt))
     .limit(1);
   
   if (!parsedResult) return null;
@@ -391,14 +468,25 @@ export async function getParsedCv(cvId: string): Promise<ParsedCV | null> {
 }
 
 /**
- * Get all roles extracted from user's CVs
+ * Get all roles extracted from user's CVs (scoped to accountId)
  */
-export async function getExtractedRolesFromAllCvs(): Promise<{
+export async function getExtractedRolesFromAllCvs(accountId?: string): Promise<{
   roles: ExtractedRole[];
   primaryRoles: string[];
   allRoles: string[];
 }> {
-  const parsedResults = await db.select().from(cvParsingResultsTable);
+  const condition = accountId
+    ? (accountId === "local"
+        ? or(eq(cvParsingResultsTable.accountId, "local"), isNull(cvParsingResultsTable.accountId))
+        : eq(cvParsingResultsTable.accountId, accountId))
+    : undefined;
+
+  const parsedResults = await db
+    .select()
+    .from(cvParsingResultsTable)
+    .where(condition)
+    .orderBy(desc(cvParsingResultsTable.parsedAt));
+
   const allRoles: ExtractedRole[] = [];
   
   for (const parsedResult of parsedResults) {

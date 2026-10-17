@@ -1,7 +1,7 @@
 import { createHash } from "node:crypto";
 import { z } from "@workspace/api-zod";
 import { db, candidateProfilesTable, integrationSettingsTable } from "@workspace/db";
-import { eq } from "drizzle-orm";
+import { eq, or } from "drizzle-orm";
 import { getVerifiedMasterCv } from "./cv-storage";
 import { decryptCredentials } from "./credential-encryption";
 import { normalizeModelName } from "./provider-services";
@@ -57,7 +57,7 @@ export const candidateEvidenceProfileSchema = z.object({
 
 export type CandidateEvidenceProfile = z.infer<typeof candidateEvidenceProfileSchema>;
 
-let cachedEvidence: { fingerprint: string; profile: CandidateEvidenceProfile } | null = null;
+const cachedEvidenceMap = new Map<string, { fingerprint: string; profile: CandidateEvidenceProfile }>();
 
 export async function callGeminiCandidateEvidence(
   apiKey: string,
@@ -266,27 +266,56 @@ export function buildDeterministicEvidence(
 /**
  * Generates or retrieves the verified candidate evidence profile
  */
+/**
+ * Generates or retrieves the verified candidate evidence profile
+ */
 export async function getOrGenerateCandidateEvidence(
-  forceRefresh = false,
+  accountIdOrForce?: string | boolean,
+  maybeForceRefresh?: boolean,
 ): Promise<CandidateEvidenceProfile> {
-  const dossier = await getVerifiedMasterCv();
-  if (!dossier.loaded || !dossier.cvRecord) {
-    throw new Error(
-      `Master CV verification failed: ${dossier.error || "Master CV not loaded"}. Discovery pipeline cannot run without verified CV evidence.`,
-    );
-  }
+  const accountId = typeof accountIdOrForce === "string" ? accountIdOrForce : "local";
+  const forceRefresh = typeof accountIdOrForce === "boolean" ? accountIdOrForce : Boolean(maybeForceRefresh);
 
-  const [profile] = await db
+  let [profile] = await db
     .select()
     .from(candidateProfilesTable)
-    .where(eq(candidateProfilesTable.id, "primary"))
+    .where(eq(candidateProfilesTable.id, accountId))
     .limit(1);
 
-  const rawKey = `${dossier.fingerprint}:${profile?.updatedAt?.toISOString() || "no-update"}`;
+  if (!profile && (accountId === "local" || accountId === "primary")) {
+    const [fallback] = await db
+      .select()
+      .from(candidateProfilesTable)
+      .where(or(eq(candidateProfilesTable.id, "primary"), eq(candidateProfilesTable.id, "local")))
+      .limit(1);
+    profile = fallback;
+  }
+
+  const dossier = await getVerifiedMasterCv(accountId);
+  if (!dossier.loaded || !dossier.cvRecord) {
+    const rawKey = `${accountId}:no-cv:${profile?.updatedAt?.toISOString() || "no-update"}`;
+    const evidenceFingerprint = createHash("sha256").update(rawKey).digest("hex");
+    const cached = cachedEvidenceMap.get(accountId);
+    if (!forceRefresh && cached && cached.fingerprint === evidenceFingerprint) {
+      return cached.profile;
+    }
+    const fallback = buildDeterministicEvidence(
+      profile,
+      "",
+      "no-cv",
+      "No Master CV Uploaded",
+      evidenceFingerprint,
+    );
+    cachedEvidenceMap.set(accountId, { fingerprint: evidenceFingerprint, profile: fallback });
+    return fallback;
+  }
+
+  const rawKey = `${accountId}:${dossier.fingerprint}:${profile?.updatedAt?.toISOString() || "no-update"}`;
   const evidenceFingerprint = createHash("sha256").update(rawKey).digest("hex");
 
-  if (!forceRefresh && cachedEvidence && cachedEvidence.fingerprint === evidenceFingerprint) {
-    return cachedEvidence.profile;
+  const cached = cachedEvidenceMap.get(accountId);
+  if (!forceRefresh && cached && cached.fingerprint === evidenceFingerprint) {
+    return cached.profile;
   }
 
   // Check all available AI integrations (AgentRouter, Gemini, OpenAI)
@@ -363,7 +392,7 @@ Output MUST be a single JSON object strictly matching this schema:
           modelUsed: rawJson?.modelUsed || agentRouterRow.model,
         });
         if (parsed.success) {
-          cachedEvidence = { fingerprint: evidenceFingerprint, profile: parsed.data };
+          cachedEvidenceMap.set(accountId, { fingerprint: evidenceFingerprint, profile: parsed.data });
           return parsed.data;
         }
       }
@@ -390,7 +419,7 @@ Output MUST be a single JSON object strictly matching this schema:
         });
 
         if (parsed.success) {
-          cachedEvidence = { fingerprint: evidenceFingerprint, profile: parsed.data };
+          cachedEvidenceMap.set(accountId, { fingerprint: evidenceFingerprint, profile: parsed.data });
           return parsed.data;
         }
       }
@@ -416,7 +445,7 @@ Output MUST be a single JSON object strictly matching this schema:
           modelUsed: rawJson?.modelUsed || openAiRow.model,
         });
         if (parsed.success) {
-          cachedEvidence = { fingerprint: evidenceFingerprint, profile: parsed.data };
+          cachedEvidenceMap.set(accountId, { fingerprint: evidenceFingerprint, profile: parsed.data });
           return parsed.data;
         }
       }
@@ -433,28 +462,35 @@ Output MUST be a single JSON object strictly matching this schema:
     dossier.cvRecord.fileName,
     evidenceFingerprint,
   );
-  cachedEvidence = { fingerprint: evidenceFingerprint, profile: fallback };
+  cachedEvidenceMap.set(accountId, { fingerprint: evidenceFingerprint, profile: fallback });
   return fallback;
 }
 
 /**
  * Invalidate evidence cache when underlying CV or profile changes
  */
-export function invalidateEvidenceCache(): void {
-  cachedEvidence = null;
+export function invalidateEvidenceCache(accountId?: string): void {
+  if (accountId) {
+    cachedEvidenceMap.delete(accountId);
+  } else {
+    cachedEvidenceMap.clear();
+  }
 }
+
+export const invalidateCandidateEvidence = invalidateEvidenceCache;
 
 /**
  * Save user review corrections to candidate evidence profile
  */
 export function saveCandidateEvidenceOverride(
   updatedProfile: CandidateEvidenceProfile,
+  accountId = "local",
 ): CandidateEvidenceProfile {
   const validated = candidateEvidenceProfileSchema.parse(updatedProfile);
-  cachedEvidence = {
+  cachedEvidenceMap.set(accountId, {
     fingerprint: validated.evidenceFingerprint,
     profile: validated,
-  };
+  });
   return validated;
 }
 
@@ -462,7 +498,7 @@ export function saveCandidateEvidenceOverride(
  * Provides safe diagnostic info showing document identifier, fingerprint, and verification status
  * without revealing API keys, OAuth secrets, or full private CV text.
  */
-export async function getCandidateEvidenceDiagnostics(): Promise<{
+export async function getCandidateEvidenceDiagnostics(accountId = "local"): Promise<{
   cvLoaded: boolean;
   cvDocumentId: string | null;
   cvFileName: string | null;
@@ -476,7 +512,7 @@ export async function getCandidateEvidenceDiagnostics(): Promise<{
   generatedAt: string | null;
   error?: string | null;
 }> {
-  const dossier = await getVerifiedMasterCv();
+  const dossier = await getVerifiedMasterCv(accountId);
   if (!dossier.loaded || !dossier.cvRecord) {
     return {
       cvLoaded: false,
@@ -494,7 +530,7 @@ export async function getCandidateEvidenceDiagnostics(): Promise<{
     };
   }
 
-  const evidence = await getOrGenerateCandidateEvidence();
+  const evidence = await getOrGenerateCandidateEvidence(accountId);
 
   return {
     cvLoaded: true,

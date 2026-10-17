@@ -2,7 +2,7 @@ import fs from "node:fs";
 import { unlink } from "node:fs/promises";
 import path from "node:path";
 import { Router, type IRouter } from "express";
-import { eq } from "drizzle-orm";
+import { eq, or, isNull } from "drizzle-orm";
 import {
   GetSettingsResponse,
   RemoveAiProviderParams,
@@ -29,8 +29,13 @@ import {
 import { decryptCredentials, encryptCredentials } from "../lib/credential-encryption";
 import { gmailRedirectUri } from "../lib/gmail-oauth-utils";
 import { testAiProvider } from "../lib/provider-services";
+import { getAuthenticatedAccountId } from "../lib/auth";
 
 const router: IRouter = Router();
+
+function getAccountId(req: any, res: any): string {
+  return res?.locals?.accountId || getAuthenticatedAccountId(req) || "local";
+}
 
 function connectionDetail(
   provider: "openai" | "gemini" | "gmail" | "agentrouter" | "openrouter",
@@ -274,8 +279,28 @@ router.post("/settings/providers/:provider/models", async (req, res): Promise<vo
   });
 });
 
-router.post("/settings/wipe-data", async (_req, res): Promise<void> => {
+router.post("/settings/wipe-data", async (req, res): Promise<void> => {
   try {
+    const accountId = getAccountId(req, res);
+    const appAccountFilter = accountId === "local"
+      ? or(eq(applicationsTable.accountId, "local"), isNull(applicationsTable.accountId))
+      : eq(applicationsTable.accountId, accountId);
+    const jobAccountFilter = accountId === "local"
+      ? or(eq(jobsTable.accountId, "local"), isNull(jobsTable.accountId))
+      : eq(jobsTable.accountId, accountId);
+    const cvAccountFilter = accountId === "local"
+      ? or(eq(cvsTable.accountId, "local"), isNull(cvsTable.accountId))
+      : eq(cvsTable.accountId, accountId);
+    const spAccountFilter = accountId === "local"
+      ? or(eq(searchProfilesTable.accountId, "local"), isNull(searchProfilesTable.accountId))
+      : eq(searchProfilesTable.accountId, accountId);
+    const actAccountFilter = accountId === "local"
+      ? or(eq(activityTable.accountId, "local"), isNull(activityTable.accountId))
+      : eq(activityTable.accountId, accountId);
+    const cpAccountFilter = accountId === "local"
+      ? or(eq(candidateProfilesTable.id, "primary"), eq(candidateProfilesTable.id, "local"))
+      : eq(candidateProfilesTable.id, accountId);
+
     // 0. Stop background agent so it doesn't immediately rediscover jobs
     try {
       const { handleAgentCommand } = await import("../lib/agent-worker");
@@ -284,8 +309,8 @@ router.post("/settings/wipe-data", async (_req, res): Promise<void> => {
       // ignore
     }
 
-    // 1. Delete all CVs and remove physical files from storage
-    const allCvs = await db.select().from(cvsTable);
+    // 1. Delete user CVs and remove physical files from storage
+    const allCvs = await db.select().from(cvsTable).where(cvAccountFilter);
     const custom = process.env.CV_STORAGE_PATH ?? (process.env.VERCEL ? "/tmp/cvs" : "storage/cvs");
     const storageDirCandidates = [
       path.resolve(process.cwd(), custom),
@@ -307,17 +332,28 @@ router.post("/settings/wipe-data", async (_req, res): Promise<void> => {
       }
     }
 
-    // 2. Delete all records from personal tables
-    await db.delete(applicationsTable);
-    await db.delete(jobsTable);
-    await db.delete(cvsTable);
-    await db.delete(searchProfilesTable);
-    await db.delete(candidateProfilesTable);
-    await db.delete(activityTable);
+    // 2. Delete records belonging to this account
+    await db.delete(applicationsTable).where(appAccountFilter);
+    await db.delete(jobsTable).where(jobAccountFilter);
+    await db.delete(cvsTable).where(cvAccountFilter);
+    await db.delete(searchProfilesTable).where(spAccountFilter);
+    await db.delete(candidateProfilesTable).where(cpAccountFilter);
+    await db.delete(activityTable).where(actAccountFilter);
 
-    // 3. Insert initial fresh activity log entry
+    // 3. Invalidate memory caches
+    try {
+      const { invalidateCandidateEvidence } = await import("../lib/candidate-evidence");
+      const { invalidateSearchDirective } = await import("../lib/search-directive");
+      invalidateCandidateEvidence(accountId);
+      invalidateSearchDirective(accountId);
+    } catch {
+      // ignore
+    }
+
+    // 4. Insert initial fresh activity log entry for this account
     await db.insert(activityTable).values({
       id: crypto.randomUUID(),
+      accountId,
       kind: "system",
       message: "Personal workspace data wiped by user. All API keys and connection settings remain safely preserved.",
       createdAt: new Date(),
@@ -325,7 +361,7 @@ router.post("/settings/wipe-data", async (_req, res): Promise<void> => {
 
     res.json({
       success: true,
-      message: "All personal data (profiles, CVs, jobs, applications, activity logs) was successfully wiped. API keys and configuration settings were preserved.",
+      message: "All personal data (profiles, CVs, jobs, applications, activity logs) was successfully wiped for your account. API keys and configuration settings were preserved.",
     });
   } catch (err: any) {
     res.status(500).json({ error: err.message || "Failed to wipe workspace data." });

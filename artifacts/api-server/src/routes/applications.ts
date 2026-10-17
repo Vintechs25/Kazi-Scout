@@ -1,15 +1,33 @@
 import { randomUUID } from "node:crypto";
 import path from "node:path";
 import { Router, type IRouter } from "express";
-import { desc, eq, inArray } from "drizzle-orm";
+import { and, desc, eq, inArray, isNull, or } from "drizzle-orm";
 import { applicationsTable, candidateProfilesTable, cvsTable, db, jobsTable, activityTable } from "@workspace/db";
 import { extractApplicationDetails } from "../lib/application-extractor";
 import { generateTailoredCoverLetter } from "../lib/cover-letter-generator";
 import { sendApplicationEmail } from "../lib/email-dispatcher";
+import { getAuthenticatedAccountId } from "../lib/auth";
 
 import fs from "node:fs";
 
 const router: IRouter = Router();
+
+function getAccountId(req: any, res: any): string {
+  return res?.locals?.accountId || getAuthenticatedAccountId(req) || "local";
+}
+
+async function getProfileForAccount(accountId: string) {
+  const [profile] = await db
+    .select()
+    .from(candidateProfilesTable)
+    .where(
+      accountId === "local"
+        ? or(eq(candidateProfilesTable.id, "primary"), eq(candidateProfilesTable.id, "local"))
+        : eq(candidateProfilesTable.id, accountId)
+    )
+    .limit(1);
+  return profile;
+}
 
 function getStorageDir(): string {
   const custom = process.env.CV_STORAGE_PATH ?? (process.env.VERCEL ? "/tmp/cvs" : "storage/cvs");
@@ -30,7 +48,12 @@ const storageDir = getStorageDir();
 /**
  * List all application records
  */
-router.get("/applications", async (_req, res): Promise<void> => {
+router.get("/applications", async (req, res): Promise<void> => {
+  const accountId = getAccountId(req, res);
+  const appAccountFilter = accountId === "local"
+    ? or(eq(applicationsTable.accountId, "local"), isNull(applicationsTable.accountId))
+    : eq(applicationsTable.accountId, accountId);
+
   const rows = await db
     .select({
       application: applicationsTable,
@@ -38,6 +61,7 @@ router.get("/applications", async (_req, res): Promise<void> => {
     })
     .from(applicationsTable)
     .innerJoin(jobsTable, eq(applicationsTable.jobId, jobsTable.id))
+    .where(appAccountFilter)
     .orderBy(desc(applicationsTable.appliedAt))
     .limit(500);
 
@@ -71,6 +95,14 @@ router.get("/applications", async (_req, res): Promise<void> => {
  */
 router.get("/applications/:id", async (req, res): Promise<void> => {
   const { id } = req.params;
+  const accountId = getAccountId(req, res);
+  const appAccountFilter = accountId === "local"
+    ? or(eq(applicationsTable.accountId, "local"), isNull(applicationsTable.accountId))
+    : eq(applicationsTable.accountId, accountId);
+  const cvAccountFilter = accountId === "local"
+    ? or(eq(cvsTable.accountId, "local"), isNull(cvsTable.accountId))
+    : eq(cvsTable.accountId, accountId);
+
   const [row] = await db
     .select({
       application: applicationsTable,
@@ -78,7 +110,7 @@ router.get("/applications/:id", async (req, res): Promise<void> => {
     })
     .from(applicationsTable)
     .innerJoin(jobsTable, eq(applicationsTable.jobId, jobsTable.id))
-    .where(eq(applicationsTable.id, id))
+    .where(and(eq(applicationsTable.id, id), appAccountFilter))
     .limit(1);
 
   if (!row) {
@@ -93,7 +125,7 @@ router.get("/applications/:id", async (req, res): Promise<void> => {
 
   let attachedDocs: any[] = [];
   if (docIds.length > 0) {
-    attachedDocs = await db.select().from(cvsTable).where(inArray(cvsTable.id, docIds));
+    attachedDocs = await db.select().from(cvsTable).where(and(inArray(cvsTable.id, docIds), cvAccountFilter));
   }
 
   res.json({
@@ -135,23 +167,29 @@ router.post("/applications/prepare", async (req, res): Promise<void> => {
     return;
   }
 
-  const [job] = await db.select().from(jobsTable).where(eq(jobsTable.id, jobId)).limit(1);
+  const accountId = getAccountId(req, res);
+  const jobAccountFilter = accountId === "local"
+    ? or(eq(jobsTable.accountId, "local"), isNull(jobsTable.accountId))
+    : eq(jobsTable.accountId, accountId);
+  const appAccountFilter = accountId === "local"
+    ? or(eq(applicationsTable.accountId, "local"), isNull(applicationsTable.accountId))
+    : eq(applicationsTable.accountId, accountId);
+  const cvAccountFilter = accountId === "local"
+    ? or(eq(cvsTable.accountId, "local"), isNull(cvsTable.accountId))
+    : eq(cvsTable.accountId, accountId);
+
+  const [job] = await db.select().from(jobsTable).where(and(eq(jobsTable.id, jobId), jobAccountFilter)).limit(1);
   if (!job) {
     res.status(404).json({ error: "Job record not found" });
     return;
   }
 
-  const [profile] = await db
-    .select()
-    .from(candidateProfilesTable)
-    .where(eq(candidateProfilesTable.id, "primary"))
-    .limit(1);
-
+  const profile = await getProfileForAccount(accountId);
   const extractedDetails = extractApplicationDetails(job.description, job.sourceUrl, job.title, job.company);
   const pkg = await generateTailoredCoverLetter(profile, job, extractedDetails, storageDir);
 
-  // Auto-pick matching documents from vault (CV, Academic Certificates, National ID)
-  const allDocs = await db.select().from(cvsTable).orderBy(desc(cvsTable.isMaster), desc(cvsTable.uploadedAt));
+  // Auto-pick matching documents from user's vault (CV, Academic Certificates, National ID)
+  const allDocs = await db.select().from(cvsTable).where(cvAccountFilter).orderBy(desc(cvsTable.isMaster), desc(cvsTable.uploadedAt));
   const selectedDocIds: string[] = [];
 
   for (const doc of allDocs) {
@@ -172,11 +210,11 @@ router.post("/applications/prepare", async (req, res): Promise<void> => {
     selectedDocIds.push(...allDocs.map((d) => d.id));
   }
 
-  // Check if application already exists
+  // Check if application already exists for this account
   const [existing] = await db
     .select()
     .from(applicationsTable)
-    .where(eq(applicationsTable.jobId, jobId))
+    .where(and(eq(applicationsTable.jobId, jobId), appAccountFilter))
     .limit(1);
 
   const now = new Date();
@@ -192,7 +230,7 @@ router.post("/applications/prepare", async (req, res): Promise<void> => {
         matchScore: job.matchScore,
         lastActivityAt: now,
       })
-      .where(eq(applicationsTable.id, existing.id));
+      .where(and(eq(applicationsTable.id, existing.id), appAccountFilter));
 
     res.json({
       id: existing.id,
@@ -210,6 +248,7 @@ router.post("/applications/prepare", async (req, res): Promise<void> => {
   const newId = randomUUID();
   await db.insert(applicationsTable).values({
     id: newId,
+    accountId,
     jobId,
     method: method as any,
     status: "NEEDS_REVIEW",
@@ -224,6 +263,7 @@ router.post("/applications/prepare", async (req, res): Promise<void> => {
 
   await db.insert(activityTable).values({
     id: randomUUID(),
+    accountId,
     kind: "application",
     message: `Drafted tailored application package for ${job.title} at ${job.company}. Ready for your review.`,
     createdAt: now,
@@ -246,29 +286,34 @@ router.post("/applications/prepare", async (req, res): Promise<void> => {
  */
 router.post("/applications/:id/regenerate", async (req, res): Promise<void> => {
   const { id } = req.params;
-  const [app] = await db.select().from(applicationsTable).where(eq(applicationsTable.id, id)).limit(1);
+  const accountId = getAccountId(req, res);
+  const appAccountFilter = accountId === "local"
+    ? or(eq(applicationsTable.accountId, "local"), isNull(applicationsTable.accountId))
+    : eq(applicationsTable.accountId, accountId);
+  const jobAccountFilter = accountId === "local"
+    ? or(eq(jobsTable.accountId, "local"), isNull(jobsTable.accountId))
+    : eq(jobsTable.accountId, accountId);
+  const cvAccountFilter = accountId === "local"
+    ? or(eq(cvsTable.accountId, "local"), isNull(cvsTable.accountId))
+    : eq(cvsTable.accountId, accountId);
+
+  const [app] = await db.select().from(applicationsTable).where(and(eq(applicationsTable.id, id), appAccountFilter)).limit(1);
   if (!app) {
     res.status(404).json({ error: "Application record not found" });
     return;
   }
 
-  const [job] = await db.select().from(jobsTable).where(eq(jobsTable.id, app.jobId)).limit(1);
+  const [job] = await db.select().from(jobsTable).where(and(eq(jobsTable.id, app.jobId), jobAccountFilter)).limit(1);
   if (!job) {
     res.status(404).json({ error: "Associated job record not found" });
     return;
   }
 
-  const [profile] = await db
-    .select()
-    .from(candidateProfilesTable)
-    .where(eq(candidateProfilesTable.id, "primary"))
-    .limit(1);
-
+  const profile = await getProfileForAccount(accountId);
   const extractedDetails = extractApplicationDetails(job.description, job.sourceUrl, job.title, job.company);
   const pkg = await generateTailoredCoverLetter(profile, job, extractedDetails, storageDir);
 
-  // Auto-pick all relevant documents from vault (CV, Academic Certificates, National ID)
-  const allDocs = await db.select().from(cvsTable).orderBy(desc(cvsTable.isMaster), desc(cvsTable.uploadedAt));
+  const allDocs = await db.select().from(cvsTable).where(cvAccountFilter).orderBy(desc(cvsTable.isMaster), desc(cvsTable.uploadedAt));
   const selectedDocIds: string[] = [];
 
   for (const doc of allDocs) {
@@ -299,7 +344,7 @@ router.post("/applications/:id/regenerate", async (req, res): Promise<void> => {
       attachedDocumentIds: JSON.stringify(selectedDocIds),
       lastActivityAt: now,
     })
-    .where(eq(applicationsTable.id, id));
+    .where(and(eq(applicationsTable.id, id), appAccountFilter));
 
   res.json({
     id,
@@ -325,17 +370,23 @@ router.post("/applications/bulk-prepare", async (req, res): Promise<void> => {
     return;
   }
 
-  const [profile] = await db
-    .select()
-    .from(candidateProfilesTable)
-    .where(eq(candidateProfilesTable.id, "primary"))
-    .limit(1);
+  const accountId = getAccountId(req, res);
+  const appAccountFilter = accountId === "local"
+    ? or(eq(applicationsTable.accountId, "local"), isNull(applicationsTable.accountId))
+    : eq(applicationsTable.accountId, accountId);
+  const jobAccountFilter = accountId === "local"
+    ? or(eq(jobsTable.accountId, "local"), isNull(jobsTable.accountId))
+    : eq(jobsTable.accountId, accountId);
+  const cvAccountFilter = accountId === "local"
+    ? or(eq(cvsTable.accountId, "local"), isNull(cvsTable.accountId))
+    : eq(cvsTable.accountId, accountId);
 
-  const allDocs = await db.select().from(cvsTable).orderBy(desc(cvsTable.isMaster), desc(cvsTable.uploadedAt));
+  const profile = await getProfileForAccount(accountId);
+  const allDocs = await db.select().from(cvsTable).where(cvAccountFilter).orderBy(desc(cvsTable.isMaster), desc(cvsTable.uploadedAt));
   let preparedCount = 0;
 
   for (const jobId of targetIds) {
-    const [job] = await db.select().from(jobsTable).where(eq(jobsTable.id, jobId)).limit(1);
+    const [job] = await db.select().from(jobsTable).where(and(eq(jobsTable.id, jobId), jobAccountFilter)).limit(1);
     if (!job) continue;
 
     const extractedDetails = extractApplicationDetails(job.description, job.sourceUrl, job.title, job.company);
@@ -362,7 +413,7 @@ router.post("/applications/bulk-prepare", async (req, res): Promise<void> => {
     const [existing] = await db
       .select()
       .from(applicationsTable)
-      .where(eq(applicationsTable.jobId, jobId))
+      .where(and(eq(applicationsTable.jobId, jobId), appAccountFilter))
       .limit(1);
 
     const now = new Date();
@@ -378,10 +429,11 @@ router.post("/applications/bulk-prepare", async (req, res): Promise<void> => {
           matchScore: job.matchScore,
           lastActivityAt: now,
         })
-        .where(eq(applicationsTable.id, existing.id));
+        .where(and(eq(applicationsTable.id, existing.id), appAccountFilter));
     } else {
       await db.insert(applicationsTable).values({
         id: randomUUID(),
+        accountId,
         jobId,
         method: "email",
         status: "NEEDS_REVIEW",
@@ -409,8 +461,15 @@ router.post("/applications/bulk-prepare", async (req, res): Promise<void> => {
 router.put("/applications/:id", async (req, res): Promise<void> => {
   const { id } = req.params;
   const { recipientEmail, subjectLine, coverLetter, attachedDocumentIds, status } = req.body;
+  const accountId = getAccountId(req, res);
+  const appAccountFilter = accountId === "local"
+    ? or(eq(applicationsTable.accountId, "local"), isNull(applicationsTable.accountId))
+    : eq(applicationsTable.accountId, accountId);
+  const jobAccountFilter = accountId === "local"
+    ? or(eq(jobsTable.accountId, "local"), isNull(jobsTable.accountId))
+    : eq(jobsTable.accountId, accountId);
 
-  const [existing] = await db.select().from(applicationsTable).where(eq(applicationsTable.id, id)).limit(1);
+  const [existing] = await db.select().from(applicationsTable).where(and(eq(applicationsTable.id, id), appAccountFilter)).limit(1);
   if (!existing) {
     res.status(404).json({ error: "Application record not found" });
     return;
@@ -431,11 +490,11 @@ router.put("/applications/:id", async (req, res): Promise<void> => {
   if (status !== undefined) {
     updates.status = status;
     if (["SUBMITTED", "EMAIL_SENT", "APPLIED", "INTERVIEW", "OFFER"].includes(status) && existing.jobId) {
-      await db.update(jobsTable).set({ status: "APPLIED" as any }).where(eq(jobsTable.id, existing.jobId));
+      await db.update(jobsTable).set({ status: "APPLIED" as any }).where(and(eq(jobsTable.id, existing.jobId), jobAccountFilter));
     }
   }
 
-  await db.update(applicationsTable).set(updates).where(eq(applicationsTable.id, id));
+  await db.update(applicationsTable).set(updates).where(and(eq(applicationsTable.id, id), appAccountFilter));
 
   res.json({ success: true, message: "Application updated." });
 });
@@ -446,6 +505,10 @@ router.put("/applications/:id", async (req, res): Promise<void> => {
 router.post("/applications/:id/send", async (req, res): Promise<void> => {
   const { id } = req.params;
   const { recipientEmail, subjectLine, coverLetter, attachedDocumentIds } = req.body || {};
+  const accountId = getAccountId(req, res);
+  const appAccountFilter = accountId === "local"
+    ? or(eq(applicationsTable.accountId, "local"), isNull(applicationsTable.accountId))
+    : eq(applicationsTable.accountId, accountId);
 
   const [row] = await db
     .select({
@@ -454,7 +517,7 @@ router.post("/applications/:id/send", async (req, res): Promise<void> => {
     })
     .from(applicationsTable)
     .innerJoin(jobsTable, eq(applicationsTable.jobId, jobsTable.id))
-    .where(eq(applicationsTable.id, id))
+    .where(and(eq(applicationsTable.id, id), appAccountFilter))
     .limit(1);
 
   if (!row) {
@@ -490,14 +553,10 @@ router.post("/applications/:id/send", async (req, res): Promise<void> => {
 
   if (Object.keys(updates).length > 0) {
     updates.lastActivityAt = new Date();
-    await db.update(applicationsTable).set(updates).where(eq(applicationsTable.id, id));
+    await db.update(applicationsTable).set(updates).where(and(eq(applicationsTable.id, id), appAccountFilter));
   }
 
-  const [profile] = await db
-    .select()
-    .from(candidateProfilesTable)
-    .where(eq(candidateProfilesTable.id, "primary"))
-    .limit(1);
+  const profile = await getProfileForAccount(accountId);
 
   const result = await sendApplicationEmail(application, profile, storageDir);
 
@@ -525,16 +584,17 @@ router.post("/applications/bulk-send", async (req, res): Promise<void> => {
     return;
   }
 
-  const [profile] = await db
-    .select()
-    .from(candidateProfilesTable)
-    .where(eq(candidateProfilesTable.id, "primary"))
-    .limit(1);
+  const accountId = getAccountId(req, res);
+  const appAccountFilter = accountId === "local"
+    ? or(eq(applicationsTable.accountId, "local"), isNull(applicationsTable.accountId))
+    : eq(applicationsTable.accountId, accountId);
+
+  const profile = await getProfileForAccount(accountId);
 
   const results: { id: string; success: boolean; error?: string }[] = [];
 
   for (const appId of targetIds) {
-    const [app] = await db.select().from(applicationsTable).where(eq(applicationsTable.id, appId)).limit(1);
+    const [app] = await db.select().from(applicationsTable).where(and(eq(applicationsTable.id, appId), appAccountFilter)).limit(1);
     if (!app || !app.recipientEmail) {
       results.push({ id: appId, success: false, error: "No recipient email" });
       continue;
@@ -566,6 +626,11 @@ router.post("/applications/bulk", async (req, res): Promise<void> => {
     return;
   }
 
+  const accountId = getAccountId(req, res);
+  const appAccountFilter = accountId === "local"
+    ? or(eq(applicationsTable.accountId, "local"), isNull(applicationsTable.accountId))
+    : eq(applicationsTable.accountId, accountId);
+
   try {
     if (action === "status") {
       const allowedStatuses = [
@@ -587,11 +652,11 @@ router.post("/applications/bulk", async (req, res): Promise<void> => {
       }
       await db.update(applicationsTable)
         .set({ status: status as any, lastActivityAt: new Date() })
-        .where(inArray(applicationsTable.id, validIds));
+        .where(and(inArray(applicationsTable.id, validIds), appAccountFilter));
 
       res.json({ success: true, count: validIds.length, action: "status", status });
     } else if (action === "delete") {
-      await db.delete(applicationsTable).where(inArray(applicationsTable.id, validIds));
+      await db.delete(applicationsTable).where(and(inArray(applicationsTable.id, validIds), appAccountFilter));
       res.json({ success: true, count: validIds.length, action: "delete" });
     } else {
       res.status(400).json({ error: "Invalid action. Supported actions: status, delete" });
@@ -606,7 +671,12 @@ router.post("/applications/bulk", async (req, res): Promise<void> => {
  */
 router.delete("/applications/:id", async (req, res): Promise<void> => {
   const { id } = req.params;
-  await db.delete(applicationsTable).where(eq(applicationsTable.id, id));
+  const accountId = getAccountId(req, res);
+  const appAccountFilter = accountId === "local"
+    ? or(eq(applicationsTable.accountId, "local"), isNull(applicationsTable.accountId))
+    : eq(applicationsTable.accountId, accountId);
+
+  await db.delete(applicationsTable).where(and(eq(applicationsTable.id, id), appAccountFilter));
   res.json({ success: true, message: "Application removed." });
 });
 

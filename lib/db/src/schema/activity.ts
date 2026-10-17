@@ -7,9 +7,13 @@ export const activityTable = sqliteTable(
     id: text("id").primaryKey(),
     message: text("message").notNull(),
     kind: text("kind").notNull(),
+    accountId: text("account_id"),
     createdAt: integer("created_at", { mode: "timestamp" }).notNull(),
   },
-  (table) => [index("activity_created_at_idx").on(table.createdAt)],
+  (table) => [
+    index("activity_created_at_idx").on(table.createdAt),
+    index("activity_account_id_idx").on(table.accountId),
+  ],
 );
 
 export const insertActivitySchema = createInsertSchema(activityTable);

@@ -1,9 +1,15 @@
 import { Router, type IRouter } from "express";
-import { desc } from "drizzle-orm";
+import { desc, eq, isNull, or } from "drizzle-orm";
 import { GetDashboardResponse } from "@workspace/api-zod";
 import { activityTable, applicationsTable, db, jobsTable, systemStateTable } from "@workspace/db";
+import { getAuthenticatedAccountId } from "../lib/auth";
 
 const router: IRouter = Router();
+
+function getAccountId(req: any, res: any): string {
+  return res?.locals?.accountId || getAuthenticatedAccountId(req) || "local";
+}
+
 const submittedStatuses = new Set([
   "SUBMITTED",
   "EMAIL_SENT",
@@ -21,11 +27,22 @@ const responseStatuses = new Set([
   "REJECTED",
 ]);
 
-router.get("/dashboard", async (_req, res): Promise<void> => {
+router.get("/dashboard", async (req, res): Promise<void> => {
+  const accountId = getAccountId(req, res);
+  const jobAccountFilter = accountId === "local"
+    ? or(eq(jobsTable.accountId, "local"), isNull(jobsTable.accountId))
+    : eq(jobsTable.accountId, accountId);
+  const appAccountFilter = accountId === "local"
+    ? or(eq(applicationsTable.accountId, "local"), isNull(applicationsTable.accountId))
+    : eq(applicationsTable.accountId, accountId);
+  const actAccountFilter = accountId === "local"
+    ? or(eq(activityTable.accountId, "local"), isNull(activityTable.accountId))
+    : eq(activityTable.accountId, accountId);
+
   const [jobs, applications, activity, state] = await Promise.all([
-    db.select().from(jobsTable),
-    db.select().from(applicationsTable),
-    db.select().from(activityTable).orderBy(desc(activityTable.createdAt)).limit(12),
+    db.select().from(jobsTable).where(jobAccountFilter),
+    db.select().from(applicationsTable).where(appAccountFilter),
+    db.select().from(activityTable).where(actAccountFilter).orderBy(desc(activityTable.createdAt)).limit(12),
     db.select().from(systemStateTable).limit(1),
   ]);
   const submitted = applications.filter((application) => submittedStatuses.has(application.status));

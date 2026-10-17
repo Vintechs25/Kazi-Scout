@@ -30,7 +30,7 @@ const connectors = new Map<string, IJobConnector>([
   ["RSS_FEED", rssFeed],
   ["JSON_API", jsonApi],
   ["ATS_REGISTRY", atsRegistry],
-  ["STRUCTURED_HTML", sitemapJsonLd],
+  ["STRUCTURED_HTML", structuredHtml],
   ["JSON_LD", sitemapJsonLd],
   ["SITEMAP_JSONLD", sitemapJsonLd],
   ["WORDPRESS", wordPress],

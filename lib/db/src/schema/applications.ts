@@ -16,11 +16,13 @@ export const applicationsTable = sqliteTable(
     coverLetter: text("cover_letter"),
     attachedDocumentIds: text("attached_document_ids"),
     matchScore: integer("match_score"),
+    accountId: text("account_id"),
     appliedAt: integer("applied_at", { mode: "timestamp" }).notNull(),
     lastActivityAt: integer("last_activity_at", { mode: "timestamp" }).notNull(),
   },
   (table) => [
     uniqueIndex("applications_job_id_unique").on(table.jobId),
+    index("applications_account_id_idx").on(table.accountId),
     index("applications_status_idx").on(table.status),
     index("applications_applied_at_idx").on(table.appliedAt),
   ],

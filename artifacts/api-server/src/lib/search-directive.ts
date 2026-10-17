@@ -15,7 +15,7 @@ import {
   integrationSettingsTable,
   searchProfilesTable,
 } from "@workspace/db";
-import { desc, eq } from "drizzle-orm";
+import { desc, eq, or, and, isNull } from "drizzle-orm";
 import { decryptCredentials } from "./credential-encryption";
 import { extractCvText } from "./cv-text-extraction";
 import { detectProvider, normalizeModelName } from "./provider-services";
@@ -69,7 +69,7 @@ function numberOrZero(defaultVal: number) {
 export type LocationRestrictions = z.infer<typeof locationRestrictionsSchema>;
 export type SearchDirective = z.infer<typeof searchDirectiveSchema>;
 
-let inMemoryCachedDirective: SearchDirective | null = null;
+const inMemoryCachedDirectiveMap = new Map<string, SearchDirective>();
 
 function computeCacheKey(
   profileUpdatedAt: Date | null,
@@ -391,23 +391,50 @@ async function callOpenAiDirective(
  * Works for ANY profession (Healthcare, Medicine, Law, Finance, Engineering, Technology, Education, etc.)
  */
 export async function getOrGenerateSearchDirective(
-  forceRefresh = false,
-  activeRoles?: string[],
+  forceRefreshOrAccount?: boolean | string,
+  activeRolesOrRefresh?: string[] | boolean,
+  activeRolesParam?: string[],
 ): Promise<SearchDirective> {
-  const [profile] = await db
+  let accountId = "local";
+  let forceRefresh = false;
+  let activeRoles: string[] | undefined = undefined;
+
+  if (typeof forceRefreshOrAccount === "string") {
+    accountId = forceRefreshOrAccount;
+    forceRefresh = typeof activeRolesOrRefresh === "boolean" ? activeRolesOrRefresh : false;
+    activeRoles = Array.isArray(activeRolesParam) ? activeRolesParam : Array.isArray(activeRolesOrRefresh) ? activeRolesOrRefresh : undefined;
+  } else {
+    forceRefresh = Boolean(forceRefreshOrAccount);
+    activeRoles = Array.isArray(activeRolesOrRefresh) ? activeRolesOrRefresh : undefined;
+  }
+
+  let [profile] = await db
     .select()
     .from(candidateProfilesTable)
-    .where(eq(candidateProfilesTable.id, "primary"))
+    .where(eq(candidateProfilesTable.id, accountId))
     .limit(1);
 
+  if (!profile && (accountId === "local" || accountId === "primary")) {
+    const [fallback] = await db
+      .select()
+      .from(candidateProfilesTable)
+      .where(or(eq(candidateProfilesTable.id, "primary"), eq(candidateProfilesTable.id, "local")))
+      .limit(1);
+    profile = fallback;
+  }
+
   // 1. Retrieve verified Master CV and verified candidate evidence profile
-  const cvDossier = await getVerifiedMasterCv();
-  const evidence = await getOrGenerateCandidateEvidence(forceRefresh);
+  const cvDossier = await getVerifiedMasterCv(accountId);
+  const evidence = await getOrGenerateCandidateEvidence(accountId, forceRefresh);
+
+  const spAccountFilter = accountId === "local"
+    ? or(eq(searchProfilesTable.accountId, "local"), isNull(searchProfilesTable.accountId))
+    : eq(searchProfilesTable.accountId, accountId);
 
   const searchProfiles = await db
     .select()
     .from(searchProfilesTable)
-    .where(eq(searchProfilesTable.enabled, true));
+    .where(and(spAccountFilter, eq(searchProfilesTable.enabled, true)));
 
   const spHash = searchProfiles.map((p) => `${p.id}-${p.name}`).join(",");
   const rolesHash = Array.isArray(activeRoles) && activeRoles.length > 0 ? activeRoles.join(",") : "";
@@ -417,8 +444,9 @@ export async function getOrGenerateSearchDirective(
     `${spHash}__roles:${rolesHash}`,
   );
 
-  if (!forceRefresh && inMemoryCachedDirective && inMemoryCachedDirective.cacheKey === cacheKey) {
-    return inMemoryCachedDirective;
+  const cachedDirective = inMemoryCachedDirectiveMap.get(accountId);
+  if (!forceRefresh && cachedDirective && cachedDirective.cacheKey === cacheKey) {
+    return cachedDirective;
   }
 
   // Load configured AI integrations
@@ -509,7 +537,7 @@ Output MUST be a single JSON object strictly matching this schema:
           },
         });
         if (parsed.success) {
-          inMemoryCachedDirective = parsed.data;
+          inMemoryCachedDirectiveMap.set(accountId, parsed.data);
           return parsed.data;
         }
       }
@@ -541,7 +569,7 @@ Output MUST be a single JSON object strictly matching this schema:
           },
         });
         if (parsed.success) {
-          inMemoryCachedDirective = parsed.data;
+          inMemoryCachedDirectiveMap.set(accountId, parsed.data);
           return parsed.data;
         }
       }
@@ -573,7 +601,7 @@ Output MUST be a single JSON object strictly matching this schema:
           },
         });
         if (parsed.success) {
-          inMemoryCachedDirective = parsed.data;
+          inMemoryCachedDirectiveMap.set(accountId, parsed.data);
           return parsed.data;
         }
       }
@@ -591,6 +619,14 @@ Output MUST be a single JSON object strictly matching this schema:
     cvDossier.loaded,
     activeRoles,
   );
-  inMemoryCachedDirective = deterministic;
+  inMemoryCachedDirectiveMap.set(accountId, deterministic);
   return deterministic;
+}
+
+export function invalidateSearchDirective(accountId?: string): void {
+  if (accountId) {
+    inMemoryCachedDirectiveMap.delete(accountId);
+  } else {
+    inMemoryCachedDirectiveMap.clear();
+  }
 }

@@ -3,7 +3,7 @@ import { existsSync } from "node:fs";
 import { readFile, writeFile, mkdir } from "node:fs/promises";
 import path from "node:path";
 import { db, cvsTable, type CvRecord } from "@workspace/db";
-import { eq } from "drizzle-orm";
+import { and, desc, eq } from "drizzle-orm";
 import { extractCvText } from "./cv-text-extraction";
 
 export interface MasterCvDossier {
@@ -64,12 +64,38 @@ export function findCvFilePath(storageName: string): string | null {
  * Retrieves the active master CV, verifies disk file or cloud DB presence,
  * extracts text, and computes a cryptographic SHA-256 fingerprint.
  */
-export async function getVerifiedMasterCv(): Promise<MasterCvDossier> {
-  const [masterCv] = await db
-    .select()
-    .from(cvsTable)
-    .where(eq(cvsTable.isMaster, true))
-    .limit(1);
+export async function getVerifiedMasterCv(accountId?: string): Promise<MasterCvDossier> {
+  let masterCv: CvRecord | undefined;
+
+  if (accountId) {
+    const [found] = await db
+      .select()
+      .from(cvsTable)
+      .where(and(eq(cvsTable.accountId, accountId), eq(cvsTable.isMaster, true)))
+      .limit(1);
+    masterCv = found;
+
+    // If no explicit master, fall back to latest CV for this user
+    if (!masterCv) {
+      const [latest] = await db
+        .select()
+        .from(cvsTable)
+        .where(eq(cvsTable.accountId, accountId))
+        .orderBy(desc(cvsTable.uploadedAt))
+        .limit(1);
+      masterCv = latest;
+    }
+  }
+
+  // Fallback for single-tenant local workspace if accountId not provided or not found
+  if (!masterCv && (!accountId || accountId === "local" || accountId === "primary")) {
+    const [legacy] = await db
+      .select()
+      .from(cvsTable)
+      .where(eq(cvsTable.isMaster, true))
+      .limit(1);
+    masterCv = legacy;
+  }
 
   if (!masterCv) {
     return {

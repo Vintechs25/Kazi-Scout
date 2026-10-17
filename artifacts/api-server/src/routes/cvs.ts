@@ -3,7 +3,7 @@ import { mkdir, readFile, unlink } from "node:fs/promises";
 import path from "node:path";
 import multer from "multer";
 import { Router, type IRouter } from "express";
-import { desc, eq, inArray } from "drizzle-orm";
+import { and, desc, eq, inArray, isNull, or } from "drizzle-orm";
 import {
   DeleteCvParams,
   ListCvsResponse,
@@ -34,10 +34,17 @@ import {
   yearsFrom,
   type AiProvider,
 } from "../lib/provider-services";
+import { getAuthenticatedAccountId } from "../lib/auth";
+import { invalidateCandidateEvidence } from "../lib/candidate-evidence";
+import { invalidateSearchDirective } from "../lib/search-directive";
 
 import fs from "node:fs";
 
 const router: IRouter = Router();
+
+function getAccountId(req: any, res: any): string {
+  return res?.locals?.accountId || getAuthenticatedAccountId(req) || "local";
+}
 
 function getStorageDir(): string {
   const custom = process.env.CV_STORAGE_PATH ?? (process.env.VERCEL ? "/tmp/cvs" : "storage/cvs");
@@ -80,8 +87,13 @@ const upload = multer({
   },
 });
 
-router.get("/cvs", async (_req, res): Promise<void> => {
-  const records = await db.select().from(cvsTable).orderBy(desc(cvsTable.uploadedAt));
+router.get("/cvs", async (req, res): Promise<void> => {
+  const accountId = getAccountId(req, res);
+  const condition = accountId === "local"
+    ? or(eq(cvsTable.accountId, "local"), isNull(cvsTable.accountId))
+    : eq(cvsTable.accountId, accountId);
+
+  const records = await db.select().from(cvsTable).where(condition).orderBy(desc(cvsTable.uploadedAt));
   res.json(
     records.map((record) => ({
       id: record.id,
@@ -97,9 +109,14 @@ router.get("/cvs", async (_req, res): Promise<void> => {
 });
 
 router.get("/cvs/:id/file", async (req, res): Promise<void> => {
+  const accountId = getAccountId(req, res);
   const { id } = req.params;
   const [record] = await db.select().from(cvsTable).where(eq(cvsTable.id, id)).limit(1);
   if (!record) {
+    res.status(404).json({ error: "Document not found" });
+    return;
+  }
+  if (record.accountId && accountId !== "local" && record.accountId !== accountId) {
     res.status(404).json({ error: "Document not found" });
     return;
   }
@@ -124,6 +141,7 @@ router.get("/cvs/:id/file", async (req, res): Promise<void> => {
 });
 
 router.put("/cvs/:id", async (req, res): Promise<void> => {
+  const accountId = getAccountId(req, res);
   const { id } = req.params;
   const { category, title, isMaster } = req.body;
 
@@ -132,22 +150,32 @@ router.put("/cvs/:id", async (req, res): Promise<void> => {
     res.status(404).json({ error: "Document not found" });
     return;
   }
+  if (existing.accountId && accountId !== "local" && existing.accountId !== accountId) {
+    res.status(404).json({ error: "Document not found" });
+    return;
+  }
 
   const updates: any = {};
   if (category !== undefined) updates.category = category;
   if (title !== undefined) updates.title = title;
   if (isMaster === true) {
-    await db.update(cvsTable).set({ isMaster: false });
+    const unmasterCondition = accountId === "local"
+      ? or(eq(cvsTable.accountId, "local"), isNull(cvsTable.accountId))
+      : eq(cvsTable.accountId, accountId);
+    await db.update(cvsTable).set({ isMaster: false }).where(unmasterCondition);
     updates.isMaster = true;
   } else if (isMaster === false) {
     updates.isMaster = false;
   }
 
   await db.update(cvsTable).set(updates).where(eq(cvsTable.id, id));
+  invalidateCandidateEvidence(accountId);
+  invalidateSearchDirective(accountId);
   res.json({ success: true, message: "Document updated." });
 });
 
 router.post("/cvs", upload.single("file"), async (req, res): Promise<void> => {
+  const accountId = getAccountId(req, res);
   const file = req.file;
   if (!file) {
     res.status(400).json({ error: "Choose a PDF, DOCX, or Image file to upload." });
@@ -158,15 +186,19 @@ router.post("/cvs", upload.single("file"), async (req, res): Promise<void> => {
   const category = req.body?.category || (ext === ".jpg" || ext === ".png" ? "national_id" : "cv");
   const title = req.body?.title || path.basename(file.originalname, ext);
 
+  const masterCondition = accountId === "local"
+    ? or(eq(cvsTable.accountId, "local"), isNull(cvsTable.accountId))
+    : eq(cvsTable.accountId, accountId);
+
   const [existingMaster] = await db
     .select({ id: cvsTable.id })
     .from(cvsTable)
-    .where(eq(cvsTable.isMaster, true))
+    .where(and(masterCondition, eq(cvsTable.isMaster, true)))
     .limit(1);
   const requestedMaster = req.body?.isMaster === "true" || req.body?.isMaster === "1";
   const isMaster = category === "cv" && (requestedMaster || !existingMaster);
   if (isMaster) {
-    await db.update(cvsTable).set({ isMaster: false });
+    await db.update(cvsTable).set({ isMaster: false }).where(masterCondition);
   }
 
   const safeName = path
@@ -196,6 +228,7 @@ router.post("/cvs", upload.single("file"), async (req, res): Promise<void> => {
     .insert(cvsTable)
     .values({
       id: randomUUID(),
+      accountId,
       fileName: safeName,
       storageName: path.basename(file.filename),
       fileType: fileType as any,
@@ -208,6 +241,27 @@ router.post("/cvs", upload.single("file"), async (req, res): Promise<void> => {
       uploadedAt: new Date(),
     })
     .returning();
+
+  // If this is a CV and has extracted text, auto-sync profile & roles immediately so discovery works right away
+  if (category === "cv" && extractedText && extractedText.trim().length >= 20) {
+    try {
+      const rawDraft = parseCvLocally(extractedText);
+      const sanitizedDraft = sanitizeProfileDraft(rawDraft);
+      await syncParsedProfileToWorkspace(
+        sanitizedDraft,
+        record,
+        "deterministic",
+        "local-rules",
+        "local-rules",
+        accountId,
+      );
+    } catch (autoParseErr) {
+      req.log?.warn?.({ autoParseErr }, "Immediate auto-parse after upload deferred to manual parse");
+    }
+  }
+
+  invalidateCandidateEvidence(accountId);
+  invalidateSearchDirective(accountId);
 
   res.status(201).json({
     id: record.id,
@@ -222,6 +276,7 @@ router.post("/cvs", upload.single("file"), async (req, res): Promise<void> => {
 });
 
 router.delete("/cvs/:id", async (req, res): Promise<void> => {
+  const accountId = getAccountId(req, res);
   const params = DeleteCvParams.safeParse(req.params);
   if (!params.success) {
     res.status(400).json({ error: params.error.message });
@@ -233,6 +288,10 @@ router.delete("/cvs/:id", async (req, res): Promise<void> => {
     .where(eq(cvsTable.id, params.data.id))
     .limit(1);
   if (!record) {
+    res.status(404).json({ error: "CV not found." });
+    return;
+  }
+  if (record.accountId && accountId !== "local" && record.accountId !== accountId) {
     res.status(404).json({ error: "CV not found." });
     return;
   }
@@ -250,10 +309,13 @@ router.delete("/cvs/:id", async (req, res): Promise<void> => {
     });
   }
   await db.delete(cvsTable).where(eq(cvsTable.id, record.id));
+  invalidateCandidateEvidence(accountId);
+  invalidateSearchDirective(accountId);
   res.status(204).end();
 });
 
 router.post("/cvs/bulk", async (req, res): Promise<void> => {
+  const accountId = getAccountId(req, res);
   const { action, cvIds, category } = req.body || {};
   if (!Array.isArray(cvIds) || cvIds.length === 0) {
     res.status(400).json({ error: "cvIds array is required" });
@@ -266,17 +328,26 @@ router.post("/cvs/bulk", async (req, res): Promise<void> => {
     return;
   }
 
+  const scopeCondition = accountId === "local"
+    ? and(inArray(cvsTable.id, validIds), or(eq(cvsTable.accountId, "local"), isNull(cvsTable.accountId)))
+    : and(inArray(cvsTable.id, validIds), eq(cvsTable.accountId, accountId));
+
   try {
     if (action === "delete") {
-      const records = await db.select().from(cvsTable).where(inArray(cvsTable.id, validIds));
+      const records = await db.select().from(cvsTable).where(scopeCondition);
       for (const record of records) {
         const filePath = path.resolve(storageDir, record.storageName);
         if (filePath.startsWith(`${storageDir}${path.sep}`)) {
           await unlink(filePath).catch(() => {});
         }
       }
-      await db.delete(cvsTable).where(inArray(cvsTable.id, validIds));
-      res.json({ success: true, count: validIds.length, action: "delete" });
+      const matchingIds = records.map((r) => r.id);
+      if (matchingIds.length > 0) {
+        await db.delete(cvsTable).where(inArray(cvsTable.id, matchingIds));
+      }
+      invalidateCandidateEvidence(accountId);
+      invalidateSearchDirective(accountId);
+      res.json({ success: true, count: matchingIds.length, action: "delete" });
     } else if (action === "category") {
       const validCategories = ["cv", "cover_letter", "certificate", "recommendation", "portfolio", "other"];
       if (!category || !validCategories.includes(category)) {
@@ -285,7 +356,7 @@ router.post("/cvs/bulk", async (req, res): Promise<void> => {
       }
       await db.update(cvsTable)
         .set({ category: category as any })
-        .where(inArray(cvsTable.id, validIds));
+        .where(scopeCondition);
       res.json({ success: true, count: validIds.length, action: "category", category });
     } else {
       res.status(400).json({ error: "Invalid action. Supported: delete, category" });
@@ -355,10 +426,12 @@ export async function syncParsedProfileToWorkspace(
   method: "ai" | "deterministic" | "hybrid",
   provider?: string | null,
   model?: string | null,
+  accountId?: string,
 ) {
+  const targetAccountId = accountId || "local";
   const updatedAt = new Date();
   const profileToSave = {
-    id: "primary",
+    id: targetAccountId,
     fullName: cleanCandidateName(draft.fullName || ""),
     email: draft.email || "",
     phone: draft.phone || "",
@@ -381,7 +454,7 @@ export async function syncParsedProfileToWorkspace(
     updatedAt,
   };
 
-  // 1. Update Candidate Profile
+  // 1. Update Candidate Profile for this account
   await db
     .insert(candidateProfilesTable)
     .values(profileToSave)
@@ -389,6 +462,18 @@ export async function syncParsedProfileToWorkspace(
       target: candidateProfilesTable.id,
       set: profileToSave,
     });
+
+  // Backward compatibility: If targetAccountId is "local", also update "primary"
+  if (targetAccountId === "local") {
+    await db
+      .insert(candidateProfilesTable)
+      .values({ ...profileToSave, id: "primary" })
+      .onConflictDoUpdate({
+        target: candidateProfilesTable.id,
+        set: { ...profileToSave, id: "primary" },
+      })
+      .catch(() => {});
+  }
 
   // 2. Update Enhanced CV Parsing Results
   try {
@@ -407,7 +492,7 @@ export async function syncParsedProfileToWorkspace(
       .values({
         id: randomUUID(),
         cvId: cv.id,
-        accountId: "primary",
+        accountId: targetAccountId,
         fingerprint: randomUUID(),
         parsingMethod: method,
         providerUsed: provider || "system",
@@ -434,42 +519,67 @@ export async function syncParsedProfileToWorkspace(
     console.warn("[CV Sync] cvParsingResultsTable sync:", err);
   }
 
-  // 3. Sync User Role Preferences (Clear stale biased defaults, insert candidate's actual roles)
+  // 3. Sync User Role Preferences (Clear stale roles for target account only)
   try {
     const roles = Array.isArray(draft.targetRoles) && draft.targetRoles.length > 0 ? draft.targetRoles : [];
     if (roles.length > 0) {
-      const syncAccounts = ["primary", "local"];
-      for (const accId of syncAccounts) {
-        await db
-          .delete(userRolePreferencesTable)
-          .where(eq(userRolePreferencesTable.accountId, accId));
+      await db
+        .delete(userRolePreferencesTable)
+        .where(eq(userRolePreferencesTable.accountId, targetAccountId));
 
+      for (let i = 0; i < roles.length; i++) {
+        const roleTitle = roles[i];
+        await db
+          .insert(userRolePreferencesTable)
+          .values({
+            id: randomUUID(),
+            accountId: targetAccountId,
+            roleTitle,
+            source: "cv",
+            enabled: i < 5,
+            priority: i < 2 ? "high" : i < 4 ? "medium" : "low",
+            weight: Math.max(100 - i * 15, 20),
+            searchQueries: [roleTitle, `${roleTitle} ${profileToSave.country || "Kenya"}`],
+            keywords: (draft.skills || []).slice(0, 5),
+            exclusionKeywords: [],
+            minSalary: draft.minimumSalary ?? null,
+            maxSalary: null,
+            locationPreferences: [profileToSave.country || "Kenya", "Remote"],
+            remoteOnly: false,
+            experienceLevel: (draft.yearsExperience || 0) >= 8 ? ["Senior", "Lead", "Consultant"] : ["Mid-Level", "Junior"],
+            industryPreferences: draft.industries || [],
+            companySize: [],
+            createdAt: updatedAt,
+            updatedAt,
+          })
+          .onConflictDoNothing();
+      }
+
+      if (targetAccountId === "local") {
+        await db.delete(userRolePreferencesTable).where(eq(userRolePreferencesTable.accountId, "primary"));
         for (let i = 0; i < roles.length; i++) {
           const roleTitle = roles[i];
-          await db
-            .insert(userRolePreferencesTable)
-            .values({
-              id: randomUUID(),
-              accountId: accId,
-              roleTitle,
-              source: "cv",
-              enabled: i < 5,
-              priority: i < 2 ? "high" : i < 4 ? "medium" : "low",
-              weight: Math.max(100 - i * 15, 20),
-              searchQueries: [roleTitle, `${roleTitle} ${profileToSave.country || "Kenya"}`],
-              keywords: (draft.skills || []).slice(0, 5),
-              exclusionKeywords: [],
-              minSalary: draft.minimumSalary ?? null,
-              maxSalary: null,
-              locationPreferences: [profileToSave.country || "Kenya", "Remote"],
-              remoteOnly: false,
-              experienceLevel: (draft.yearsExperience || 0) >= 8 ? ["Senior", "Lead", "Consultant"] : ["Mid-Level", "Junior"],
-              industryPreferences: draft.industries || [],
-              companySize: [],
-              createdAt: updatedAt,
-              updatedAt,
-            })
-            .onConflictDoNothing();
+          await db.insert(userRolePreferencesTable).values({
+            id: randomUUID(),
+            accountId: "primary",
+            roleTitle,
+            source: "cv",
+            enabled: i < 5,
+            priority: i < 2 ? "high" : i < 4 ? "medium" : "low",
+            weight: Math.max(100 - i * 15, 20),
+            searchQueries: [roleTitle, `${roleTitle} ${profileToSave.country || "Kenya"}`],
+            keywords: (draft.skills || []).slice(0, 5),
+            exclusionKeywords: [],
+            minSalary: draft.minimumSalary ?? null,
+            maxSalary: null,
+            locationPreferences: [profileToSave.country || "Kenya", "Remote"],
+            remoteOnly: false,
+            experienceLevel: (draft.yearsExperience || 0) >= 8 ? ["Senior", "Lead", "Consultant"] : ["Mid-Level", "Junior"],
+            industryPreferences: draft.industries || [],
+            companySize: [],
+            createdAt: updatedAt,
+            updatedAt,
+          }).onConflictDoNothing();
         }
       }
     }
@@ -506,6 +616,7 @@ export async function syncParsedProfileToWorkspace(
       .insert(searchProfilesTable)
       .values({
         id: randomUUID(),
+        accountId: targetAccountId,
         name: `${role}`,
         keywords,
         locations,
@@ -523,10 +634,15 @@ export async function syncParsedProfileToWorkspace(
   // 5. Activity log
   await db.insert(activityTable).values({
     id: randomUUID(),
+    accountId: targetAccountId,
     kind: "profile",
     message: `Parsed ${cv.fileName} (${method.toUpperCase()}). Profile and search rules auto-configured for ${profileToSave.fullName || "Candidate"}.`,
     createdAt: updatedAt,
   });
+
+  // Invalidate in-memory caches
+  invalidateCandidateEvidence(targetAccountId);
+  invalidateSearchDirective(targetAccountId);
 }
 
 function sanitizeProfileDraft(raw: unknown): Record<string, unknown> {
@@ -1115,6 +1231,7 @@ export function parseCvLocally(rawText: string): Record<string, unknown> {
 }
 
 router.post("/cvs/:id/parse", async (req, res): Promise<void> => {
+  const accountId = getAccountId(req, res);
   const params = ParseCvProfileParams.safeParse(req.params);
   const body = ParseCvProfileBody.safeParse(req.body);
   if (!params.success || !body.success) {
@@ -1132,6 +1249,10 @@ router.post("/cvs/:id/parse", async (req, res): Promise<void> => {
     .where(eq(cvsTable.id, params.data.id))
     .limit(1);
   if (!cv) {
+    res.status(404).json({ error: "CV not found." });
+    return;
+  }
+  if (cv.accountId && accountId !== "local" && cv.accountId !== accountId) {
     res.status(404).json({ error: "CV not found." });
     return;
   }
@@ -1291,6 +1412,7 @@ router.post("/cvs/:id/parse", async (req, res): Promise<void> => {
               "ai",
               successfulProvider,
               providerMap.get(successfulProvider as AiProvider)?.model,
+              accountId,
             );
           } catch (saveErr) {
             req.log.warn({ saveErr }, "Auto-saving vision-parsed profile failed");
@@ -1380,6 +1502,7 @@ router.post("/cvs/:id/parse", async (req, res): Promise<void> => {
       successfulProvider ? "ai" : "deterministic",
       successfulProvider,
       successfulProvider ? providerMap.get(successfulProvider as AiProvider)?.model : "local-rules",
+      accountId,
     );
   } catch (err) {
     req.log.warn({ err }, "Auto-saving candidate profile and search profiles failed");
