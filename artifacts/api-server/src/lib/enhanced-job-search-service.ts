@@ -623,6 +623,22 @@ export async function discoverJobsWithCvGuidance(
         }
       }
 
+      // Medical & Clinical role matching synonyms
+      const hasMedicalTarget = rolesToSearch.some(r => /surgeon|doctor|physician|clinical|medical|health/i.test(r));
+      if (hasMedicalTarget) {
+        if (/\b(surgeon|surgery|consultant\s+surgeon|general\s+surgeon)\b/i.test(titleLower)) {
+          roleMatchPct = Math.max(roleMatchPct, 95);
+        } else if (/\b(medical\s+officer|medical\s+doctor|physician|general\s+practitioner|senior\s+medical\s+officer)\b/i.test(titleLower)) {
+          roleMatchPct = Math.max(roleMatchPct, 92);
+        } else if (/\b(clinical\s+officer|clinical\s+specialist|medical\s+specialist|consultant\s+doctor|resident\s+doctor)\b/i.test(titleLower)) {
+          roleMatchPct = Math.max(roleMatchPct, 90);
+        } else if (/\b(doctor|physician|health\s+officer|locum\s+doctor|hospital\s+doctor)\b/i.test(titleLower)) {
+          roleMatchPct = Math.max(roleMatchPct, 85);
+        } else if (/\b(medical|clinical|healthcare|hospital)\b/i.test(titleLower) && /\b(doctor|officer|specialist|surgeon)\b/i.test(descLower)) {
+          roleMatchPct = Math.max(roleMatchPct, 80);
+        }
+      }
+
       // 2. Extract and match skills
       const jobSkills = extractSkillsFromText(
         `${job.title} ${job.description} ${job.company} ${job.location || ''}`
@@ -632,10 +648,15 @@ export async function discoverJobsWithCvGuidance(
         ...candidateEvidence.demonstratedTechnicalSkills,
         ...candidateEvidence.selfReportedSkills,
         ...(directive.requiredSkills || []),
+        ...(hasMedicalTarget ? [
+          "patient care", "clinical", "surgery", "diagnosis", "medicine",
+          "treatment", "emergency", "inpatient", "outpatient", "healthcare",
+          "hospital", "consultation", "medical officer"
+        ] : []),
       ];
 
       const matchedSkills = jobSkills.filter(skill => 
-        candidateSkills.some(cs => cs.toLowerCase() === skill.toLowerCase())
+        candidateSkills.some(cs => cs.toLowerCase() === skill.toLowerCase() || skill.toLowerCase().includes(cs.toLowerCase()) || cs.toLowerCase().includes(skill.toLowerCase()))
       );
       
       const skillMatchPct = jobSkills.length > 0
@@ -652,10 +673,10 @@ export async function discoverJobsWithCvGuidance(
       const cvMatchScore = Math.min(
         100,
         Math.max(
-          roleMatchPct > 0 ? 25 : 0,
+          roleMatchPct > 0 ? 30 : 0,
           Math.round(
             (roleMatchPct > 0 ? roleMatchPct : 0) * 0.6 +
-            skillMatchPct * 0.2 +
+            Math.max(skillMatchPct, roleMatchPct >= 85 ? 75 : 0) * 0.2 +
             (job.location?.toLowerCase().includes("kenya") ? 10 : 5) +
             (hasInstructions ? 10 : 5)
           )
@@ -668,7 +689,7 @@ export async function discoverJobsWithCvGuidance(
       let hardEligibilityFailure = false;
       let rejectionReason: string | null = null;
 
-      if (roleMatchPct >= 70 && cvMatchScore >= 75) {
+      if (roleMatchPct >= 70 && cvMatchScore >= 70) {
         status = "MATCHED";
         aiDecision = "STRONG_MATCH";
       } else if (roleMatchPct >= 50 && cvMatchScore >= 50) {

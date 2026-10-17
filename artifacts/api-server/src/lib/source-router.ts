@@ -127,7 +127,21 @@ export class SourceRouter {
     const excludedSourceIds = new Set(existingSelections.filter(s => s.mode === "EXCLUDED").map(s => s.sourceId));
 
     // 2. Fetch candidates: enabled, NOT isDefunct, READY/ACTIVE/DEGRADED, consecutiveFailures < 5, NOT SEARCH_ONLY
-    const allSources = await db.select().from(jobSourcesTable);
+    let allSources = await db.select().from(jobSourcesTable);
+    if (allSources.length === 0) {
+      try {
+        const { SourceService } = await import("./source-service");
+        await SourceService.initializeCatalog();
+        allSources = await db.select().from(jobSourcesTable);
+      } catch (seedErr) {
+        console.warn("[SourceRouter] Note initializing catalog:", seedErr);
+      }
+    }
+
+    const isSearchingHealth = (activeRoles || []).some(r =>
+      /\b(doctor|physician|surgeon|surgery|clinical|nurse|medical|health|hospital|pharma|dentist)\b/i.test(r)
+    );
+
     const candidates = allSources.filter(src => {
       if (pinnedSourceIds.has(src.id)) return true; // Pinned sources always pass candidate filter
       if (excludedSourceIds.has(src.id)) return false;
@@ -188,6 +202,26 @@ export class SourceRouter {
       // --- SCORING (0 to 100) ---
       let score = 0;
       const scoreReasons: string[] = [];
+
+      // Healthcare Priority Boost for medical profiles
+      if (isSearchingHealth) {
+        const isHealthBoard = 
+          src.category === "HEALTHCARE" ||
+          src.id.includes("corporate-staffing") ||
+          src.id.includes("corporatestaffing") ||
+          src.id.includes("myjobmag") ||
+          src.id.includes("brightermonday") ||
+          src.id.includes("jobwebkenya") ||
+          src.id.includes("career-point") ||
+          src.id.includes("careerpoint") ||
+          src.canonicalUrl.includes("medical") ||
+          src.canonicalUrl.includes("health");
+        
+        if (isHealthBoard) {
+          score += 35;
+          scoreReasons.push("Verified Kenyan healthcare portal match (+35)");
+        }
+      }
 
       // 1. Occupation match (+30 points)
       if (profile.occupations.length > 0 && srcOccupations.length > 0) {

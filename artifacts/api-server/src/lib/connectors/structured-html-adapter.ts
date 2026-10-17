@@ -63,6 +63,9 @@ export class StructuredHtmlAdapter implements IJobConnector {
     const isSearchingIt = (filter?.keywords || []).some(k =>
       /\b(it|ict|tech|software|developer|programmer|engineer|network|cloud|sysadmin|cyber)\b/i.test(k)
     );
+    const isSearchingHealth = (filter?.keywords || []).some(k =>
+      /\b(health|medical|doctor|surgeon|nurse|clinical|hospital|pharma|cpsb|county|physician|dentist|patholog|pediatric|anesthe|radiolog)\b/i.test(k)
+    );
     const keywords = filter?.keywords || [];
     const limit = filter?.limit ?? 40;
     const items: NormalizedListing[] = [];
@@ -91,13 +94,17 @@ export class StructuredHtmlAdapter implements IJobConnector {
     // ==========================================
     if (source.id.includes("brightermonday")) {
       const bmPages: string[] = [];
+      if (isSearchingHealth) {
+        bmPages.push("https://www.brightermonday.co.ke/jobs/medical-pharmaceutical");
+        bmPages.push("https://www.brightermonday.co.ke/jobs/medical-pharmaceutical/healthcare/nairobi");
+      }
       if (isSearchingIt) {
         bmPages.push("https://www.brightermonday.co.ke/jobs/software-data");
       }
       for (const k of keywords.slice(0, 3)) {
         bmPages.push(`https://www.brightermonday.co.ke/jobs?q=${encodeURIComponent(k)}`);
       }
-      bmPages.push(config.itVacancies || "https://www.brightermonday.co.ke/jobs/software-data");
+      if (config.itVacancies) bmPages.push(config.itVacancies);
       bmPages.push("https://www.brightermonday.co.ke/jobs");
 
       for (const pageUrl of Array.from(new Set(bmPages))) {
@@ -151,6 +158,13 @@ export class StructuredHtmlAdapter implements IJobConnector {
     // ==========================================
     if (source.id.includes("myjobmag")) {
       const mjmPages: string[] = [];
+      if (isSearchingHealth) {
+        mjmPages.push("https://www.myjobmag.co.ke/jobs-by-field/medical");
+        mjmPages.push("https://www.myjobmag.co.ke/jobs-by-field/pharmaceutical");
+        mjmPages.push("https://www.myjobmag.co.ke/search/jobs?q=surgeon");
+        mjmPages.push("https://www.myjobmag.co.ke/search/jobs?q=doctor");
+        mjmPages.push("https://www.myjobmag.co.ke/search/jobs?q=medical+officer");
+      }
       if (isSearchingIt) {
         mjmPages.push("https://www.myjobmag.co.ke/jobs-by-field/information-technology");
       }
@@ -219,11 +233,13 @@ export class StructuredHtmlAdapter implements IJobConnector {
         /\b(health|medical|doctor|surgeon|nurse|clinical|hospital|pharma|cpsb|county)\b/i.test(k)
       );
 
-      const cssPages: string[] = ["https://www.corporatestaffing.co.ke/jobs/"];
+      const cssPages: string[] = [];
       if (isSearchingHealth) {
         cssPages.push("https://www.corporatestaffing.co.ke/tag/medical-officer-jobs-in-kenya/");
         cssPages.push("https://www.corporatestaffing.co.ke/tag/healthcare-jobs-in-kenya/");
+        cssPages.push("https://www.corporatestaffing.co.ke/tag/nursing-jobs-in-kenya/");
       }
+      cssPages.push("https://www.corporatestaffing.co.ke/jobs/");
       if (isSearchingIt) {
         cssPages.push("https://www.corporatestaffing.co.ke/tag/it-jobs-in-kenya/");
       }

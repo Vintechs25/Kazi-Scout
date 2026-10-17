@@ -1161,6 +1161,14 @@ function Jobs() {
     return isAllActive(job);
   });
 
+  // Smart fallback: If user lands on 'strong' tab with 0 strong matches, but potential or active jobs exist,
+  // gracefully switch tab so the candidate sees their discovered opportunities immediately
+  useEffect(() => {
+    if (tab === 'strong' && strongCount === 0 && (potentialCount > 0 || allActiveCount > 0)) {
+      setTab(potentialCount > 0 ? 'potential' : 'all_active');
+    }
+  }, [strongCount, potentialCount, allActiveCount]);
+
   const toggleSelectAllJobs = () => {
     if (items.length > 0 && selectedJobIds.length === items.length) {
       setSelectedJobIds([]);
@@ -1338,7 +1346,54 @@ function Jobs() {
     <section className="panel">
       {jobsQ.isLoading ? <div className="panel-body"><Loading count={4}/></div> :
        jobsQ.isError ? <ErrorState error={jobsQ.error} retry={jobsQ.refetch}/> :
-       items.length === 0 ? <Empty title={search ? 'No saved jobs match' : tab === 'applied' ? 'No applications sent yet' : tab === 'strong' ? `No strong matches (≥${minScore}%) yet` : tab === 'potential' ? 'No potential matches' : tab === 'insufficient' ? 'No ambiguous listings' : tab === 'rejected' ? 'No disqualified jobs archived' : 'No active jobs discovered yet'} copy={search ? 'Try another search query.' : tab === 'applied' ? 'Dispatched applications will appear here marked as ✓ Applied.' : tab === 'strong' ? `Run live discovery or re-evaluate jobs. Only verified opportunities scoring ≥${minScore}% with an AI STRONG_MATCH decision appear here.` : tab === 'rejected' ? 'Jobs rejected by AI evaluation or pre-ingestion criteria will appear here.' : 'Run live search to fetch opportunities matching your CV and target roles.'} action={<div style={{ display: 'flex', gap: 8 }}><Button variant="primary" onClick={runLiveSearch} disabled={control.isPending}><RotateCw size={14}/>{control.isPending ? 'Searching…' : 'Discover live jobs now'}</Button><Button onClick={() => setAdding(true)}><Plus size={14}/>Add manually</Button></div>}/> :
+       items.length === 0 ? <Empty
+         title={
+           search ? 'No saved jobs match' :
+           tab === 'applied' ? 'No applications sent yet' :
+           tab === 'strong' ? (allActiveCount > 0 ? `No strong matches (≥${minScore}%) yet` : `No strong matches yet`) :
+           tab === 'potential' ? 'No potential matches' :
+           tab === 'insufficient' ? 'No ambiguous listings' :
+           tab === 'rejected' ? 'No disqualified jobs archived' :
+           'No active jobs discovered yet'
+         }
+         copy={
+           search ? 'Try another search query.' :
+           tab === 'applied' ? 'Dispatched applications will appear here marked as ✓ Applied.' :
+           tab === 'strong' ? (
+             (potentialCount > 0 || allActiveCount > 0)
+               ? `You have ${allActiveCount} active opportunities discovered (${potentialCount} in Potential Matches). Switch tabs or lower the floor to view and apply.`
+               : `Run live discovery or re-evaluate jobs. Only verified opportunities scoring ≥${minScore}% with an AI STRONG_MATCH decision appear here.`
+           ) :
+           tab === 'rejected' ? 'Jobs rejected by AI evaluation or pre-ingestion criteria will appear here.' :
+           'Run live search to fetch opportunities matching your CV and target roles.'
+         }
+         action={
+           tab === 'strong' && (potentialCount > 0 || allActiveCount > 0) ? (
+             <div style={{ display: 'flex', gap: 10, flexWrap: 'wrap', justifyContent: 'center' }}>
+               {potentialCount > 0 && (
+                 <Button variant="primary" onClick={() => setTab('potential')}>
+                   <Sparkles size={14}/>View {potentialCount} Potential Matches (50–79%)
+                 </Button>
+               )}
+               <Button onClick={() => setTab('all_active')}>
+                 View All {allActiveCount} Active Jobs
+               </Button>
+               <Button onClick={() => setMinScore(70)}>
+                 Set Strong Floor to 70%
+               </Button>
+             </div>
+           ) : (
+             <div style={{ display: 'flex', gap: 8 }}>
+               <Button variant="primary" onClick={runLiveSearch} disabled={control.isPending}>
+                 <RotateCw size={14}/>{control.isPending ? 'Searching…' : 'Discover live jobs now'}
+               </Button>
+               <Button onClick={() => setAdding(true)}>
+                 <Plus size={14}/>Add manually
+               </Button>
+             </div>
+           )
+         }
+       /> :
         <div className="table-wrap"><table className="data-table"><thead><tr><th style={{ width: 36, textAlign: 'center' }}><input type="checkbox" aria-label="Select all jobs" checked={items.length > 0 && selectedJobIds.length === items.length} onChange={toggleSelectAllJobs} style={{ accentColor: '#2563eb', cursor: 'pointer' }}/></th><th>Position</th><th>Location</th><th>{tab === 'rejected' ? 'Disqualification Reason' : 'AI Evaluation & Score'}</th><th>CV Skills</th><th>Saved</th><th>Status</th><th>Actions</th></tr></thead><tbody>{items.map(job => <tr key={job.id} data-testid={`row-job-${job.id}`} style={job.status === 'APPLIED' ? { background: 'rgba(34, 197, 94, 0.04)' } : job.status === 'REJECTED' ? { opacity: 0.85 } : {}}>
           <td style={{ width: 36, textAlign: 'center' }}>
             <input type="checkbox" aria-label={`Select ${job.title}`} checked={selectedJobIds.includes(job.id)} onChange={() => toggleSelectJob(job.id)} style={{ accentColor: '#2563eb', cursor: 'pointer' }}/>

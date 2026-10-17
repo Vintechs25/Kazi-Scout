@@ -232,6 +232,11 @@ export function evaluatePreIngestionGate(
       substantiveRoleWords.push("developer", "engineer", "software");
     }
 
+    // In healthcare: Surgeon <-> Doctor <-> Physician <-> Medical Officer synonym matching
+    if (isCandidateMedical) {
+      substantiveRoleWords.push("surgeon", "doctor", "physician", "clinical", "medical");
+    }
+
     const matchesSubstantiveTitle = substantiveRoleWords.some(w => {
       const cleanW = w.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
       return new RegExp(`\\b${cleanW}\\b`, "i").test(titleLower);

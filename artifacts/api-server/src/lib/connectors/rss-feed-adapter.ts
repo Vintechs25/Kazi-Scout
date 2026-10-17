@@ -123,8 +123,25 @@ export class RssFeedAdapter implements IJobConnector {
     const isSearchingIt = (filter?.keywords || []).some(k =>
       /\b(it|ict|tech|software|developer|programmer|engineer|network|cloud|sysadmin|cyber)\b/i.test(k)
     );
+    const isSearchingHealth = (filter?.keywords || []).some(k =>
+      /\b(health|medical|doctor|surgeon|nurse|clinical|hospital|pharma|cpsb|county|physician|dentist|patholog|pediatric|anesthe|radiolog)\b/i.test(k)
+    );
+
+    const healthFeeds: string[] = [];
+    if (isSearchingHealth) {
+      if (source.id.includes("careerpoint")) {
+        healthFeeds.push("https://www.careerpointkenya.co.ke/category/medical-jobs-in-kenya/feed/");
+      }
+      if (source.id.includes("jobwebkenya")) {
+        healthFeeds.push("https://jobwebkenya.com/feed/");
+      }
+      if (source.id.includes("myjobmag")) {
+        healthFeeds.push("https://www.myjobmag.co.ke/jobsxml.xml");
+      }
+    }
 
     const feedUrls: string[] = Array.from(new Set([
+      ...healthFeeds,
       config.feedUrl,
       (source as any).feedUrl,
       source.canonicalUrl.endsWith("/feed") || source.canonicalUrl.endsWith("/feed/") ? source.canonicalUrl : null,
