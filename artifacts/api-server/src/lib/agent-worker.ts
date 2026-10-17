@@ -301,7 +301,7 @@ export async function resumeAgent(): Promise<void> {
 /**
  * Run a manual job search and application cycle
  */
-export async function runManualCycle(): Promise<{
+export async function runManualCycle(accountId = "local"): Promise<{
   search: {
     discovered: number;
     duplicates: number;
@@ -314,10 +314,10 @@ export async function runManualCycle(): Promise<{
     errors: number;
   };
 }> {
-  console.log("[Agent] Running manual cycle...");
+  console.log(`[Agent] Running manual cycle for account: ${accountId}...`);
 
   // Run search
-  const searchResult = await discoverAndMatchJobs();
+  const searchResult = await discoverAndMatchJobs(75, accountId);
 
   // Run applications if auto-apply is enabled
   let applyResult = { applied: 0, skipped: 0, errors: 0 };
@@ -326,6 +326,7 @@ export async function runManualCycle(): Promise<{
       agentConfig.minMatchScore,
       agentConfig.maxApplicationsPerRun,
       agentConfig.applicationTemplate,
+      accountId,
     );
   }
 
@@ -372,6 +373,7 @@ export async function getAgentStatus() {
  */
 export async function handleAgentCommand(
   command: "start" | "pause" | "resume" | "stop" | "runNow",
+  accountId = "local",
 ): Promise<{ state: string; message: string; updatedAt: string }> {
   const updatedAt = new Date();
 
@@ -409,7 +411,7 @@ export async function handleAgentCommand(
       };
 
     case "runNow":
-      const result = await runManualCycle();
+      const result = await runManualCycle(accountId);
       return {
         state: "RUNNING",
         message: `Manual run: ${result.search.discovered} jobs discovered, ${result.apply.applied} applications sent.`,

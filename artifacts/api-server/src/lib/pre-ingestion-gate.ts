@@ -117,42 +117,119 @@ export function evaluatePreIngestionGate(
   }
 
   // 4. Role & Domain Relevance Gate
-  // Grounded in candidate's actual target role families, search queries, and skills
-  const rawKeywords = [
+  // Grounded in candidate's actual target role families and verified professional domain
+  const targetRoles = [
     ...(directive.targetRoleFamilies || []),
     ...(directive.alternativeJobTitles || []),
-    ...(directive.requiredSkills || []).slice(0, 30),
-    ...(directive.preferredSkills || []).slice(0, 30),
-    ...(directive.searchQueries || []).slice(0, 15),
-  ].map(k => k.toLowerCase().trim()).filter(Boolean);
+  ].map(r => r.toLowerCase().trim()).filter(Boolean);
 
-  if (rawKeywords.length > 0) {
+  // Incompatible Domain Definitions
+  const DOMAIN_PATTERNS = {
+    LEGAL: /\b(legal\s+counsel|attorney|lawyer|paralegal|solicitor|litigation|corporate\s+counsel|general\s+counsel|legal\s+advisor)\b/i,
+    LINGUISTICS: /\b(linguist|translator|translation|interpreter|language\s+specialist|transcriptionist|life\s+sciences\s+linguist)\b/i,
+    HEALTHCARE: /\b(doctor|physician|surgeon|surgery|clinical|nurse|dentist|pharmacist|medical\s+officer|pathologist|pediatrician|cadence\/hello\s+world\/mychart)\b/i,
+    FINANCE_ACCOUNTS: /\b(accountant|accounting|auditor|financial\s+analyst|tax\s+(?:specialist|manager)|controller|bookkeeper|cpa)\b/i,
+    MARKETING_SALES: /\b(b2b\s+marketing|demand\s+generation|sales\s+&\s+cx|sales\s+enablement|marketing\s+operations|crm\s+expert|copywriter|growth\s+marketing|marketing\s+manager)\b/i,
+    ACADEMIC_LIFE_SCIENCES: /\b(post-doctoral|postdoc|post-doc|doctoral\s+research\s+scientist|laboratory\s+scientist)\b/i,
+    PROPOSAL_ADMIN: /\b(proposal\s+writer|grant\s+writer|bid\s+manager)\b/i,
+    CUSTOMER_SUCCESS: /\b(customer\s+success\s+manager|csm\s+ii|cx\s+enablement)\b/i,
+    TECH_IT: /\b(developer|software|engineer|frontend|backend|fullstack|devops|react|python|node|javascript|typescript|sysadmin|ict|it\s+support|technical\s+support|system\s+administrator|web|cloud|database|cyber|qa\b|tester|linux|security\s+researcher|edge\s+functions|data\s+annotator|data\s+engineer|mobile\s+engineer|android|ios)\b/i,
+  };
+
+  if (targetRoles.length > 0) {
     const titleLower = title.toLowerCase();
-    
-    // Substantive words extracted from target roles & skills
-    const substantiveWords: string[] = [];
-    for (const kw of rawKeywords) {
-      for (const w of kw.split(/[^a-z0-9]+/)) {
-        if (w.length >= 4 && !["with", "from", "that", "this", "have", "been", "only", "also", "role", "work", "jobs"].includes(w)) {
-          substantiveWords.push(w);
+    const candidateRolesBlob = targetRoles.join(" ");
+
+    const isCandidateTech = DOMAIN_PATTERNS.TECH_IT.test(candidateRolesBlob);
+    const isCandidateMedical = DOMAIN_PATTERNS.HEALTHCARE.test(candidateRolesBlob);
+    const isCandidateFinance = DOMAIN_PATTERNS.FINANCE_ACCOUNTS.test(candidateRolesBlob);
+    const isCandidateLegal = DOMAIN_PATTERNS.LEGAL.test(candidateRolesBlob);
+    const isCandidateMarketing = DOMAIN_PATTERNS.MARKETING_SALES.test(candidateRolesBlob);
+
+    // Cross-Domain Hard Incompatibility Checks
+    if (isCandidateTech) {
+      if (
+        DOMAIN_PATTERNS.LEGAL.test(titleLower) ||
+        DOMAIN_PATTERNS.LINGUISTICS.test(titleLower) ||
+        DOMAIN_PATTERNS.HEALTHCARE.test(titleLower) ||
+        DOMAIN_PATTERNS.ACADEMIC_LIFE_SCIENCES.test(titleLower) ||
+        DOMAIN_PATTERNS.PROPOSAL_ADMIN.test(titleLower) ||
+        DOMAIN_PATTERNS.FINANCE_ACCOUNTS.test(titleLower) ||
+        (DOMAIN_PATTERNS.MARKETING_SALES.test(titleLower) && !DOMAIN_PATTERNS.TECH_IT.test(titleLower)) ||
+        (DOMAIN_PATTERNS.CUSTOMER_SUCCESS.test(titleLower) && !DOMAIN_PATTERNS.TECH_IT.test(titleLower))
+      ) {
+        return {
+          qualified: false,
+          isExpired: false,
+          rejectionReason: `Cross-domain mismatch: Position (${title}) is outside candidate's target technical domain`,
+        };
+      }
+    }
+
+    if (isCandidateMedical) {
+      if (
+        DOMAIN_PATTERNS.TECH_IT.test(titleLower) ||
+        DOMAIN_PATTERNS.LEGAL.test(titleLower) ||
+        DOMAIN_PATTERNS.FINANCE_ACCOUNTS.test(titleLower) ||
+        DOMAIN_PATTERNS.MARKETING_SALES.test(titleLower)
+      ) {
+        return {
+          qualified: false,
+          isExpired: false,
+          rejectionReason: `Cross-domain mismatch: Position (${title}) is outside candidate's target clinical/medical domain`,
+        };
+      }
+    }
+
+    if (isCandidateFinance) {
+      if (
+        DOMAIN_PATTERNS.HEALTHCARE.test(titleLower) ||
+        DOMAIN_PATTERNS.TECH_IT.test(titleLower) ||
+        DOMAIN_PATTERNS.LEGAL.test(titleLower)
+      ) {
+        return {
+          qualified: false,
+          isExpired: false,
+          rejectionReason: `Cross-domain mismatch: Position (${title}) is outside candidate's target finance/accounting domain`,
+        };
+      }
+    }
+
+    // Role Match: Check title against candidate's target roles and substantive role tokens
+    const directTitleMatch = targetRoles.some(r => {
+      const cleanR = r.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+      return new RegExp(`\\b${cleanR}\\b`, "i").test(titleLower) || titleLower.includes(r);
+    });
+
+    // Substantive words extracted from candidate target roles
+    const substantiveRoleWords: string[] = [];
+    const stopWords = new Set(["with", "from", "that", "this", "have", "been", "only", "also", "role", "work", "jobs", "specialist", "officer", "associate", "level", "senior", "junior", "lead", "general", "intern"]);
+    for (const r of targetRoles) {
+      for (const w of r.split(/[^a-z0-9]+/)) {
+        if (w.length >= 4 && !stopWords.has(w)) {
+          substantiveRoleWords.push(w);
         }
       }
     }
 
-    // Direct match against full keyword phrases
-    const matchesPhrase = rawKeywords.some(kw => {
-      if (kw.length < 3) return false;
-      const cleanKw = kw.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
-      return new RegExp(`\\b${cleanKw}\\b`, "i").test(titleLower) || fullText.includes(kw);
-    });
+    // In tech: Developer <-> Engineer synonym matching
+    if (isCandidateTech) {
+      substantiveRoleWords.push("developer", "engineer", "software");
+    }
 
-    // Match against substantive role keywords in title
-    const matchesSubstantiveTitle = substantiveWords.some(w => {
+    const matchesSubstantiveTitle = substantiveRoleWords.some(w => {
       const cleanW = w.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
       return new RegExp(`\\b${cleanW}\\b`, "i").test(titleLower);
     });
 
-    if (!matchesPhrase && !matchesSubstantiveTitle) {
+    // In description: Only match if substantive role tokens appear in core context, not random boilerplate
+    const matchesTargetSkillsInDesc = (directive.requiredSkills || []).filter(s => {
+      if (s.length < 3 || stopWords.has(s.toLowerCase())) return false;
+      const cleanS = s.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+      return new RegExp(`\\b${cleanS}\\b`, "i").test(desc);
+    }).length >= 2;
+
+    if (!directTitleMatch && !matchesSubstantiveTitle && !matchesTargetSkillsInDesc) {
       return {
         qualified: false,
         isExpired: false,

@@ -633,14 +633,9 @@ router.post("/jobs/re-evaluate", async (req, res): Promise<void> => {
       return;
     }
     const cvDossier = await getVerifiedMasterCv(accountId);
-    if (!cvDossier.loaded || !cvDossier.cvRecord) {
-      res.status(400).json({
-        error: `Master CV verification failed: ${cvDossier.error || "Cannot load master CV file"}. Re-evaluation aborted.`,
-      });
-      return;
-    }
     const evidence = await getOrGenerateCandidateEvidence(accountId);
     const directive = await getOrGenerateSearchDirective(accountId);
+    const cvText = cvDossier.text || evidence.demonstratedTechnicalSkills.join(", ") || "";
     const jobAccountFilter = accountId === "local"
       ? or(eq(jobsTable.accountId, "local"), isNull(jobsTable.accountId))
       : eq(jobsTable.accountId, accountId);
@@ -685,7 +680,7 @@ router.post("/jobs/re-evaluate", async (req, res): Promise<void> => {
     const aiResults = await batchEvaluateQualifiedJobs(
       candidatesForAi,
       evidence,
-      cvDossier.text,
+      cvText,
       3,
     );
 

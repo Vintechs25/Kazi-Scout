@@ -612,6 +612,17 @@ export async function discoverJobsWithCvGuidance(
         }
       }
 
+      // Developer <-> Engineer synonym matching in technical fields
+      if (roleMatchPct < 70) {
+        const hasDevTarget = rolesToSearch.some(r => /developer|programmer|software/i.test(r));
+        const hasEngTarget = rolesToSearch.some(r => /engineer/i.test(r));
+        if (hasDevTarget && /engineer|architect/i.test(titleLower)) {
+          roleMatchPct = Math.max(roleMatchPct, 80);
+        } else if (hasEngTarget && /developer|programmer/i.test(titleLower)) {
+          roleMatchPct = Math.max(roleMatchPct, 80);
+        }
+      }
+
       // 2. Extract and match skills
       const jobSkills = extractSkillsFromText(
         `${job.title} ${job.description} ${job.company} ${job.location || ''}`
@@ -629,7 +640,7 @@ export async function discoverJobsWithCvGuidance(
       
       const skillMatchPct = jobSkills.length > 0
         ? Math.round((matchedSkills.length / Math.min(jobSkills.length, 5)) * 100)
-        : (roleMatchPct > 0 ? 80 : 50);
+        : (roleMatchPct > 0 ? 80 : 20);
 
       // 3. Combined Score: 60% role match + 20% skills + 10% location + 10% verified instructions
       const hasInstructions = Boolean(
@@ -641,15 +652,34 @@ export async function discoverJobsWithCvGuidance(
       const cvMatchScore = Math.min(
         100,
         Math.max(
-          50,
+          roleMatchPct > 0 ? 25 : 0,
           Math.round(
-            (roleMatchPct > 0 ? roleMatchPct : 70) * 0.6 +
+            (roleMatchPct > 0 ? roleMatchPct : 0) * 0.6 +
             skillMatchPct * 0.2 +
             (job.location?.toLowerCase().includes("kenya") ? 10 : 5) +
             (hasInstructions ? 10 : 5)
           )
         )
       );
+
+      // Strict AI Status Decision: Zero-role-match jobs are strictly REJECTED
+      let status: "MATCHED" | "NEEDS_REVIEW" | "REJECTED" = "REJECTED";
+      let aiDecision: "STRONG_MATCH" | "POTENTIAL_MATCH" | "NOT_A_MATCH" | "INELIGIBLE" = "NOT_A_MATCH";
+      let hardEligibilityFailure = false;
+      let rejectionReason: string | null = null;
+
+      if (roleMatchPct >= 70 && cvMatchScore >= 75) {
+        status = "MATCHED";
+        aiDecision = "STRONG_MATCH";
+      } else if (roleMatchPct >= 50 && cvMatchScore >= 50) {
+        status = "NEEDS_REVIEW";
+        aiDecision = "POTENTIAL_MATCH";
+      } else {
+        status = "REJECTED";
+        aiDecision = "NOT_A_MATCH";
+        hardEligibilityFailure = true;
+        rejectionReason = "Listing does not match candidate's approved target roles";
+      }
       
       const enrichedJob: Partial<EnrichedJob> & { matchScore?: number } = {
         ...job,
@@ -661,7 +691,6 @@ export async function discoverJobsWithCvGuidance(
       
       // Persist discovered job and its verification to database
       try {
-        const status = cvMatchScore >= 80 ? "MATCHED" : cvMatchScore >= 50 ? "NEEDS_REVIEW" : "DISCOVERED";
         const fp = fingerprintJob({
           company: job.company,
           title: job.title,
@@ -689,6 +718,9 @@ export async function discoverJobsWithCvGuidance(
             fingerprint: fp,
             matchScore: cvMatchScore,
             status: status as any,
+            aiDecision,
+            hardEligibilityFailure,
+            rejectionReason,
             matchedSkills,
             missingSkills: jobSkills.filter(s => !matchedSkills.includes(s)),
             isAiVerified: Boolean(job.isRequirementVerified),
@@ -698,6 +730,10 @@ export async function discoverJobsWithCvGuidance(
             target: [jobsTable.accountId, jobsTable.fingerprint],
             set: {
               matchScore: cvMatchScore,
+              status: status as any,
+              aiDecision,
+              hardEligibilityFailure,
+              rejectionReason,
               matchedSkills,
               missingSkills: jobSkills.filter(s => !matchedSkills.includes(s)),
               isAiVerified: Boolean(job.isRequirementVerified),
@@ -938,10 +974,10 @@ export async function matchJobToUserEnhanced(
   // Check hard eligibility
   const gateResult = evaluatePreIngestionGate(
     job,
-    await getOrGenerateSearchDirective()
+    await getOrGenerateSearchDirective(accountId)
   );
-  const hardEligibilityFailure = !gateResult.qualified;
-  const hardFailureReason = gateResult.rejectionReason || null;
+  const hardEligibilityFailure = !gateResult.qualified || roleMatchScore === 0;
+  const hardFailureReason = gateResult.rejectionReason || (roleMatchScore === 0 ? "Role does not match candidate's target career preferences" : null);
   
   // Verify requirements
   const requirementVerification = extractApplicationInstructions(job.description || '');
@@ -961,9 +997,9 @@ export async function matchJobToUserEnhanced(
   
   if (hardEligibilityFailure) {
     decision = "INELIGIBLE";
-  } else if (matchScore >= 80 && skillsMatchScore >= 60 && roleMatchScore >= 50) {
+  } else if (matchScore >= 80 && skillsMatchScore >= 50 && roleMatchScore >= 60) {
     decision = "STRONG_MATCH";
-  } else if (matchScore >= 50 && skillsMatchScore >= 30) {
+  } else if (matchScore >= 50 && roleMatchScore >= 50 && skillsMatchScore >= 20) {
     decision = "POTENTIAL_MATCH";
   }
   

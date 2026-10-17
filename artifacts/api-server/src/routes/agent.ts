@@ -9,7 +9,13 @@ import { db, systemStateTable } from "@workspace/db";
 import { handleAgentCommand, getAgentStatus } from "../lib/agent-worker";
 import { discoverAndMatchJobs } from "../lib/job-search-service";
 
+import { getAuthenticatedAccountId } from "../lib/auth";
+
 const router: IRouter = Router();
+
+function getAccountId(req: any, res: any): string {
+  return res?.locals?.accountId || getAuthenticatedAccountId(req) || "local";
+}
 
 router.get("/agent/status", async (_req, res): Promise<void> => {
   try {
@@ -32,9 +38,10 @@ router.get("/agent/status", async (_req, res): Promise<void> => {
   }
 });
 
-router.post("/agent/trigger-search", async (_req, res): Promise<void> => {
+router.post("/agent/trigger-search", async (req, res): Promise<void> => {
   try {
-    const result = await discoverAndMatchJobs();
+    const accountId = getAccountId(req, res);
+    const result = await discoverAndMatchJobs(75, accountId);
     res.json({
       success: true,
       result,
@@ -54,7 +61,8 @@ router.post("/agent/control", async (req, res): Promise<void> => {
   }
 
   try {
-    const result = await handleAgentCommand(parsed.data.command);
+    const accountId = getAccountId(req, res);
+    const result = await handleAgentCommand(parsed.data.command, accountId);
     res.json(
       ControlAgentResponse.parse({
         state: result.state,

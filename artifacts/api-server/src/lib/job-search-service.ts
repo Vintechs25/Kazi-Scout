@@ -1404,7 +1404,7 @@ export function decideJobMatch(
   const skillFit: number | null = uniqueRequired.length >= 2 ? matchedSkills.length / uniqueRequired.length : null;
 
   // Role Family Fit
-  let roleFit = 0.6;
+  let roleFit = 0.0;
   const targetRoles: string[] = profile.targetRoles || [];
   for (const target of targetRoles) {
     const t = target.toLowerCase().trim();
@@ -1418,8 +1418,30 @@ export function decideJobMatch(
       roleFit = 0.95;
       break;
     } else if (words.some((w) => jobTitleLower.includes(w))) {
-      roleFit = Math.max(roleFit, 0.8);
+      roleFit = Math.max(roleFit, 0.75);
     }
+  }
+
+  // Developer <-> Engineer synonym in technical disciplines
+  if (roleFit < 0.6) {
+    const hasDev = targetRoles.some(r => /developer|programmer|software/i.test(r));
+    const hasEng = targetRoles.some(r => /engineer/i.test(r));
+    if (hasDev && /engineer|architect/i.test(jobTitleLower)) {
+      roleFit = Math.max(roleFit, 0.75);
+    } else if (hasEng && /developer|programmer/i.test(jobTitleLower)) {
+      roleFit = Math.max(roleFit, 0.75);
+    }
+  }
+
+  if (targetRoles.length > 0 && roleFit === 0.0) {
+    return {
+      decision: "reject",
+      score: 15,
+      reason: "Does not match candidate's target roles",
+      level,
+      matchedSkills,
+      missingSkills,
+    };
   }
 
   // Region Fit (Priority for Kenya, followed by Worldwide Remote)
@@ -1442,9 +1464,9 @@ export function decideJobMatch(
 
   const finalScore = Math.max(10, Math.min(Math.round(score), 100));
   const decision: Decision =
-    finalScore >= 75 && skillFit !== null && skillFit >= 0.5
+    finalScore >= 75 && skillFit !== null && skillFit >= 0.4 && roleFit >= 0.7
       ? "match"
-      : finalScore >= 55
+      : finalScore >= 55 && roleFit >= 0.5
       ? "review"
       : "reject";
 
@@ -1466,13 +1488,17 @@ export function calculateMatchScore(job: NormalizedJob | JobRecord, profile: any
 export async function saveDiscoveredJobs(
   jobs: NormalizedJob[],
   directive?: SearchDirective,
+  accountId = "local",
 ): Promise<{
   saved: number;
   duplicates: number;
   updates: number;
   rejectedByGate: number;
 }> {
-  const activeDirective = directive || (await getOrGenerateSearchDirective());
+  const activeDirective = directive || (await getOrGenerateSearchDirective(accountId));
+  const accountCondition = accountId === "local"
+    ? or(eq(jobsTable.accountId, "local"), isNull(jobsTable.accountId))
+    : eq(jobsTable.accountId, accountId);
   let saved = 0;
   let duplicates = 0;
   let updates = 0;
@@ -1489,7 +1515,7 @@ export async function saveDiscoveredJobs(
     const [existingByFingerprint] = await db
       .select({ id: jobsTable.id })
       .from(jobsTable)
-      .where(eq(jobsTable.fingerprint, fingerprint))
+      .where(and(accountCondition, eq(jobsTable.fingerprint, fingerprint)))
       .limit(1);
 
     if (existingByFingerprint) {
@@ -1513,6 +1539,7 @@ export async function saveDiscoveredJobs(
         .from(jobsTable)
         .where(
           and(
+            accountCondition,
             eq(jobsTable.source, job.source),
             eq(jobsTable.externalJobId, job.externalJobId),
           ),
@@ -1550,6 +1577,7 @@ export async function saveDiscoveredJobs(
       const newJobId = crypto.randomUUID();
       await db.insert(jobsTable).values({
         id: newJobId,
+        accountId: accountId || "local",
         title: job.title,
         company: job.company,
         location: job.location,
@@ -1560,10 +1588,12 @@ export async function saveDiscoveredJobs(
         externalJobId: job.externalJobId,
         description: finalDescription,
         fingerprint,
-        matchScore: isQualified ? null : 0,
-        status: isQualified ? ("DISCOVERED" as const) : ("REJECTED" as const),
+        matchScore: isQualified ? ((job as any).matchScore ?? null) : 0,
+        status: isQualified ? ((job as any).status || ("DISCOVERED" as const)) : ("REJECTED" as const),
         rejectionReason: isQualified ? null : (gate.rejectionReason || "Disqualified by pre-ingestion gate"),
         matchReason: null,
+        aiDecision: isQualified ? ((job as any).aiDecision || null) : ("INELIGIBLE" as const),
+        hardEligibilityFailure: !isQualified,
         discoveredAt: job.discoveredAt || now,
         normalizedCompany: job.normalizedCompany,
         normalizedTitle: job.normalizedTitle,
