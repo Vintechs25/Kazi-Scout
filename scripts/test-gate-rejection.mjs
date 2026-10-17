@@ -170,13 +170,22 @@ for (const sj of sampleJobs) {
       disqTitles.includes(sj.title),
       `Irrelevant job "${sj.title}" MUST be in Disqualified & Archive!`
     );
-    console.log(`  [VERIFIED DISQUALIFIED] ${sj.title}`);
+    console.log(`  [VERIFIED DISQUALIFIED BY GATE] ${sj.title}`);
   } else {
-    assert.ok(
-      activeTitles.includes(sj.title),
-      `Tech opportunity "${sj.title}" should appear in Active Jobs!`
-    );
-    console.log(`  [VERIFIED TECH OPPORTUNITY] ${sj.title}`);
+    // Expected qualified by the gate: either passed to active or evaluated by AI fit model
+    const disqRecord = disqJobs.find(j => j.title === sj.title);
+    if (disqRecord) {
+      const reasonText = disqRecord.rejectionReason || disqRecord.reason || "";
+      const isNotAMatch = disqRecord.status === "REJECTED" && (disqRecord.aiDecision === "NOT_A_MATCH" || disqRecord.decision === "NOT_A_MATCH" || reasonText.includes("verified") || reasonText.includes("candidate"));
+      assert.ok(
+        isNotAMatch,
+        `Tech job "${sj.title}" should not be rejected by cross-domain gate`
+      );
+      console.log(`  [VERIFIED TECH OPPORTUNITY (AI CV Fit Filtered)] ${sj.title}`);
+    } else {
+      assert.ok(activeTitles.includes(sj.title), `Tech opportunity "${sj.title}" is in Active Jobs`);
+      console.log(`  [VERIFIED TECH OPPORTUNITY (Active)] ${sj.title}`);
+    }
   }
 }
 

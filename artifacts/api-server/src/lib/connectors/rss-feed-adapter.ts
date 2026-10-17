@@ -159,7 +159,18 @@ export class RssFeedAdapter implements IJobConnector {
 
     // If XML was parsed successfully
     if (rawItems.length > 0) {
-      return rawItems.slice(0, limit).map((item, idx) => {
+      let filteredRawItems = rawItems;
+
+      // Filter non-job articles for boards that mix blog posts and jobs in RSS
+      if (source.id.includes("jobwebkenya")) {
+        filteredRawItems = rawItems.filter(item => item.link && /\/jobs\/[a-zA-Z0-9_-]+/i.test(item.link));
+      } else if (source.id.includes("myjobmag")) {
+        filteredRawItems = rawItems.filter(item => item.link && !/\/(?:careers-at-|vacancies-at-|blog)/i.test(item.link));
+      } else if (source.id.includes("careerpoint")) {
+        filteredRawItems = rawItems.filter(item => item.link && !/\/(?:interview-tips|career-advice|sample-cover-letters)/i.test(item.link));
+      }
+
+      return filteredRawItems.slice(0, limit).map((item, idx) => {
         let title = item.title;
         let company = source.name;
 

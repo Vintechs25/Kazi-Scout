@@ -63,18 +63,154 @@ export class StructuredHtmlAdapter implements IJobConnector {
     const isSearchingIt = (filter?.keywords || []).some(k =>
       /\b(it|ict|tech|software|developer|programmer|engineer|network|cloud|sysadmin|cyber)\b/i.test(k)
     );
-
     const keywords = filter?.keywords || [];
+    const limit = filter?.limit ?? 40;
+    const items: NormalizedListing[] = [];
+    const seenUrls = new Set<string>();
+
+    const isGarbage = (text: string) => {
+      if (!text || text.length < 4 || text.length > 150) return true;
+      return /privacy|terms|cookie|login|sign in|register|forgot password|read more|view more|all rights reserved|click here|home|about us|contact us|apply now|post a job|create job|employer|job alert/i.test(text);
+    };
+
+    const isIndexOrNavigationUrl = (u: string) => {
+      if (!u) return true;
+      return /\/(?:jobs|job-vacancies|vacancies|all-jobs|search|browse|category|categories|field|location|industry|login|signup|register|page\/\d+|sitemap|feeds?)\/?$/i.test(u) ||
+        /\/(?:jobs-by-|jobs-location|vacancies-at-|careers-at-)/i.test(u);
+    };
+
+    // ==========================================
+    // 1. BrighterMonday Specialized Extractor
+    // Strictly extract /listings/{slug}-{id}
+    // ==========================================
+    if (source.id.includes("brightermonday")) {
+      const bmPages: string[] = [];
+      if (isSearchingIt) {
+        bmPages.push("https://www.brightermonday.co.ke/jobs/software-data");
+      }
+      for (const k of keywords.slice(0, 3)) {
+        bmPages.push(`https://www.brightermonday.co.ke/jobs?q=${encodeURIComponent(k)}`);
+      }
+      bmPages.push(config.itVacancies || "https://www.brightermonday.co.ke/jobs/software-data");
+      bmPages.push("https://www.brightermonday.co.ke/jobs");
+
+      for (const pageUrl of Array.from(new Set(bmPages))) {
+        if (items.length >= limit) break;
+        try {
+          const res = await secureFetch(pageUrl, { timeoutMs: 8000 });
+          if (!res.ok) continue;
+          const html = res.text;
+
+          // Card pattern with title attribute:
+          // <a href=".../listings/..." ... title="TITLE">
+          const cardRegex = /<a[^>]+href=["']((?:https?:\/\/(?:www\.)?brightermonday\.co\.ke)?\/listings\/[a-zA-Z0-9_-]+)["'][^>]*title=["']([^"']+)["'][^>]*>/gi;
+          for (const m of html.matchAll(cardRegex)) {
+            if (items.length >= limit) break;
+            let jobUrl = m[1];
+            if (!jobUrl.startsWith("http")) jobUrl = `https://www.brightermonday.co.ke${jobUrl.startsWith("/") ? "" : "/"}${jobUrl}`;
+            const rawTitle = cleanHtml(m[2]);
+            if (!jobUrl || seenUrls.has(jobUrl) || isGarbage(rawTitle)) continue;
+            seenUrls.add(jobUrl);
+
+            items.push({
+              id: `${source.id}-${Buffer.from(jobUrl).toString("base64").slice(0, 20)}`,
+              sourceId: source.id,
+              sourceName: source.name,
+              externalJobId: jobUrl,
+              title: rawTitle,
+              company: source.name,
+              location: "Nairobi, Kenya",
+              county: "Nairobi",
+              country: "Kenya",
+              remote: /remote/i.test(rawTitle),
+              salary: null,
+              description: `Verified listing on BrighterMonday Kenya: ${rawTitle}. Full requirements and direct application available on official portal.`,
+              url: jobUrl,
+              sourceUrl: jobUrl,
+              applicationUrl: jobUrl,
+              postedDate: new Date(),
+              jobType: "Full-time",
+              skills: [],
+            });
+          }
+        } catch {}
+      }
+
+      if (items.length > 0) return items;
+    }
+
+    // ==========================================
+    // 2. MyJobMag Specialized Extractor
+    // Strictly extract /job/{slug}
+    // ==========================================
+    if (source.id.includes("myjobmag")) {
+      const mjmPages: string[] = [];
+      if (isSearchingIt) {
+        mjmPages.push("https://www.myjobmag.co.ke/jobs-by-field/information-technology");
+      }
+      for (const k of keywords.slice(0, 3)) {
+        mjmPages.push(`https://www.myjobmag.co.ke/search/jobs?q=${encodeURIComponent(k)}`);
+      }
+      mjmPages.push("https://www.myjobmag.co.ke/jobs");
+
+      for (const pageUrl of Array.from(new Set(mjmPages))) {
+        if (items.length >= limit) break;
+        try {
+          const res = await secureFetch(pageUrl, { timeoutMs: 8000 });
+          if (!res.ok) continue;
+          const html = res.text;
+
+          // <h2><a href="(/job/[a-zA-Z0-9_-]+)">([\s\S]*?)</a></h2>
+          const h2Regex = /<h2>\s*<a[^>]+href=["'](\/job\/[a-zA-Z0-9_-]+)["'][^>]*>([\s\S]*?)<\/a>\s*<\/h2>/gi;
+          for (const m of html.matchAll(h2Regex)) {
+            if (items.length >= limit) break;
+            const jobUrl = `https://www.myjobmag.co.ke${m[1]}`;
+            const rawText = cleanHtml(m[2]);
+            if (!jobUrl || seenUrls.has(jobUrl) || isGarbage(rawText)) continue;
+            seenUrls.add(jobUrl);
+
+            let title = rawText;
+            let company = source.name;
+            if (rawText.includes(" at ")) {
+              const parts = rawText.split(" at ");
+              title = parts[0].trim();
+              company = parts.slice(1).join(" at ").trim();
+            }
+
+            items.push({
+              id: `${source.id}-${Buffer.from(jobUrl).toString("base64").slice(0, 20)}`,
+              sourceId: source.id,
+              sourceName: source.name,
+              externalJobId: jobUrl,
+              title,
+              company,
+              location: "Nairobi, Kenya",
+              county: "Nairobi",
+              country: "Kenya",
+              remote: /remote/i.test(title),
+              salary: null,
+              description: `Recruitment notice from ${company}: ${title}. Apply directly on MyJobMag official portal.`,
+              url: jobUrl,
+              sourceUrl: jobUrl,
+              applicationUrl: jobUrl,
+              postedDate: new Date(),
+              jobType: "Full-time",
+              skills: [],
+            });
+          }
+        } catch {}
+      }
+
+      if (items.length > 0) return items;
+    }
+
+    // ==========================================
+    // 3. Generic Portal & Public Board Extractor
+    // ==========================================
     const roleQueryUrls: string[] = [];
     if (keywords.length > 0) {
       for (const k of keywords.slice(0, 3)) {
-        if (source.id === "brightermonday") {
-          roleQueryUrls.push(`https://www.brightermonday.co.ke/jobs?q=${encodeURIComponent(k)}`);
-        } else if (source.id === "myjobmag") {
-          roleQueryUrls.push(`https://www.myjobmag.co.ke/search/jobs?q=${encodeURIComponent(k)}`);
-        } else if (source.id === "jobwebkenya") {
-          roleQueryUrls.push(`https://jobwebkenya.com/?s=${encodeURIComponent(k)}`);
-        } else if (source.id === "kenyajob") {
+        if (source.id.includes("kenyajob")) {
           roleQueryUrls.push(`https://www.kenyajob.com/job-vacancies-search-kenya?motcle=${encodeURIComponent(k)}`);
         }
       }
@@ -89,15 +225,6 @@ export class StructuredHtmlAdapter implements IJobConnector {
       source.canonicalUrl,
       ...(isSearchingIt ? [config.itVacancies, config.itFeed] : []),
     ].filter(Boolean) as string[]));
-
-    const items: NormalizedListing[] = [];
-    const limit = filter?.limit ?? 40;
-    const seenUrls = new Set<string>();
-
-    const isGarbage = (text: string) => {
-      if (!text || text.length < 4 || text.length > 150) return true;
-      return /privacy|terms|cookie|login|sign in|register|forgot password|read more|view more|all rights reserved|click here|home|about us|contact us|apply now|post a job|create job|employer/i.test(text);
-    };
 
     for (const targetUrl of candidateUrls) {
       if (items.length >= limit) break;
@@ -125,7 +252,7 @@ export class StructuredHtmlAdapter implements IJobConnector {
           if (items.length >= limit) break;
           const fullUrl = sanitizeUrl(match[1]);
           const rawTitle = cleanHtml(match[2]);
-          if (fullUrl && !seenUrls.has(fullUrl) && !isGarbage(rawTitle)) {
+          if (fullUrl && !seenUrls.has(fullUrl) && !isGarbage(rawTitle) && !isIndexOrNavigationUrl(fullUrl)) {
             seenUrls.add(fullUrl);
             let title = rawTitle;
             let company = source.name;
@@ -163,11 +290,11 @@ export class StructuredHtmlAdapter implements IJobConnector {
         }
 
         // Pattern 2: Listing card links: <a href=".../listings/...|.../job/..."><p|h3|span class="...">Title</p|h3|span></a>
-        const cardMatches = html.matchAll(/<a[^>]+href=["']([^"']*(?:\/listings\/|\/job\/|\/jobs\/|\/vacancy\/|\/vacancies\/|\/careers\/)[^"']+)["'][^>]*>([\s\S]*?)<\/a>/gi);
+        const cardMatches = html.matchAll(/<a[^>]+href=["']([^"']*(?:\/listings\/|\/job\/|\/vacancy\/|\/vacancies\/)[^"']+)["'][^>]*>([\s\S]*?)<\/a>/gi);
         for (const match of cardMatches) {
           if (items.length >= limit) break;
           const fullUrl = sanitizeUrl(match[1]);
-          if (!fullUrl || seenUrls.has(fullUrl)) continue;
+          if (!fullUrl || seenUrls.has(fullUrl) || isIndexOrNavigationUrl(fullUrl)) continue;
 
           const inner = match[2];
           const titleMatch = inner.match(/<(?:h[1-6]|p|span|div)[^>]*class=["'][^"']*(?:text-lg|text-xl|title|heading|job-title|font-medium|font-semibold)[^"']*["'][^>]*>([\s\S]*?)<\/(?:h[1-6]|p|span|div)>/i) ||
