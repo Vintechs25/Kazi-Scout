@@ -346,6 +346,104 @@ async function probeSource(source) {
     }
 
     // -------------------------------------------------------------
+    // Corporate Staffing Services
+    // -------------------------------------------------------------
+    if (source.id.includes("corporate-staffing") || source.id.includes("corporatestaffing")) {
+      const jobsUrl = "https://www.corporatestaffing.co.ke/jobs/";
+      console.log(`1. Testing Corporate Staffing portal: ${jobsUrl}`);
+      const r = await fetch(jobsUrl, { headers: HEADERS });
+      report.responseTimeMs = Date.now() - startTime;
+      report.statusCode = r.status;
+
+      if (r.ok) {
+        const html = await r.text();
+        const h2Regex = /<h2[^>]*class=["']entry-title["'][^>]*>\s*<a[^>]+href=["'](https?:\/\/(?:www\.)?corporatestaffing\.co\.ke\/(?:job|vacancy)\/[a-zA-Z0-9_-]+\/?)["'][^>]*>([\s\S]*?)<\/a>\s*<\/h2>/gi;
+        const matches = Array.from(html.matchAll(h2Regex));
+        console.log(`   -> Extracted ${matches.length} genuine vacancies from Corporate Staffing.`);
+
+        const seen = new Set();
+        for (const m of matches) {
+          const jobUrl = m[1];
+          const rawTitle = cleanHtml(m[2]);
+          if (seen.has(jobUrl) || !rawTitle) continue;
+          seen.add(jobUrl);
+
+          let title = rawTitle;
+          let company = "Corporate Staffing Services";
+          if (rawTitle.includes(" Job ")) {
+            const parts = rawTitle.split(" Job ");
+            title = parts[0].trim();
+            company = parts.slice(1).join(" Job ").trim();
+          } else if (rawTitle.includes(" at ")) {
+            const parts = rawTitle.split(" at ");
+            title = parts[0].trim();
+            company = parts.slice(1).join(" at ").trim();
+          }
+
+          report.sampleListings.push({ title, company, url: jobUrl });
+          report.verifiedJobUrls.push(jobUrl);
+          if (report.sampleListings.length >= 5) break;
+        }
+
+        // Test one detail page for JSON-LD JobPosting & Deadline
+        if (report.verifiedJobUrls.length > 0) {
+          const detailUrl = report.verifiedJobUrls[0];
+          console.log(`2. Testing detail page JSON-LD: ${detailUrl}`);
+          const rDet = await fetch(detailUrl, { headers: HEADERS });
+          if (rDet.ok) {
+            const dHtml = await rDet.text();
+            const jLd = dHtml.match(/<script[^>]*type=["']application\/ld\+json["'][^>]*>([\s\S]*?)<\/script>/i);
+            if (jLd) {
+              try {
+                const parsed = JSON.parse(jLd[1]);
+                const graph = parsed["@graph"] || [parsed];
+                const posting = graph.find(g => g["@type"] === "JobPosting");
+                if (posting) {
+                  console.log(`   -> Verified JobPosting: "${posting.title}" by ${posting.hiringOrganization?.name || "Corporate Staffing"}, Deadline: ${posting.validThrough || "N/A"}`);
+                  report.config.hasJsonLd = true;
+                }
+              } catch {}
+            }
+          }
+        }
+
+        report.detectedFormat = "STRUCTURED_HTML_WITH_JSON_LD";
+        report.status = "READY";
+        report.config = {
+          jobsUrl,
+          medicalTagUrl: "https://www.corporatestaffing.co.ke/tag/medical-officer-jobs-in-kenya/",
+          itTagUrl: "https://www.corporatestaffing.co.ke/tag/it-jobs-in-kenya/",
+          detailRegex: "^https?://[^/]+/(?:job|vacancy)/[a-zA-Z0-9_-]+/?$",
+          probedAt: new Date().toISOString(),
+          verifiedJobsAvailable: report.sampleListings.length,
+        };
+      }
+      return report;
+    }
+
+    // -------------------------------------------------------------
+    // ReliefWeb (Pre-approved Appname Check)
+    // -------------------------------------------------------------
+    if (source.id.includes("reliefweb")) {
+      const appName = process.env.RELIEFWEB_APP_NAME || null;
+      console.log(`1. Testing ReliefWeb appname configuration: ${appName ? `configured (${appName})` : "none"}`);
+      report.responseTimeMs = Date.now() - startTime;
+      report.statusCode = appName ? 200 : 401;
+
+      if (!appName) {
+        report.status = "AUTH_REQUIRED";
+        report.errorMessage = "PRE_APPROVED_APPNAME_REQUIRED_SINCE_NOV_2025";
+        report.config = {
+          requiresApprovedAppName: true,
+          appNameRequested: false,
+          authNote: "Per ReliefWeb policy since Nov 1, 2025, every call requires an approved appname. Register via reliefweb.int.",
+          probedAt: new Date().toISOString(),
+        };
+        return report;
+      }
+    }
+
+    // -------------------------------------------------------------
     // 6. Fuzu Kenya (Cloudflare check)
     // -------------------------------------------------------------
     if (source.id.includes("fuzu")) {
@@ -503,6 +601,16 @@ async function main() {
       id: "kenyajob",
       name: "Kenya Job",
       canonicalUrl: "https://www.kenyajob.com/job-vacancies-search-kenya",
+    },
+    {
+      id: "corporate-staffing-jobs",
+      name: "Corporate Staffing Services",
+      canonicalUrl: "https://www.corporatestaffing.co.ke/jobs/",
+    },
+    {
+      id: "reliefweb-jobs",
+      name: "ReliefWeb Jobs (Kenya)",
+      canonicalUrl: "https://reliefweb.int/jobs?country=131",
     },
     {
       id: "myjobsinkenya",

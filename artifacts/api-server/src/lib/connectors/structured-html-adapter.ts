@@ -73,9 +73,15 @@ export class StructuredHtmlAdapter implements IJobConnector {
       return /privacy|terms|cookie|login|sign in|register|forgot password|read more|view more|all rights reserved|click here|home|about us|contact us|apply now|post a job|create job|employer|job alert/i.test(text);
     };
 
+    const isClosedOrExpired = (text: string) => {
+      if (!text) return false;
+      return /\b(job\s+closed|application\s+closed|applications\s+closed|position\s+closed|no\s+longer\s+accepting\s+applications|deadline\s+has\s+passed|vacancy\s+closed|this\s+job\s+has\s+expired|status:\s*closed)\b/i.test(text) ||
+        /\b\[closed\]|\(closed\)|\b\[expired\]|\(expired\)/i.test(text);
+    };
+
     const isIndexOrNavigationUrl = (u: string) => {
       if (!u) return true;
-      return /\/(?:jobs|job-vacancies|vacancies|all-jobs|search|browse|category|categories|field|location|industry|login|signup|register|page\/\d+|sitemap|feeds?)\/?$/i.test(u) ||
+      return /\/(?:jobs|job-vacancies|vacancies|all-jobs|search|browse|category|categories|field|location|industry|login|signup|register|page\/\d+|sitemap|feeds?|tag|tags)\/?$/i.test(u) ||
         /\/(?:jobs-by-|jobs-location|vacancies-at-|careers-at-)/i.test(u);
     };
 
@@ -205,7 +211,83 @@ export class StructuredHtmlAdapter implements IJobConnector {
     }
 
     // ==========================================
-    // 3. Generic Portal & Public Board Extractor
+    // 3. Corporate Staffing Services Specialized Extractor
+    // Strictly extract /job/{slug}/ and /vacancy/{slug}/
+    // ==========================================
+    if (source.id.includes("corporatestaffing") || source.id.includes("corporate-staffing")) {
+      const isSearchingHealth = keywords.some(k =>
+        /\b(health|medical|doctor|surgeon|nurse|clinical|hospital|pharma|cpsb|county)\b/i.test(k)
+      );
+
+      const cssPages: string[] = ["https://www.corporatestaffing.co.ke/jobs/"];
+      if (isSearchingHealth) {
+        cssPages.push("https://www.corporatestaffing.co.ke/tag/medical-officer-jobs-in-kenya/");
+        cssPages.push("https://www.corporatestaffing.co.ke/tag/healthcare-jobs-in-kenya/");
+      }
+      if (isSearchingIt) {
+        cssPages.push("https://www.corporatestaffing.co.ke/tag/it-jobs-in-kenya/");
+      }
+      for (const k of keywords.slice(0, 3)) {
+        cssPages.push(`https://www.corporatestaffing.co.ke/?s=${encodeURIComponent(k)}`);
+      }
+
+      for (const pageUrl of Array.from(new Set(cssPages))) {
+        if (items.length >= limit) break;
+        try {
+          const res = await secureFetch(pageUrl, { timeoutMs: 8000 });
+          if (!res.ok) continue;
+          const html = res.text;
+
+          // Pattern: <h2 class="entry-title"><a href="(https?://[^"]+/(?:job|vacancy)/[a-zA-Z0-9_-]+/?)"[^>]*>([\s\S]*?)</a></h2>
+          const h2Regex = /<h2[^>]*class=["']entry-title["'][^>]*>\s*<a[^>]+href=["'](https?:\/\/(?:www\.)?corporatestaffing\.co\.ke\/(?:job|vacancy)\/[a-zA-Z0-9_-]+\/?)["'][^>]*>([\s\S]*?)<\/a>\s*<\/h2>/gi;
+          for (const m of html.matchAll(h2Regex)) {
+            if (items.length >= limit) break;
+            const jobUrl = m[1];
+            const rawTitle = cleanHtml(m[2]);
+            if (!jobUrl || seenUrls.has(jobUrl) || isGarbage(rawTitle) || isClosedOrExpired(rawTitle)) continue;
+            seenUrls.add(jobUrl);
+
+            let title = rawTitle;
+            let company = "Corporate Staffing Services";
+            if (rawTitle.includes(" Job ")) {
+              const parts = rawTitle.split(" Job ");
+              title = parts[0].trim();
+              company = parts.slice(1).join(" Job ").trim();
+            } else if (rawTitle.includes(" at ")) {
+              const parts = rawTitle.split(" at ");
+              title = parts[0].trim();
+              company = parts.slice(1).join(" at ").trim();
+            }
+
+            items.push({
+              id: `${source.id}-${Buffer.from(jobUrl).toString("base64").slice(0, 20)}`,
+              sourceId: source.id,
+              sourceName: source.name,
+              externalJobId: jobUrl,
+              title,
+              company,
+              location: "Kenya",
+              county: /nairobi/i.test(rawTitle) ? "Nairobi" : null,
+              country: "Kenya",
+              remote: /remote/i.test(rawTitle),
+              salary: null,
+              description: `Public recruitment notice from ${company}: ${title}. Apply directly via Corporate Staffing official portal.`,
+              url: jobUrl,
+              sourceUrl: jobUrl,
+              applicationUrl: jobUrl,
+              postedDate: new Date(),
+              jobType: "Full-time",
+              skills: [],
+            });
+          }
+        } catch {}
+      }
+
+      if (items.length > 0) return items;
+    }
+
+    // ==========================================
+    // 4. Generic Portal & Public Board Extractor
     // ==========================================
     const roleQueryUrls: string[] = [];
     if (keywords.length > 0) {

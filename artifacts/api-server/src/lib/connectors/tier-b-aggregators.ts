@@ -142,13 +142,13 @@ export class JoobleAdapter implements IJobConnector {
 export class ReliefWebAdapter implements IJobConnector {
   readonly connectorType = "JSON_API";
 
-  private getAppName(source: JobSourceRecord): string {
+  private getAppName(source: JobSourceRecord): string | null {
     const config = (source.config as any) || {};
-    return config.appName || process.env.RELIEFWEB_APP_NAME || "kaziscout";
+    return config.appName || process.env.RELIEFWEB_APP_NAME || null;
   }
 
-  validateConfiguration(_source: JobSourceRecord): boolean {
-    return true;
+  validateConfiguration(source: JobSourceRecord): boolean {
+    return Boolean(this.getAppName(source));
   }
 
   getCapabilities(_source: JobSourceRecord): ConnectorCapabilities {
@@ -166,6 +166,18 @@ export class ReliefWebAdapter implements IJobConnector {
 
   async healthCheck(source: JobSourceRecord): Promise<ConnectorHealthReport> {
     const appName = this.getAppName(source);
+    if (!appName) {
+      return {
+        sourceId: source.id,
+        ok: false,
+        status: "AUTH_REQUIRED",
+        statusCode: 401,
+        responseTimeMs: 0,
+        message: "ReliefWeb API requires a pre-approved appname per policy since Nov 1, 2025. Please configure RELIEFWEB_APP_NAME in settings.",
+        timestamp: new Date(),
+      };
+    }
+
     try {
       const url = `https://api.reliefweb.int/v2/jobs?appname=${encodeURIComponent(appName)}&limit=1`;
       const res = await secureFetch(url, { timeoutMs: 8000 });
@@ -191,6 +203,10 @@ export class ReliefWebAdapter implements IJobConnector {
 
   async discoverListings(source: JobSourceRecord, filter?: ConnectorFilter): Promise<NormalizedListing[]> {
     const appName = this.getAppName(source);
+    if (!appName) {
+      return [];
+    }
+
     const limit = filter?.limit ?? 40;
     const keywords = (filter?.keywords || []).slice(0, 3).join(" ");
 

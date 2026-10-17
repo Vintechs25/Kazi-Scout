@@ -69,13 +69,28 @@ export function evaluatePreIngestionGate(
   const src = (job.source || "").toLowerCase();
   const fullText = `${title} ${desc} ${company} ${loc} ${src}`.toLowerCase();
 
-  // 1. Expiration Gate
+  // 1. Expiration & Closed Status Gate
   const deadline = job.deadlineDate || extractDeadlineDate(desc);
   if (isJobExpired(deadline, job.postedDate)) {
     return {
       qualified: false,
       isExpired: true,
       rejectionReason: "Expired listing (application deadline has passed)",
+    };
+  }
+
+  const isClosed = 
+    (job as any).isClosed === true ||
+    (job as any).status === "closed" ||
+    (job as any).status === "EXPIRED" ||
+    /\b(job\s+closed|application\s+closed|applications\s+closed|position\s+closed|no\s+longer\s+accepting\s+applications|vacancy\s+closed|this\s+job\s+has\s+expired|closing\s+date\s+has\s+passed)\b/i.test(`${title} ${desc}`) ||
+    /\b\[closed\]|\(closed\)|\b\[expired\]|\(expired\)/i.test(title);
+
+  if (isClosed) {
+    return {
+      qualified: false,
+      isExpired: true,
+      rejectionReason: "Listing is closed or no longer accepting applications",
     };
   }
 

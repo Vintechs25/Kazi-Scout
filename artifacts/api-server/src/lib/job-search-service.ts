@@ -1533,6 +1533,37 @@ export async function saveDiscoveredJobs(
       continue;
     }
 
+    // Cross-board deduplication: check for same normalized employer + position
+    const normCo = normalizeCompany(job.company);
+    const normTi = normalizeText(job.title);
+    if (normCo.length > 2 && normTi.length > 3) {
+      const [existingCrossBoard] = await db
+        .select({ id: jobsTable.id, source: jobsTable.source })
+        .from(jobsTable)
+        .where(
+          and(
+            accountCondition,
+            eq(jobsTable.normalizedCompany, normCo),
+            eq(jobsTable.normalizedTitle, normTi),
+          ),
+        )
+        .limit(1);
+
+      if (existingCrossBoard) {
+        duplicates++;
+        await db.insert(jobProvenanceTable).values({
+          id: crypto.randomUUID(),
+          jobId: existingCrossBoard.id,
+          sourceId: job.source,
+          sourceName: job.source,
+          originalUrl: job.sourceUrl || "",
+          discoveredAt: new Date(),
+          isPrimary: false,
+        }).catch(() => {});
+        continue;
+      }
+    }
+
     if (job.externalJobId) {
       const [existingByExternalId] = await db
         .select({ id: jobsTable.id })
