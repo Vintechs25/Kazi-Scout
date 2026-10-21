@@ -423,6 +423,9 @@ export async function discoverJobsWithCvGuidance(
     let gateRejectedCount = 0;
     let validationRejectedCount = 0;
 
+    // Fetch directive dynamically tailored to active searched roles
+    const directive = await getOrGenerateSearchDirective(accountId, false, rolesToSearch);
+
     // Parallel Kenya crawler: hits verified Kenyan sources tailored to the candidate's field
     try {
       const crawlLimit = aggressiveMode ? Math.min(Math.max(maxJobs, 500), 1000) : Math.min(Math.max(maxJobs, 250), 500);
@@ -435,6 +438,25 @@ export async function discoverJobsWithCvGuidance(
         duplicateFingerprints.add(fingerprint);
         const validation = validateListing({ title: cj.title, company: cj.company, url: cj.url, description: cj.description, deadline: null });
         if (!validation.valid) { validationRejectedCount++; continue; }
+
+        // Evaluate pre-ingestion qualification gate upfront
+        const gateResult = evaluatePreIngestionGate({
+          title: cj.title,
+          company: cj.company,
+          location: cj.location ?? null,
+          remote: cj.remote,
+          description: cj.description,
+          source: cj.sourceId,
+          sourceUrl: cj.sourceUrl,
+          jobType: cj.jobType ?? undefined,
+        }, directive);
+
+        if (!gateResult.qualified) {
+          gateRejectedCount++;
+          jobsRejected++;
+          continue;
+        }
+
         const normalized: NormalizedJob = {
           id: cj.id,
           title: cj.title, company: cj.company,
@@ -461,9 +483,6 @@ export async function discoverJobsWithCvGuidance(
     } catch (crawlErr: any) {
       errors.push(`KenyaCrawl failed: ${crawlErr?.message || crawlErr}`);
     }
-
-    // Fetch directive dynamically tailored to active searched roles
-    const directive = await getOrGenerateSearchDirective(accountId, false, rolesToSearch);
     
     // Scrape each source
     for (const source of sourcesToScrape) {
@@ -654,13 +673,12 @@ export async function discoverJobsWithCvGuidance(
       const hasLegalTarget = !hasMedicalTarget && rolesToSearch.some(r => /legal|lawyer|attorney|counsel|compliance|advocate/i.test(r));
 
       // Hard cross-domain check for Medical candidates:
-      // Disqualify travel, customer support, SAP, sales, real estate, accounting, driver, chef, IT dev
-      const isNonMedicalIndustry = /\b(travel|tourism|flight|hotel|hospitality|customer\s+support|customer\s+service|call\s+center|helpdesk|sap\b|salesforce|erp\b|real\s+estate|receptionist|cashier|waiter|chef|bartender|driver|sales\s+representative|telemarketing|sales\s+executive|software\s+developer|fullstack|frontend|backend|devops|react|python|java\b|php\b|accounting|internal\s+auditor|tax\s+officer)\b/i.test(titleLower);
-      const hasMedicalCue = /\b(doctor|surgeon|physician|clinical|medical|health|hospital|nurse|nursing|patient|surgery|surgical|clinic|patholog|pediatric|radiolog|anesthe|pharm|oncolog|obstetric|gynecolog|orthopedic|dental|dentist|biomedical|healthcare|locum|resident)\b/i.test(`${titleLower} ${descLower}`);
+      // Disqualify travel, customer support, SAP, sales, real estate, accounting, driver, chef, IT dev, etc.
+      const isExplicitNonMedicalRole = /\b(travel|tourism|flight|hotel|hospitality|customer\s+support|customer\s+service|call\s+center|helpdesk|sap\b|salesforce|erp\b|real\s+estate|receptionist|cashier|waiter|chef|bartender|driver|sales\s+representative|telemarketing|sales\s+executive|software\s+developer|fullstack|frontend|backend|devops|react|python|java\b|php\b|accounting|internal\s+auditor|tax\s+officer|legal\s+counsel|lawyer|attorney|android|ios|engineer|sales\s+&\s+cx|cx\s+enablement|knowledge\s+management|implementation\s+consultant|management\s+consultant|strategy\s+consultant|business\s+consultant|post-doctoral|postdoc|health\s+coach|wellness\s+coach|health\s+economi)\b/i.test(titleLower);
 
       let roleMatchPct = 0;
 
-      if (hasMedicalTarget && isNonMedicalIndustry && !hasMedicalCue) {
+      if (hasMedicalTarget && isExplicitNonMedicalRole) {
         roleMatchPct = 0;
       } else {
         for (const r of rolesToSearch) {
@@ -678,7 +696,7 @@ export async function discoverJobsWithCvGuidance(
               roleMatchPct = Math.max(roleMatchPct, 90);
             } else if (words.some(w => new RegExp(`\\b${w}\\b`, "i").test(titleLower))) {
               roleMatchPct = Math.max(roleMatchPct, 80);
-            } else if (words.some(w => new RegExp(`\\b${w}\\b`, "i").test(descLower))) {
+            } else if (!isExplicitNonMedicalRole && words.filter(w => new RegExp(`\\b${w}\\b`, "i").test(descLower)).length >= 2) {
               roleMatchPct = Math.max(roleMatchPct, 50);
             }
           }

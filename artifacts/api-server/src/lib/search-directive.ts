@@ -21,6 +21,7 @@ import { extractCvText } from "./cv-text-extraction";
 import { detectProvider, normalizeModelName } from "./provider-services";
 import { getVerifiedMasterCv } from "./cv-storage";
 import { getOrGenerateCandidateEvidence, type CandidateEvidenceProfile } from "./candidate-evidence";
+import { getUserEnabledRoles } from "./discovery-role-approval";
 
 export const locationRestrictionsSchema = z.object({
   allowedCountries: z.array(z.string()).default([]),
@@ -408,6 +409,18 @@ export async function getOrGenerateSearchDirective(
     activeRoles = Array.isArray(activeRolesOrRefresh) ? activeRolesOrRefresh : undefined;
   }
 
+  // Automatically fetch enabled roles if not provided
+  if (!activeRoles || activeRoles.length === 0) {
+    try {
+      const enabledRoleData = await getUserEnabledRoles(accountId);
+      if (enabledRoleData && Array.isArray(enabledRoleData.roles) && enabledRoleData.roles.length > 0) {
+        activeRoles = enabledRoleData.roles;
+      }
+    } catch (roleErr) {
+      console.warn("[SearchDirective] Could not load user enabled roles:", roleErr);
+    }
+  }
+
   let [profile] = await db
     .select()
     .from(candidateProfilesTable)
@@ -464,10 +477,10 @@ export async function getOrGenerateSearchDirective(
 Generate a comprehensive, tailored AI Search Plan based STRICTLY on the candidate's verified evidence profile and actual master CV.
 The candidate can be from ANY career domain or profession (Healthcare, Medicine & Surgery, Law, Accounting & Finance, Engineering, Technology, Education, Trades, Operations, Creative, etc.).
 
-CANDIDATE EVIDENCE DOSSIER (VERIFIED FROM MASTER CV):
+CANDIDATE TARGET ROLES & EVIDENCE DOSSIER (VERIFIED FROM MASTER CV):
+- Primary Target Roles: ${JSON.stringify(activeRoles && activeRoles.length > 0 ? activeRoles : evidence.targetRoleFamilies)}
 - Full Name: ${evidence.fullName}
 - Verified Years of Experience: ${evidence.yearsExperience} year(s)
-- Target Role Families: ${JSON.stringify(evidence.targetRoleFamilies)}
 - Demonstrated Skills & Competencies: ${JSON.stringify(evidence.demonstratedTechnicalSkills)}
 - Self-Reported Skills: ${JSON.stringify(evidence.selfReportedSkills)}
 - Verified Employment / Professional Background: ${JSON.stringify(evidence.verifiedWorkExperience)}

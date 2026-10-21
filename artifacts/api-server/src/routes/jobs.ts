@@ -24,6 +24,7 @@ import { getVerifiedMasterCv } from "../lib/cv-storage";
 import { getOrGenerateCandidateEvidence } from "../lib/candidate-evidence";
 import { verifyJobRequirementsForUser } from "../lib/job-search-service-enhanced";
 import { getAuthenticatedAccountId } from "../lib/auth";
+import { getUserEnabledRoles } from "../lib/discovery-role-approval";
 
 const router: IRouter = Router();
 
@@ -189,18 +190,74 @@ router.get("/jobs", async (req, res): Promise<void> => {
     .orderBy(desc(jobsTable.discoveredAt))
     .limit(500);
 
-  // Ensure any job that has a submitted application is returned with status APPLIED
-  const reconciledRows = rows.map((job) => {
-    if (appliedJobIds.has(job.id) && job.status !== "APPLIED") {
-      db.update(jobsTable).set({ status: "APPLIED" as any }).where(eq(jobsTable.id, job.id)).catch(() => {});
-      return { ...job, status: "APPLIED" as const };
-    }
-    return job;
-  });
+  // Dynamic gate sanitization against candidate's active search directive:
+  // Disqualifies stale non-matching records (e.g. travel, customer support, SAP, sales, postdoc)
+  const directive = await getOrGenerateSearchDirective(accountId);
+  const isSpecificActiveTab = tab === "strong" || tab === "potential" || (!tab && parsed.data.status !== "REJECTED");
 
-  const validated = ListJobsResponse.parse(reconciledRows);
+  const sanitizedRows: typeof rows = [];
+  for (const job of rows) {
+    if (appliedJobIds.has(job.id)) {
+      if (job.status !== "APPLIED") {
+        db.update(jobsTable).set({ status: "APPLIED" as any }).where(eq(jobsTable.id, job.id)).catch(() => {});
+      }
+      sanitizedRows.push({ ...job, status: "APPLIED" as const });
+      continue;
+    }
+
+    if (directive && Array.isArray(directive.targetRoleFamilies) && directive.targetRoleFamilies.length > 0) {
+      const gate = evaluatePreIngestionGate(
+        {
+          title: job.title,
+          company: job.company,
+          location: job.location,
+          remote: job.remote,
+          description: job.description,
+          source: job.source,
+          sourceUrl: job.sourceUrl,
+        },
+        directive,
+      );
+
+      if (!gate.qualified) {
+        // Disqualify stale record in DB asynchronously
+        if (job.status !== "REJECTED" || job.aiDecision !== "NOT_A_MATCH" || !job.hardEligibilityFailure) {
+          db.update(jobsTable)
+            .set({
+              status: "REJECTED",
+              aiDecision: "NOT_A_MATCH",
+              matchScore: 0,
+              hardEligibilityFailure: true,
+              rejectionReason: gate.rejectionReason || "Position does not match candidate's approved target roles",
+            })
+            .where(eq(jobsTable.id, job.id))
+            .catch(() => {});
+        }
+
+        const rejectedJob = {
+          ...job,
+          status: "REJECTED" as const,
+          aiDecision: "NOT_A_MATCH" as const,
+          matchScore: 0,
+          hardEligibilityFailure: true,
+          rejectionReason: gate.rejectionReason || "Position does not match candidate's approved target roles",
+        };
+
+        // If specific active tab is requested (strong, potential, active), do not return disqualified jobs
+        if (isSpecificActiveTab) {
+          continue;
+        }
+        sanitizedRows.push(rejectedJob);
+        continue;
+      }
+    }
+
+    sanitizedRows.push(job);
+  }
+
+  const validated = ListJobsResponse.parse(sanitizedRows);
   const payload = validated.map((item, idx) => {
-    const raw = reconciledRows[idx] as any;
+    const raw = sanitizedRows[idx] as any;
     return {
       ...item,
       rejectionReason: raw.rejectionReason ?? null,
@@ -632,9 +689,10 @@ router.post("/jobs/re-evaluate", async (req, res): Promise<void> => {
       res.status(401).json({ error: "Unauthorized" });
       return;
     }
+    const userRoles = await getUserEnabledRoles(accountId);
     const cvDossier = await getVerifiedMasterCv(accountId);
     const evidence = await getOrGenerateCandidateEvidence(accountId);
-    const directive = await getOrGenerateSearchDirective(accountId);
+    const directive = await getOrGenerateSearchDirective(accountId, true, userRoles.roles);
     const cvText = cvDossier.text || evidence.demonstratedTechnicalSkills.join(", ") || "";
     const jobAccountFilter = accountId === "local"
       ? or(eq(jobsTable.accountId, "local"), isNull(jobsTable.accountId))
@@ -665,6 +723,7 @@ router.post("/jobs/re-evaluate", async (req, res): Promise<void> => {
           .update(jobsTable)
           .set({
             status: "REJECTED",
+            matchScore: 0,
             rejectionReason: gate.rejectionReason || "Disqualified by pre-ingestion gate",
             aiDecision: "INELIGIBLE",
             hardEligibilityFailure: true,

@@ -149,6 +149,8 @@ export function evaluatePreIngestionGate(
     PROPOSAL_ADMIN: /\b(proposal\s+writer|grant\s+writer|bid\s+manager)\b/i,
     CUSTOMER_SUCCESS: /\b(customer\s+success\s+manager|csm\s+ii|cx\s+enablement)\b/i,
     TECH_IT: /\b(developer|software|engineer|frontend|backend|fullstack|devops|react|python|node|javascript|typescript|sysadmin|ict|it\s+support|technical\s+support|system\s+administrator|web|cloud|database|cyber|qa\b|tester|linux|security\s+researcher|edge\s+functions|data\s+annotator|data\s+engineer|mobile\s+engineer|android|ios)\b/i,
+    NON_CLINICAL_HEALTH: /\b(health\s+coach|wellness\s+coach|health\s+economi(?:cs|st)|health\s+and\s+safety|ehs\s+officer|occupational\s+health\s+and\s+safety|fitness|gym|nutritionist|dietitian)\b/i,
+    NON_MEDICAL_CONSULTING: /\b(travel\s+consultant|customer\s+support\s+consultant|hospitality|knowledge\s+management|implementation\s+consultant|management\s+consultant|strategy\s+consultant|business\s+consultant|sap\b|erp\b|crm\b|salesforce|it\s+consultant|solutions\s+consultant|recruitment\s+consultant|education\s+consultant)\b/i,
   };
 
   if (targetRoles.length > 0) {
@@ -180,17 +182,33 @@ export function evaluatePreIngestionGate(
           rejectionReason: `Cross-domain mismatch: Position (${title}) is outside candidate's target technical domain`,
         };
       }
+
+      // Mobile / Android / iOS specialization check:
+      const isMobileJob = /\b(android|ios|flutter|react\s+native|mobile\s+engineer|mobile\s+developer)\b/i.test(titleLower);
+      const candidateTargetsMobile = /\b(android|ios|mobile|flutter|react\s+native)\b/i.test(candidateRolesBlob);
+      if (isMobileJob && !candidateTargetsMobile) {
+        return {
+          qualified: false,
+          isExpired: false,
+          rejectionReason: `Specialization mismatch: Mobile role (${title}) does not match candidate's target roles`,
+        };
+      }
     }
 
     if (isCandidateMedical) {
-      const isCrossDomainNonMedical = /\b(travel|tourism|flight|hotel|hospitality|customer\s+support|customer\s+service|call\s+center|helpdesk|sap\b|salesforce|erp\b|real\s+estate|receptionist|cashier|waiter|chef|bartender|driver|telemarketing|sales\s+representative|sales\s+executive)\b/i.test(titleLower);
-      const hasMedicalCue = /\b(doctor|physician|surgeon|surgery|surgical|clinical|nurse|nursing|patient|clinic|patholog|pediatric|radiolog|anesthe|pharm|oncolog|obstetric|gynecolog|orthopedic|dental|dentist|biomedical|hospital|healthcare)\b/i.test(`${titleLower} ${descLower}`);
+      const isCrossDomainNonMedical = /\b(travel|tourism|flight|hotel|hospitality|customer\s+support|customer\s+service|call\s+center|helpdesk|sap\b|salesforce|erp\b|real\s+estate|receptionist|cashier|waiter|chef|bartender|driver|telemarketing|sales\s+representative|sales\s+executive|knowledge\s+management|implementation\s+consultant|business\s+consultant|management\s+consultant|health\s+coach|wellness\s+coach|health\s+economi(?:cs|st))\b/i.test(titleLower);
+      const hasMedicalCue = /\b(doctor|physician|surgeon|surgery|surgical|clinical|nurse|nursing|patient|clinic|patholog|pediatric|radiolog|anesthe|pharm|oncolog|obstetric|gynecolog|orthopedic|dental|dentist|biomedical|hospital)\b/i.test(`${titleLower} ${descLower}`);
       if (
         (isCrossDomainNonMedical && !hasMedicalCue) ||
         DOMAIN_PATTERNS.TECH_IT.test(titleLower) ||
         DOMAIN_PATTERNS.LEGAL.test(titleLower) ||
         DOMAIN_PATTERNS.FINANCE_ACCOUNTS.test(titleLower) ||
-        DOMAIN_PATTERNS.MARKETING_SALES.test(titleLower)
+        DOMAIN_PATTERNS.MARKETING_SALES.test(titleLower) ||
+        DOMAIN_PATTERNS.CUSTOMER_SUCCESS.test(titleLower) ||
+        DOMAIN_PATTERNS.PROPOSAL_ADMIN.test(titleLower) ||
+        DOMAIN_PATTERNS.ACADEMIC_LIFE_SCIENCES.test(titleLower) ||
+        DOMAIN_PATTERNS.NON_CLINICAL_HEALTH.test(titleLower) ||
+        DOMAIN_PATTERNS.NON_MEDICAL_CONSULTING.test(titleLower)
       ) {
         return {
           qualified: false,
@@ -243,7 +261,7 @@ export function evaluatePreIngestionGate(
 
     // In healthcare: Surgeon <-> Doctor <-> Physician <-> Medical Officer synonym matching
     if (isCandidateMedical) {
-      substantiveRoleWords.push("surgeon", "doctor", "physician", "clinical", "medical", "nurse", "health");
+      substantiveRoleWords.push("surgeon", "doctor", "physician", "clinical", "medical", "nurse", "pediatric", "patholog", "radiolog", "anesthe", "oncolog", "obstetric", "gynecolog", "orthopedic", "dental");
     }
 
     if (isCandidateFinance) {
@@ -289,9 +307,14 @@ export function evaluatePreIngestionGate(
       if (s.length < 3 || stopWords.has(s.toLowerCase())) return false;
       const cleanS = s.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
       return new RegExp(`\\b${cleanS}\\b`, "i").test(desc);
-    }).length >= 2;
+    }).length >= 3;
 
-    if (!directTitleMatch && !matchesSubstantiveTitle && !matchesTargetSkillsInDesc) {
+    // For medical candidates, description matching alone is only allowed if clinical context is explicitly present
+    const hasClinicalContextInDesc = isCandidateMedical
+      ? /\b(patient|clinical|surgery|surgical|hospital|ward|theatre|diagnosis|treatment)\b/i.test(desc)
+      : true;
+
+    if (!directTitleMatch && !matchesSubstantiveTitle && (!matchesTargetSkillsInDesc || !hasClinicalContextInDesc)) {
       return {
         qualified: false,
         isExpired: false,
