@@ -448,7 +448,18 @@ export async function testAiProvider(
   baseUrl?: string | null,
 ): Promise<{ success: boolean; message: string }> {
   try {
-    const actualProvider = detectProvider(provider, apiKey, baseUrl);
+// Defensive validation – ensure Agent Router base URL ends with /v1
+if (provider === "agentrouter") {
+  const normalized = normalizeAgentRouterBaseUrl(baseUrl);
+  if (!/\/v1$/i.test(normalized)) {
+    return {
+      success: false,
+      message:
+        "Agent Router Base URL must end with “/v1”. Please update it in Settings (e.g. https://agentrouter.org/v1).",
+    };
+  }
+}
+const actualProvider = detectProvider(provider, apiKey, baseUrl);
     const trimmedKey = apiKey.trim();
     const cleanModel = normalizeModelName(model);
 
