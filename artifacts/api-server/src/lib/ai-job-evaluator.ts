@@ -17,6 +17,7 @@ import { db, integrationSettingsTable, jobsTable, systemStateTable } from "@work
 import { eq } from "drizzle-orm";
 import { decryptCredentials } from "./credential-encryption";
 import { callAgentRouterEvaluation, normalizeModelName } from "./provider-services";
+import { evaluatePreIngestionGate } from "./pre-ingestion-gate";
 import type { CandidateEvidenceProfile } from "./candidate-evidence";
 import type { NormalizedJob } from "./job-search-service";
 import type { JobRecord } from "@workspace/db";
@@ -489,6 +490,35 @@ export async function batchEvaluateQualifiedJobs(
     await Promise.all(
       chunk.map(async (job) => {
         try {
+          // 1. Pre-Ingestion Gate check: Ensure job doesn't violate domain or experience constraints
+          const gateResult = evaluatePreIngestionGate(job as any, {
+            targetRoleFamilies: evidence.targetRoleFamilies,
+            alternativeJobTitles: [],
+            candidateYearsExperience: evidence.yearsExperience,
+          });
+          if (!gateResult.qualified) {
+            results.set(job.id, {
+              decision: "NOT_A_MATCH",
+              matchScore: 0,
+              matchedSkills: [],
+              missingSkills: [],
+              experienceCompatibility: "Disqualified by Pre-Ingestion Gate.",
+              responsibilityCompatibility: "Cross-domain or role incompatibility.",
+              locationEligibility: "N/A",
+              hardEligibilityFailure: true,
+              hardFailureReason: gateResult.rejectionReason,
+              explanation: `Disqualified by Pre-Ingestion Gate: ${gateResult.rejectionReason}`,
+              uncertainties: [],
+              confidence: "high",
+              isAiVerified: true,
+              providerUsed: "gate",
+              modelUsed: "pre-ingestion-gate",
+              evaluatedAt: new Date().toISOString(),
+              evidenceFingerprint: evidence.evidenceFingerprint,
+            });
+            return;
+          }
+
           // Check if existing evaluation is valid with identical evidence fingerprint
           const existingJob = job as any;
           if (

@@ -608,6 +608,11 @@ export async function getDiscoveryStatistics(
   totalDiscoveries: number;
   totalJobsDiscovered: number;
   totalMatches: number;
+  liveActiveJobs: number;
+  liveStrongMatches: number;
+  livePotentialMatches: number;
+  liveDisqualified: number;
+  liveTotalInDb: number;
   avgJobsPerDiscovery: number;
   avgMatchesPerDiscovery: number;
   lastDiscovery: string | null;
@@ -657,11 +662,51 @@ export async function getDiscoveryStatistics(
     const sources = Array.isArray(run.sourcesScraped) ? run.sourcesScraped : [];
     sources.forEach((s: string) => allSourcesScraped.add(s));
   });
+
+  // Calculate live workspace record metrics directly from jobsTable
+  const jobAccountFilter = accountId === "local"
+    ? or(eq(jobsTable.accountId, "local"), isNull(jobsTable.accountId))
+    : eq(jobsTable.accountId, accountId);
+
+  const allJobs = await db
+    .select({
+      id: jobsTable.id,
+      status: jobsTable.status,
+      aiDecision: jobsTable.aiDecision,
+      matchScore: jobsTable.matchScore,
+      hardEligibilityFailure: jobsTable.hardEligibilityFailure,
+    })
+    .from(jobsTable)
+    .where(jobAccountFilter);
+
+  const isDisqualified = (j: any) =>
+    j.status === "REJECTED" ||
+    j.status === "IGNORED" ||
+    j.aiDecision === "NOT_A_MATCH" ||
+    j.aiDecision === "INELIGIBLE" ||
+    Boolean(j.hardEligibilityFailure);
+
+  const liveDisqualified = allJobs.filter(isDisqualified).length;
+  const liveActiveJobs = allJobs.filter(j => !isDisqualified(j)).length;
+  const liveStrongMatches = allJobs.filter(j =>
+    !isDisqualified(j) &&
+    j.aiDecision === "STRONG_MATCH" &&
+    (j.matchScore ?? 0) >= 70
+  ).length;
+  const livePotentialMatches = allJobs.filter(j =>
+    !isDisqualified(j) &&
+    (j.aiDecision === "POTENTIAL_MATCH" || ((j.matchScore ?? 0) >= 50 && (j.matchScore ?? 0) < 70 && j.aiDecision !== "STRONG_MATCH"))
+  ).length;
   
   return {
     totalDiscoveries: settings.totalDiscoveries || totalDiscoveries,
     totalJobsDiscovered: settings.totalJobsDiscovered || totalJobsDiscovered,
     totalMatches: settings.totalMatches || totalMatches,
+    liveActiveJobs,
+    liveStrongMatches,
+    livePotentialMatches,
+    liveDisqualified,
+    liveTotalInDb: allJobs.length,
     avgJobsPerDiscovery: Math.round(avgJobsPerDiscovery * 100) / 100,
     avgMatchesPerDiscovery: Math.round(avgMatchesPerDiscovery * 100) / 100,
     lastDiscovery,

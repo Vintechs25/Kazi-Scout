@@ -55,6 +55,11 @@ interface DiscoveryStats {
   totalDiscoveries: number;
   totalJobsDiscovered: number;
   totalMatches: number;
+  liveActiveJobs?: number;
+  liveStrongMatches?: number;
+  livePotentialMatches?: number;
+  liveDisqualified?: number;
+  liveTotalInDb?: number;
   avgJobsPerDiscovery: number;
   avgMatchesPerDiscovery: number;
   lastDiscovery: string | null;
@@ -99,6 +104,11 @@ const fetchDiscoveryStats = async (): Promise<DiscoveryStats> => {
           totalDiscoveries: data.totalDiscoveries || 0,
           totalJobsDiscovered: data.totalJobsDiscovered || 0,
           totalMatches: data.totalMatches || 0,
+          liveActiveJobs: data.liveActiveJobs ?? 0,
+          liveStrongMatches: data.liveStrongMatches ?? 0,
+          livePotentialMatches: data.livePotentialMatches ?? 0,
+          liveDisqualified: data.liveDisqualified ?? 0,
+          liveTotalInDb: data.liveTotalInDb ?? 0,
           avgJobsPerDiscovery: data.avgJobsPerDiscovery || 0,
           avgMatchesPerDiscovery: data.avgMatchesPerDiscovery || 0,
           lastDiscovery: data.lastDiscovery || null,
@@ -202,9 +212,9 @@ const getEnabledRoles = async (): Promise<{ roles: string[]; preferences: any[];
 export function EnhancedDiscovery() {
   const [isRunning, setIsRunning] = useState(false);
   const [lastResult, setLastResult] = useState<DiscoveryResult | null>(null);
-  const [aggressiveMode, setAggressiveMode] = useState(false);
+  const [aggressiveMode, setAggressiveMode] = useState(true);
   const [verifyRequirements, setVerifyRequirements] = useState(true);
-  const [maxJobs, setMaxJobs] = useState(150);
+  const [maxJobs, setMaxJobs] = useState(300);
 
   // Queries
   const { data: historyData, isLoading: historyLoading, refetch: refetchHistory } = useQuery({
@@ -302,22 +312,22 @@ export function EnhancedDiscovery() {
       {/* Stats Grid */}
       <section className="stats-grid">
         <div className="panel stat-card">
+          <Briefcase className="stat-accent" size={17} style={{ color: '#10b981' }} />
+          <div className="stat-label">Active in Records</div>
+          <div className="stat-num">{statsData?.liveActiveJobs ?? statsData?.totalMatches ?? 0}</div>
+          <div className="stat-note">Live in Job Records</div>
+        </div>
+        <div className="panel stat-card">
+          <Target className="stat-accent" size={17} style={{ color: '#2563eb' }} />
+          <div className="stat-label">Strong Direct Fits</div>
+          <div className="stat-num">{statsData?.liveStrongMatches ?? 0}</div>
+          <div className="stat-note">≥70% match to target roles</div>
+        </div>
+        <div className="panel stat-card">
           <Play className="stat-accent" size={17} />
-          <div className="stat-label">Discovery Sessions</div>
-          <div className="stat-num">{statsData?.totalDiscoveries || 0}</div>
-          <div className="stat-note">Historical runs</div>
-        </div>
-        <div className="panel stat-card">
-          <Briefcase className="stat-accent" size={17} />
-          <div className="stat-label">Total Jobs Ingested</div>
+          <div className="stat-label">Total Ingested (All Time)</div>
           <div className="stat-num">{statsData?.totalJobsDiscovered || 0}</div>
-          <div className="stat-note">Extracted listings</div>
-        </div>
-        <div className="panel stat-card">
-          <Target className="stat-accent" size={17} />
-          <div className="stat-label">Matches Qualified</div>
-          <div className="stat-num">{statsData?.totalMatches || 0}</div>
-          <div className="stat-note">CV matched candidates</div>
+          <div className="stat-note">Lifetime across {statsData?.totalDiscoveries || 0} runs</div>
         </div>
         <div className="panel stat-card">
           <Globe className="stat-accent" size={17} />
@@ -326,6 +336,19 @@ export function EnhancedDiscovery() {
           <div className="stat-note">Active boards & portals</div>
         </div>
       </section>
+
+      {/* Workspace Live Sync Banner */}
+      <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '12px 18px', background: 'hsl(var(--card))', border: '1px solid var(--border)', borderRadius: 8, marginBottom: 16, flexWrap: 'wrap', gap: 10 }}>
+        <div style={{ display: 'flex', alignItems: 'center', gap: 10, fontSize: 13 }}>
+          <span style={{ display: 'inline-block', width: 8, height: 8, borderRadius: '50%', background: '#10b981', boxShadow: '0 0 6px #10b981' }} />
+          <span>
+            <strong>Workspace Records:</strong> {statsData?.liveActiveJobs ?? 0} Active Opportunities ({statsData?.liveStrongMatches ?? 0} Strong Matches) • {statsData?.liveDisqualified ?? 0} Disqualified & Archive • {statsData?.totalJobsDiscovered ?? 0} Lifetime Ingested
+          </span>
+        </div>
+        <Link href="/jobs" style={{ fontSize: 13, color: 'hsl(var(--primary))', textDecoration: 'none', fontWeight: 600, display: 'flex', alignItems: 'center', gap: 4 }}>
+          Browse Job Records &rarr;
+        </Link>
+      </div>
 
       {/* Discovery Launcher Panel */}
       <section className="panel" style={{ marginBottom: 16 }}>
@@ -384,11 +407,11 @@ export function EnhancedDiscovery() {
               <span className="label">Max Listings to Ingest: {maxJobs}</span>
               <input
                 type="range"
-                min={20}
-                max={500}
-                step={10}
+                min={50}
+                max={800}
+                step={25}
                 value={maxJobs}
-                onChange={e => setMaxJobs(parseInt(e.target.value) || 150)}
+                onChange={e => setMaxJobs(parseInt(e.target.value) || 300)}
                 style={{ width: '100%', cursor: 'pointer' }}
               />
             </div>

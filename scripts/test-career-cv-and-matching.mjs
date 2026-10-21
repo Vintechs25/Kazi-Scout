@@ -89,6 +89,22 @@ const doctorGate = evaluatePreIngestionGate(doctorListing, {
 });
 assert(doctorGate.qualified === true, `Surgeon job qualified via gate: ${JSON.stringify(doctorGate)}`);
 
+// Negative tests: Verify non-medical consultant jobs are REJECTED for Surgeon
+const travelConsultant = { id: "test-neg-1", title: "Business Travel Consultant (Germany - Remote)", company: "TripActions", description: "Manage global corporate travel bookings and flights.", location: "Remote" };
+const gateTravel = evaluatePreIngestionGate(travelConsultant, { targetRoleFamilies: doctorDraft.targetRoles, alternativeJobTitles: [], candidateYearsExperience: doctorDraft.yearsExperience });
+assert(gateTravel.qualified === false, `Travel Consultant should be rejected: ${JSON.stringify(gateTravel)}`);
+console.log("  [PASS] Travel Consultant rejected for Surgeon candidate");
+
+const supportConsultant = { id: "test-neg-2", title: "Customer Support Consultant hospitality", company: "SupportYourApp", description: "Answer hotel guest queries and ticket booking.", location: "Remote" };
+const gateSupport = evaluatePreIngestionGate(supportConsultant, { targetRoleFamilies: doctorDraft.targetRoles, alternativeJobTitles: [], candidateYearsExperience: doctorDraft.yearsExperience });
+assert(gateSupport.qualified === false, `Support Consultant should be rejected: ${JSON.stringify(gateSupport)}`);
+console.log("  [PASS] Support Consultant rejected for Surgeon candidate");
+
+const sapConsultant = { id: "test-neg-3", title: "SAP RE FX Consultant", company: "Yoposo Romania SRL", description: "SAP ERP implementation and configuration.", location: "Remote" };
+const gateSap = evaluatePreIngestionGate(sapConsultant, { targetRoleFamilies: doctorDraft.targetRoles, alternativeJobTitles: [], candidateYearsExperience: doctorDraft.yearsExperience });
+assert(gateSap.qualified === false, `SAP Consultant should be rejected: ${JSON.stringify(gateSap)}`);
+console.log("  [PASS] SAP RE FX Consultant rejected for Surgeon candidate");
+
 // 3. Finance & Accounting / CPA-K
 console.log("\nTesting 3: Chartered Accountant (CPA-K)");
 const financeCv = `

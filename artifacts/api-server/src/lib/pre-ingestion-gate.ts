@@ -153,6 +153,7 @@ export function evaluatePreIngestionGate(
 
   if (targetRoles.length > 0) {
     const titleLower = title.toLowerCase();
+    const descLower = (job.description || "").toLowerCase();
     const candidateRolesBlob = targetRoles.join(" ");
 
     const isCandidateTech = DOMAIN_PATTERNS.TECH_IT.test(candidateRolesBlob);
@@ -182,7 +183,10 @@ export function evaluatePreIngestionGate(
     }
 
     if (isCandidateMedical) {
+      const isCrossDomainNonMedical = /\b(travel|tourism|flight|hotel|hospitality|customer\s+support|customer\s+service|call\s+center|helpdesk|sap\b|salesforce|erp\b|real\s+estate|receptionist|cashier|waiter|chef|bartender|driver|telemarketing|sales\s+representative|sales\s+executive)\b/i.test(titleLower);
+      const hasMedicalCue = /\b(doctor|physician|surgeon|surgery|surgical|clinical|nurse|nursing|patient|clinic|patholog|pediatric|radiolog|anesthe|pharm|oncolog|obstetric|gynecolog|orthopedic|dental|dentist|biomedical|hospital|healthcare)\b/i.test(`${titleLower} ${descLower}`);
       if (
+        (isCrossDomainNonMedical && !hasMedicalCue) ||
         DOMAIN_PATTERNS.TECH_IT.test(titleLower) ||
         DOMAIN_PATTERNS.LEGAL.test(titleLower) ||
         DOMAIN_PATTERNS.FINANCE_ACCOUNTS.test(titleLower) ||
@@ -213,12 +217,17 @@ export function evaluatePreIngestionGate(
     // Role Match: Check title against candidate's target roles and substantive role tokens
     const directTitleMatch = targetRoles.some(r => {
       const cleanR = r.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
-      return new RegExp(`\\b${cleanR}\\b`, "i").test(titleLower) || titleLower.includes(r);
+      return new RegExp(`\\b${cleanR}\\b`, "i").test(titleLower);
     });
 
     // Substantive words extracted from candidate target roles
     const substantiveRoleWords: string[] = [];
-    const stopWords = new Set(["with", "from", "that", "this", "have", "been", "only", "also", "role", "work", "jobs", "specialist", "officer", "associate", "level", "senior", "junior", "lead", "general", "intern"]);
+    const stopWords = new Set([
+      "with", "from", "that", "this", "have", "been", "only", "also", "role", "work", "jobs",
+      "specialist", "officer", "associate", "level", "senior", "junior", "lead", "general", "intern",
+      "consultant", "manager", "coordinator", "assistant", "director", "executive", "advisor",
+      "expert", "analyst", "practitioner", "support", "worker", "representative", "agent", "partner"
+    ]);
     for (const r of targetRoles) {
       for (const w of r.split(/[^a-z0-9]+/)) {
         if (w.length >= 4 && !stopWords.has(w)) {

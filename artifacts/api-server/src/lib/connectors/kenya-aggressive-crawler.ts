@@ -192,7 +192,7 @@ const KENYAN_BOARDS: SourceSpec[] = [
     ],
     jobUrlPattern: /brightermonday\.co\.ke\/listings\/[a-zA-Z0-9_-]+$/,
     defaultLocation: "Nairobi, Kenya",
-    pagination: { type: "query", param: "page", startPage: 2, maxPages: 5 },
+    pagination: { type: "query", param: "page", startPage: 2, maxPages: 6 },
   },
   {
     id: "myjobmag", name: "MyJobMag Kenya", country: "Kenya", fields: ["all"],
@@ -201,6 +201,9 @@ const KENYAN_BOARDS: SourceSpec[] = [
       "https://www.myjobmag.co.ke/jobs",
       "https://www.myjobmag.co.ke/jobs-by-field/information-technology",
       "https://www.myjobmag.co.ke/jobs-by-field/medical-health",
+      "https://www.myjobmag.co.ke/jobs-by-field/medical-health/page/2",
+      "https://www.myjobmag.co.ke/jobs-by-field/medical-health/page/3",
+      "https://www.myjobmag.co.ke/jobs-by-field/medical-health/page/4",
       "https://www.myjobmag.co.ke/jobs-by-field/accounting-finance",
       "https://www.myjobmag.co.ke/jobs-by-field/sales-marketing",
       "https://www.myjobmag.co.ke/jobs-by-field/engineering",
@@ -213,7 +216,7 @@ const KENYAN_BOARDS: SourceSpec[] = [
     ],
     jobUrlPattern: /myjobmag\.co\.ke\/job\/[a-zA-Z0-9_-]+$/,
     defaultLocation: "Nairobi, Kenya",
-    pagination: { type: "path", pathTemplate: "/jobs/page/{page}", startPage: 2, maxPages: 4 },
+    pagination: { type: "path", pathTemplate: "/jobs/page/{page}", startPage: 2, maxPages: 6 },
   },
   {
     id: "jobwebkenya", name: "JobWeb Kenya", country: "Kenya", fields: ["all"],
@@ -223,6 +226,12 @@ const KENYAN_BOARDS: SourceSpec[] = [
       "https://jobwebkenya.com/feed/?paged=3",
       "https://jobwebkenya.com/feed/?paged=4",
       "https://jobwebkenya.com/feed/?paged=5",
+      "https://jobwebkenya.com/feed/?paged=6",
+      "https://jobwebkenya.com/feed/?paged=7",
+      "https://jobwebkenya.com/category/medical-jobs-in-kenya/feed/",
+      "https://jobwebkenya.com/category/pharmaceutical-jobs-in-kenya/feed/",
+      "https://jobwebkenya.com/category/nursing-jobs-in-kenya/feed/",
+      "https://jobwebkenya.com/category/healthcare-jobs-in-kenya/feed/",
       "https://jobwebkenya.com/feed/?post_type=job_listing",
     ],
     jobUrlPattern: /jobwebkenya\.com\/jobs\/[a-zA-Z0-9_-]+/,
@@ -237,6 +246,8 @@ const KENYAN_BOARDS: SourceSpec[] = [
       "https://www.careerpointkenya.co.ke/feed/?paged=4",
       "https://www.careerpointkenya.co.ke/category/it-jobs-in-kenya/feed/",
       "https://www.careerpointkenya.co.ke/category/medical-jobs-in-kenya/feed/",
+      "https://www.careerpointkenya.co.ke/category/medical-jobs-in-kenya/feed/?paged=2",
+      "https://www.careerpointkenya.co.ke/category/medical-jobs-in-kenya/feed/?paged=3",
       "https://www.careerpointkenya.co.ke/category/accounting-jobs-in-kenya/feed/",
       "https://www.careerpointkenya.co.ke/category/finance-jobs-in-kenya/feed/",
       "https://www.careerpointkenya.co.ke/category/procurement-jobs-in-kenya/feed/",
@@ -252,6 +263,7 @@ const KENYAN_BOARDS: SourceSpec[] = [
       "https://www.corporatestaffing.co.ke/jobs/",
       "https://www.corporatestaffing.co.ke/tag/it-jobs-in-kenya/",
       "https://www.corporatestaffing.co.ke/tag/medical-officer-jobs-in-kenya/",
+      "https://www.corporatestaffing.co.ke/tag/healthcare-jobs-in-kenya/",
       "https://www.corporatestaffing.co.ke/tag/accounting-jobs-in-kenya/",
       "https://www.corporatestaffing.co.ke/tag/engineering-jobs-in-kenya/",
       "https://www.corporatestaffing.co.ke/tag/ngo-jobs-in-kenya/",
@@ -260,12 +272,12 @@ const KENYAN_BOARDS: SourceSpec[] = [
       "https://www.corporatestaffing.co.ke/tag/legal-jobs-in-kenya/",
       "https://www.corporatestaffing.co.ke/tag/human-resource-jobs-in-kenya/",
       "https://www.corporatestaffing.co.ke/tag/sales-jobs-in-kenya/",
-      "https://www.corporatestaffing.co.ke/tag/healthcare-jobs-in-kenya/",
     ],
     jobUrlPattern: /corporatestaffing\.co\.ke\/(?:job|vacancy)\/[a-zA-Z0-9_-]+/,
     defaultLocation: "Kenya",
-    pagination: { type: "path", pathTemplate: "/jobs/page/{page}", startPage: 2, maxPages: 4 },
+    pagination: { type: "path", pathTemplate: "/jobs/page/{page}", startPage: 2, maxPages: 6 },
   },
+
   {
     id: "jobs-in-kenya", name: "Jobs in Kenya", country: "Kenya", fields: ["all"],
     htmlPages: [
@@ -345,8 +357,22 @@ const FINANCE_SOURCES: SourceSpec[] = [
 const HEALTHCARE_SOURCES: SourceSpec[] = [
   { id: "nairobi-hospital", name: "The Nairobi Hospital Careers", country: "Kenya", fields: ["healthcare"], htmlPages: ["https://thenairobihosp.org/careers/"], defaultLocation: "Nairobi, Kenya" },
   { id: "aku-hospital", name: "Aga Khan University Hospital", country: "Kenya", fields: ["healthcare"], htmlPages: ["https://www.aku.edu/careers/pages/home.aspx"], defaultLocation: "Nairobi, Kenya" },
+  { id: "knh-vacancies", name: "Kenyatta National Hospital (KNH)", country: "Kenya", fields: ["healthcare", "government"], htmlPages: ["https://knh.or.ke/index.php/vacancies/"], defaultLocation: "Nairobi, Kenya" },
+  { id: "mtrh-careers", name: "Moi Teaching & Referral Hospital", country: "Kenya", fields: ["healthcare", "government"], htmlPages: ["https://www.mtrh.go.ke/vacancies/"], defaultLocation: "Eldoret, Kenya" },
+  { id: "mpshah-hospital", name: "MP Shah Hospital Kenya", country: "Kenya", fields: ["healthcare"], htmlPages: ["https://mpshahhosp.org/careers/", "https://mpshahhosp.org/job-vacancies/"], defaultLocation: "Nairobi, Kenya" },
+  { id: "avenue-healthcare", name: "Avenue Healthcare Kenya", country: "Kenya", fields: ["healthcare"], htmlPages: ["https://avenuehealthcare.com/careers/"], defaultLocation: "Nairobi, Kenya" },
+  { id: "karen-hospital", name: "The Karen Hospital", country: "Kenya", fields: ["healthcare"], htmlPages: ["https://karenhospital.org/careers/"], defaultLocation: "Nairobi, Kenya" },
+  { id: "kemri-careers", name: "Kenya Medical Research Institute (KEMRI)", country: "Kenya", fields: ["healthcare", "government"], htmlPages: ["https://www.kemri.go.ke/careers/"], defaultLocation: "Nairobi, Kenya" },
+  { id: "mater-hospital", name: "The Mater Hospital Kenya", country: "Kenya", fields: ["healthcare"], htmlPages: ["https://www.materkenya.com/careers"], defaultLocation: "Nairobi, Kenya" },
+  { id: "gertrudes-hospital", name: "Gertrude's Children's Hospital", country: "Kenya", fields: ["healthcare"], htmlPages: ["https://gerties.org/careers/"], defaultLocation: "Nairobi, Kenya" },
+  { id: "coptic-hospital", name: "Coptic Hospital Kenya", country: "Kenya", fields: ["healthcare"], htmlPages: ["https://coptichospital.org/careers/"], defaultLocation: "Nairobi, Kenya" },
+  { id: "amref-careers", name: "Amref Health Africa", country: "Kenya", fields: ["healthcare", "ngo"], htmlPages: ["https://amref.org/careers/"], defaultLocation: "Nairobi, Kenya" },
+  { id: "red-cross-kenya", name: "Kenya Red Cross Society", country: "Kenya", fields: ["healthcare", "ngo"], htmlPages: ["https://www.redcross.or.ke/careers/"], defaultLocation: "Nairobi, Kenya" },
+  { id: "ciheb-kenya", name: "CIHEB Kenya Careers", country: "Kenya", fields: ["healthcare", "ngo"], htmlPages: ["https://cihebkenya.org/careers/"], defaultLocation: "Nairobi, Kenya" },
   { id: "pathfinder-kenya", name: "Pathfinder International Kenya", country: "Kenya", fields: ["healthcare", "ngo"], htmlPages: ["https://www.pathfinder.org/careers/"], defaultLocation: "Nairobi, Kenya" },
   { id: "msh-kenya", name: "MSH Kenya Careers", country: "Kenya", fields: ["healthcare", "ngo"], htmlPages: ["https://www.msh.org/careers?field_country_tid=KEN"], defaultLocation: "Kenya" },
+  { id: "psi-kenya", name: "PSI Kenya Careers", country: "Kenya", fields: ["healthcare", "ngo"], htmlPages: ["https://www.psi.org/careers/?location=Kenya"], defaultLocation: "Kenya" },
+  { id: "nhif-careers", name: "Social Health Authority (SHA / NHIF)", country: "Kenya", fields: ["healthcare", "government"], htmlPages: ["https://www.nhif.or.ke/vacancies"], defaultLocation: "Nairobi, Kenya" },
 ];
 
 const GLOBAL_REMOTE_ACCEPTING_KENYA: SourceSpec[] = [
@@ -653,12 +679,12 @@ export async function aggressiveCrawlKenya(config: CrawlConfig = {}): Promise<Cr
 }
 
 /** Crawl jobs for a specific career field (e.g. per tenant configuration). */
-export async function crawlJobsByField(field: CareerField, maxJobs = 200): Promise<CrawledJob[]> {
-  return aggressiveCrawlKenya({ fields: [field], maxJobs, multiPage: true, maxPages: 3 });
+export async function crawlJobsByField(field: CareerField, maxJobs = 300): Promise<CrawledJob[]> {
+  return aggressiveCrawlKenya({ fields: [field], maxJobs, multiPage: true, maxPages: 6 });
 }
 
 /** Crawl jobs based on CV-extracted keywords (infers relevant career fields). */
-export async function crawlJobsByKeywords(keywords: string[], maxJobs = 300): Promise<CrawledJob[]> {
+export async function crawlJobsByKeywords(keywords: string[], maxJobs = 400): Promise<CrawledJob[]> {
   const kw = keywords.join(" ").toLowerCase();
   const fields: CareerField[] = [];
   if (/tech|it |ict|software|developer|engineer|network|cloud|cyber|data|devops/i.test(kw)) fields.push("tech");
@@ -675,5 +701,5 @@ export async function crawlJobsByKeywords(keywords: string[], maxJobs = 300): Pr
   if (/media|journalism|broadcast|creative|design|marketing|pr/i.test(kw)) fields.push("media");
   if (/logistics|supply chain|procurement|warehouse|shipping/i.test(kw)) fields.push("logistics");
   if (fields.length === 0) fields.push("all");
-  return aggressiveCrawlKenya({ fields, maxJobs, multiPage: true, maxPages: 3 });
+  return aggressiveCrawlKenya({ fields, maxJobs, multiPage: true, maxPages: 6, concurrency: 10 });
 }
