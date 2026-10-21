@@ -823,15 +823,56 @@ export async function getAiBrainHealth(forceRefresh = false): Promise<AiBrainSta
     }
   }
 
+  // Test Agent Router if credentials present
+  if (agentRouterRow?.encryptedCredentials) {
+    try {
+      const c = decryptCredentials<{ apiKey?: string }>(agentRouterRow.encryptedCredentials);
+      if (c.apiKey) {
+        const rootUrl = (agentRouterRow.baseUrl?.trim() || "https://agentrouter.org/v1").replace(/\/$/, "");
+        const testRes = await fetch(`${rootUrl}/models`, {
+          headers: { Authorization: `Bearer ${c.apiKey.trim()}` },
+          signal: AbortSignal.timeout(6000),
+        });
+        if (testRes.ok) {
+          health.providers.agentrouter.status = "ONLINE";
+          health.providers.agentrouter.message = `Verified with Agent Router (${agentRouterRow.model || "standard"})`;
+        } else {
+          health.providers.agentrouter.status = "ERROR";
+          health.providers.agentrouter.message = `Agent Router returned ${testRes.status}`;
+          health.errors.push(`Agent Router: ${health.providers.agentrouter.message}`);
+        }
+      }
+    } catch (err: any) {
+      health.providers.agentrouter.status = "ERROR";
+      health.providers.agentrouter.message = err.message || String(err);
+      health.errors.push(`Agent Router: ${health.providers.agentrouter.message}`);
+    }
+  }
+
   // Determine overall status
   const geminiOnline = health.providers.gemini.status === "ONLINE";
   const openaiOnline = health.providers.openai.status === "ONLINE";
+  const agentrouterOnline = health.providers.agentrouter.status === "ONLINE";
 
-  if (geminiOnline && (defaultProvider === "gemini" || defaultProvider === "auto")) {
+  if (agentrouterOnline && (defaultProvider === "agentrouter" || (!geminiOnline && !openaiOnline))) {
+    const hasFailedOthers = (geminiRow?.encryptedCredentials && !geminiOnline) || (openAiRow?.encryptedCredentials && !openaiOnline);
+    health.status = hasFailedOthers && defaultProvider !== "agentrouter" ? "DEGRADED" : "ONLINE";
+    health.activeProvider = "agentrouter";
+    health.activeModel = agentRouterRow?.model || "gpt-4o";
+    health.activeProviderLabel = "Agent Router";
+    if (health.status === "DEGRADED") {
+      health.recommendation = "Operating on Agent Router fallback. Primary provider encountered an issue.";
+    }
+  } else if (geminiOnline && (defaultProvider === "gemini" || defaultProvider === "auto")) {
     health.status = "ONLINE";
     health.activeProvider = "gemini";
     health.activeModel = geminiRow?.model || "gemini-3.6-flash";
     health.activeProviderLabel = "Google Gemini";
+  } else if (agentrouterOnline) {
+    health.status = "ONLINE";
+    health.activeProvider = "agentrouter";
+    health.activeModel = agentRouterRow?.model || "gpt-4o";
+    health.activeProviderLabel = "Agent Router";
   } else if (openaiOnline) {
     health.status = geminiRow?.encryptedCredentials && !geminiOnline ? "DEGRADED" : "ONLINE";
     health.activeProvider = "openai";
