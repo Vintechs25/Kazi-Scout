@@ -142,14 +142,14 @@ export function evaluatePreIngestionGate(
   const DOMAIN_PATTERNS = {
     LEGAL: /\b(legal\s+counsel|attorney|lawyer|paralegal|solicitor|litigation|corporate\s+counsel|general\s+counsel|legal\s+advisor)\b/i,
     LINGUISTICS: /\b(linguist|translator|translation|interpreter|language\s+specialist|transcriptionist|life\s+sciences\s+linguist)\b/i,
-    HEALTHCARE: /\b(doctor|physician|surgeon|surgery|clinical|nurse|dentist|pharmacist|medical\s+officer|pathologist|pediatrician|cadence\/hello\s+world\/mychart)\b/i,
+    HEALTHCARE: /\b(doctor|physician|surgeon|surgery|clinical|nurse|dentist|pharmacist|medical\s+officer|pathologist|pediatrician)\b/i,
     FINANCE_ACCOUNTS: /\b(accountant|accounting|auditor|financial\s+analyst|tax\s+(?:specialist|manager)|controller|bookkeeper|cpa)\b/i,
     MARKETING_SALES: /\b(b2b\s+marketing|demand\s+generation|sales\s+&\s+cx|sales\s+enablement|marketing\s+operations|crm\s+expert|copywriter|growth\s+marketing|marketing\s+manager)\b/i,
     ACADEMIC_LIFE_SCIENCES: /\b(post-doctoral|postdoc|post-doc|doctoral\s+research\s+scientist|laboratory\s+scientist)\b/i,
     PROPOSAL_ADMIN: /\b(proposal\s+writer|grant\s+writer|bid\s+manager)\b/i,
     CUSTOMER_SUCCESS: /\b(customer\s+success\s+manager|csm\s+ii|cx\s+enablement)\b/i,
-    TECH_IT: /\b(developer|software|engineer|frontend|backend|fullstack|devops|react|python|node|javascript|typescript|sysadmin|ict|it\s+support|technical\s+support|system\s+administrator|web|cloud|database|cyber|qa\b|tester|linux|security\s+researcher|edge\s+functions|data\s+annotator|data\s+engineer|mobile\s+engineer|android|ios)\b/i,
-    NON_CLINICAL_HEALTH: /\b(health\s+coach|wellness\s+coach|health\s+economi(?:cs|st)|health\s+and\s+safety|ehs\s+officer|occupational\s+health\s+and\s+safety|fitness|gym|nutritionist|dietitian)\b/i,
+    TECH_IT: /\b(developer|software|engineer|frontend|backend|fullstack|devops|react|python|node|javascript|typescript|sysadmin|ict|it\s+support|technical\s+support|system\s+administrator|web|cloud|database|cyber|qa\b|tester|linux|security\s+researcher|edge\s+functions|data\s+annotator|data\s+engineer|mobile\s+engineer|android|ios|applications\s+associate|applications\s+specialist|clinical\s+applications|ehr\s+analyst|epic\s+analyst|cadence|mychart)\b/i,
+    NON_CLINICAL_HEALTH: /\b(health\s+coach|wellness\s+coach|health\s+economi(?:cs|st)|health\s+and\s+safety|ehs\s+officer|occupational\s+health\s+and\s+safety|fitness|gym|nutritionist|dietitian|clinical\s+applications|epic\s+analyst|cadence|hello\s+world|mychart|ehr\s+analyst|health\s+informatics)\b/i,
     NON_MEDICAL_CONSULTING: /\b(travel\s+consultant|customer\s+support\s+consultant|hospitality|knowledge\s+management|implementation\s+consultant|management\s+consultant|strategy\s+consultant|business\s+consultant|sap\b|erp\b|crm\b|salesforce|it\s+consultant|solutions\s+consultant|recruitment\s+consultant|education\s+consultant)\b/i,
   };
 

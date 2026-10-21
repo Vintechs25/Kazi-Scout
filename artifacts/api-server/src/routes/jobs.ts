@@ -19,7 +19,7 @@ import { fingerprintJob, isPotentialDuplicate, normalizeCompany, normalizeText }
 import { discoverAndMatchJobs } from "../lib/job-search-service";
 import { getOrGenerateSearchDirective } from "../lib/search-directive";
 import { evaluatePreIngestionGate } from "../lib/pre-ingestion-gate";
-import { batchEvaluateQualifiedJobs } from "../lib/ai-job-evaluator";
+import { batchEvaluateQualifiedJobs, getAiBrainHealth } from "../lib/ai-job-evaluator";
 import { getVerifiedMasterCv } from "../lib/cv-storage";
 import { getOrGenerateCandidateEvidence } from "../lib/candidate-evidence";
 import { verifyJobRequirementsForUser } from "../lib/job-search-service-enhanced";
@@ -128,7 +128,6 @@ router.get("/jobs", async (req, res): Promise<void> => {
     filters.push(
       eq(jobsTable.aiDecision, "STRONG_MATCH"),
       gte(jobsTable.matchScore, minThreshold),
-      eq(jobsTable.isAiVerified, true),
       eq(jobsTable.hardEligibilityFailure, false),
     );
   } else if (tab === "potential" || req.query.aiDecision === "POTENTIAL_MATCH") {
@@ -788,17 +787,60 @@ router.post("/jobs/re-evaluate", async (req, res): Promise<void> => {
       }
     }
 
+    const aiStatus = (aiResults as any)?.aiStatus || "OFFLINE";
+    const aiErrors = (aiResults as any)?.errors || [];
+    const providerUsed = (aiResults as any)?.providerUsed || "none";
+    const modelUsed = (aiResults as any)?.modelUsed || "none";
+
+    // If AI evaluation failed for all candidates, do not silently pretend success
+    if (aiStatus === "OFFLINE" && candidatesForAi.length > 0) {
+      const mainErr = aiErrors[0] || "AI evaluation failed - provider credentials invalid or unavailable";
+      return res.status(400).json({
+        success: false,
+        aiStatus: "OFFLINE",
+        error: `AI Core Brain Offline: ${mainErr}. Discovered jobs were not AI-evaluated. Please update your AI API key in Agent & Settings.`,
+        errors: aiErrors,
+        evaluated: allJobs.length,
+        rejectedByGate,
+        aiEvaluated: 0,
+      });
+    }
+
     res.json({
       success: true,
+      aiStatus,
+      providerUsed,
+      modelUsed,
       evaluated: allJobs.length,
       rejectedByGate,
       aiEvaluated: candidatesForAi.length,
       strongMatches,
       potentialMatches,
       rejectedByAi,
+      warnings: aiErrors,
+      warning: aiStatus === "DEGRADED" ? `Evaluated via ${providerUsed} fallback: ${aiErrors[0] || "Primary AI provider is failing"}` : undefined,
     });
   } catch (err: any) {
     res.status(500).json({ error: err.message || "Failed to re-evaluate jobs" });
+  }
+});
+
+/**
+ * GET /api/ai/brain-status - Live health status and diagnostics of AI Core Brain
+ */
+router.get("/ai/brain-status", async (req, res) => {
+  try {
+    const force = req.query.force === "true";
+    const status = await getAiBrainHealth(force);
+    res.json(status);
+  } catch (err: any) {
+    res.status(500).json({
+      status: "ERROR",
+      activeProvider: "none",
+      activeModel: null,
+      errors: [err.message || "Failed to inspect AI brain health"],
+      recommendation: "Check integration settings in Agent & Settings.",
+    });
   }
 });
 

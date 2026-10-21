@@ -96,7 +96,9 @@ function b64id(url: string): string {
 
 function isGarbage(text: string): boolean {
   if (!text || text.length < 4 || text.length > 180) return true;
-  return /privacy|terms|cookie|login|sign in|register|read more|view more|all rights reserved|click here|home|about us|contact us|apply now|post a job|create job|employer|job alert|subscribe|newsletter|no jobs found|calculate\s+tax|get\s+the\s+right\s+figure|tax\s+calculator|filing\s+returns|press\s+release|annual\s+report|strategic\s+plan|disclaimer|faqs?\b/i.test(text);
+  const t = text.trim();
+  if (/^(?:apply|apply now|apply here|download|view|view details|click here|read more|details|vacancies|careers|career opportunities|open vacancies|jobs)$/i.test(t)) return true;
+  return /privacy|terms|cookie|login|sign in|register|read more|view more|all rights reserved|click here|home|about us|contact us|apply now|post a job|create job|employer|job alert|subscribe|newsletter|no jobs found|calculate\s+tax|get\s+the\s+right\s+figure|tax\s+calculator|filing\s+returns|press\s+release|annual\s+report|strategic\s+plan|disclaimer|faqs?\b/i.test(t);
 }
 
 function isIndexUrl(u: string): boolean {
@@ -109,10 +111,19 @@ function splitAtAt(raw: string): { title: string; company: string } {
     const parts = raw.split(" at ");
     return { title: parts[0].trim(), company: parts.slice(1).join(" at ").trim() };
   }
+  if (raw.includes(" @ ")) {
+    const parts = raw.split(" @ ");
+    return { title: parts[0].trim(), company: parts.slice(1).join(" @ ").trim() };
+  }
   const sep = raw.includes(" \u2013 ") ? " \u2013 " : raw.includes(" - ") ? " - " : null;
   if (sep) {
     const parts = raw.split(sep);
     if (parts.length === 2 && parts[1].length < 60) return { title: parts[0].trim(), company: parts[1].trim() };
+  }
+  // Pattern: "Job Title Job Company Name" e.g. "Residential Medical Officer Job Jordan Hospital"
+  const jobMatch = raw.match(/^(.*?)\s+Job\s+(.*)$/i);
+  if (jobMatch && jobMatch[1].length >= 4 && jobMatch[2].length >= 3) {
+    return { title: jobMatch[1].trim(), company: jobMatch[2].trim() };
   }
   return { title: raw, company: "" };
 }
@@ -609,25 +620,83 @@ async function crawlJson(spec: SourceSpec, endpoint: string, seen: Set<string>, 
   } catch { /* skip */ }
 }
 
+function matchesCareerFieldUrl(url: string, fields: CareerField[]): boolean {
+  if (fields.includes("all")) return true;
+  const u = url.toLowerCase();
+  for (const f of fields) {
+    if (f === "healthcare" && /medical|health|pharma|doctor|nurse|clinic|hospital|surgeon/i.test(u)) return true;
+    if (f === "tech" && /it-|tech|software|data|dev|computer|information-technology/i.test(u)) return true;
+    if (f === "finance" && /finance|account|audit|bank|tax|treasury|credit/i.test(u)) return true;
+    if (f === "agriculture" && /agri|farm|crop|livestock|horticultur/i.test(u)) return true;
+    if (f === "ngo" && /ngo|charity|humanitarian|development|aid|relief/i.test(u)) return true;
+    if (f === "engineering" && /engineer|technical/i.test(u)) return true;
+    if (f === "legal" && /legal|law|compliance/i.test(u)) return true;
+    if (f === "education" && /education|training|teach|vacancies/i.test(u)) return true;
+    if (f === "logistics" && /logistics|procurement|supply/i.test(u)) return true;
+    if (f === "hospitality" && /hospitality|hotel|tourism/i.test(u)) return true;
+    if (f === "media" && /media|creative|journalism/i.test(u)) return true;
+    if (f === "insurance" && /insurance/i.test(u)) return true;
+    if (f === "government" && /government|public-service|psck|psc|tsc|knh|mtrh|kemri/i.test(u)) return true;
+  }
+  return false;
+}
+
 /**
  * Aggressively crawl all (or field-filtered) Kenyan job sources.
  */
 export async function aggressiveCrawlKenya(config: CrawlConfig = {}): Promise<CrawledJob[]> {
   const { maxJobs = 1000, perRequestTimeout = 12_000, concurrency = 8, fields = ["all"], multiPage = true, maxPages = 4, sourceIds } = config;
   const includeAll = fields.includes("all");
-  const activeSources = ALL_KENYA_SOURCES.filter((s) => {
-    if (sourceIds && sourceIds.length > 0) return sourceIds.includes(s.id);
-    return includeAll || s.fields.some((f) => fields.includes(f) || f === "all");
-  });
+
+  // Separate dedicated domain sources from generic aggregator boards
+  const dedicatedSources: SourceSpec[] = [];
+  const genericSources: SourceSpec[] = [];
+
+  for (const s of ALL_KENYA_SOURCES) {
+    if (sourceIds && sourceIds.length > 0) {
+      if (sourceIds.includes(s.id)) dedicatedSources.push(s);
+      continue;
+    }
+    if (includeAll) {
+      genericSources.push(s);
+      continue;
+    }
+    const hasExplicitField = s.fields.some((f) => fields.includes(f));
+    if (hasExplicitField) {
+      dedicatedSources.push(s);
+    } else if (s.fields.includes("all")) {
+      genericSources.push(s);
+    }
+  }
+
+  // Dedicated field sources go FIRST to prevent starvation by generic boards
+  const activeSources = [...dedicatedSources, ...genericSources];
 
   type Task = { type: "html" | "feed" | "json"; spec: SourceSpec; url: string };
   const sourceTaskQueues: Task[][] = [];
 
   for (const spec of activeSources) {
+    const isDedicated = dedicatedSources.includes(spec);
     const queue: Task[] = [];
-    for (const url of spec.feeds || []) queue.push({ type: "feed", spec, url });
+
+    // Filter feeds for multi-field aggregators to target active career fields
+    let feedsToQueue = spec.feeds || [];
+    if (!includeAll && !isDedicated) {
+      const matchingFeeds = feedsToQueue.filter((u) => matchesCareerFieldUrl(u, fields));
+      feedsToQueue = matchingFeeds.length > 0 ? matchingFeeds : [];
+    }
+    for (const url of feedsToQueue) queue.push({ type: "feed", spec, url });
+
     for (const url of spec.jsonEndpoints || []) queue.push({ type: "json", spec, url });
-    for (const pageUrl of spec.htmlPages || []) {
+
+    // Filter HTML pages for multi-field aggregators to target active career fields
+    let pagesToQueue = spec.htmlPages || [];
+    if (!includeAll && !isDedicated) {
+      const matchingPages = pagesToQueue.filter((u) => matchesCareerFieldUrl(u, fields));
+      pagesToQueue = matchingPages.length > 0 ? matchingPages : [];
+    }
+
+    for (const pageUrl of pagesToQueue) {
       queue.push({ type: "html", spec, url: pageUrl });
       if (multiPage && spec.pagination) {
         const pg = spec.pagination;

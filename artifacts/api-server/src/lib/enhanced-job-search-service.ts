@@ -28,6 +28,8 @@ import type { NormalizedJob, JobSearchFilter } from "./job-search-service";
 import { validateListing } from "./ingestion-contract";
 import { SourceRouter } from "./source-router";
 import { aggressiveCrawlKenya, crawlJobsByKeywords, type CrawledJob } from "./connectors/kenya-aggressive-crawler";
+import { batchEvaluateQualifiedJobs } from "./ai-job-evaluator";
+import { getVerifiedMasterCv } from "./cv-storage";
 
 // ============================================================================
 // TYPES
@@ -47,6 +49,10 @@ export interface DiscoveryResult {
   sourcesScraped: string[];
   executionTime: number;
   rolesSearched: string[];
+  aiStatus?: "ONLINE" | "DEGRADED" | "OFFLINE";
+  aiError?: string | null;
+  aiProviderUsed?: string;
+  aiModelUsed?: string;
 }
 
 export interface JobDiscoveryConfig {
@@ -650,6 +656,21 @@ export async function discoverJobsWithCvGuidance(
     
     // Match discovered jobs against searched roles & candidate profile
     const candidateEvidence = await getOrGenerateCandidateEvidence(accountId);
+
+    type ScoredDiscoveredJob = {
+      job: any;
+      roleMatchPct: number;
+      isExplicitNonMedicalRole: boolean;
+      prelimCvMatchScore: number;
+      prelimStatus: "MATCHED" | "NEEDS_REVIEW" | "REJECTED";
+      prelimAiDecision: "STRONG_MATCH" | "POTENTIAL_MATCH" | "NOT_A_MATCH" | "INELIGIBLE";
+      prelimHardEligibilityFailure: boolean;
+      prelimRejectionReason: string | null;
+      jobSkills: string[];
+      matchedSkills: string[];
+    };
+
+    const scoredJobs: ScoredDiscoveredJob[] = [];
     
     for (const job of discoveredJobs) {
       // 1. Calculate role match against active search roles
@@ -674,7 +695,7 @@ export async function discoverJobsWithCvGuidance(
 
       // Hard cross-domain check for Medical candidates:
       // Disqualify travel, customer support, SAP, sales, real estate, accounting, driver, chef, IT dev, etc.
-      const isExplicitNonMedicalRole = /\b(travel|tourism|flight|hotel|hospitality|customer\s+support|customer\s+service|call\s+center|helpdesk|sap\b|salesforce|erp\b|real\s+estate|receptionist|cashier|waiter|chef|bartender|driver|sales\s+representative|telemarketing|sales\s+executive|software\s+developer|fullstack|frontend|backend|devops|react|python|java\b|php\b|accounting|internal\s+auditor|tax\s+officer|legal\s+counsel|lawyer|attorney|android|ios|engineer|sales\s+&\s+cx|cx\s+enablement|knowledge\s+management|implementation\s+consultant|management\s+consultant|strategy\s+consultant|business\s+consultant|post-doctoral|postdoc|health\s+coach|wellness\s+coach|health\s+economi)\b/i.test(titleLower);
+      const isExplicitNonMedicalRole = /\b(travel|tourism|flight|hotel|hospitality|customer\s+support|customer\s+service|call\s+center|helpdesk|sap\b|salesforce|erp\b|real\s+estate|receptionist|cashier|waiter|chef|bartender|driver|sales\s+representative|telemarketing|sales\s+executive|software\s+developer|fullstack|frontend|backend|devops|react|python|java\b|php\b|accounting|internal\s+auditor|tax\s+officer|legal\s+counsel|lawyer|attorney|android|ios|engineer|sales\s+&\s+cx|cx\s+enablement|knowledge\s+management|implementation\s+consultant|management\s+consultant|strategy\s+consultant|business\s+consultant|post-doctoral|postdoc|health\s+coach|wellness\s+coach|health\s+economi|clinical\s+applications|applications\s+associate|applications\s+specialist|epic\s+analyst|cadence|mychart|ehr\s+analyst)\b/i.test(titleLower);
 
       let roleMatchPct = 0;
 
@@ -826,7 +847,7 @@ export async function discoverJobsWithCvGuidance(
         /apply|cv|email|portal|deadline/i.test(job.description || "")
       );
 
-      const cvMatchScore = Math.min(
+      const prelimCvMatchScore = Math.min(
         100,
         Math.max(
           roleMatchPct > 0 ? 30 : 0,
@@ -839,30 +860,136 @@ export async function discoverJobsWithCvGuidance(
         )
       );
 
-      // Strict AI Status Decision: Zero-role-match jobs are strictly REJECTED
-      let status: "MATCHED" | "NEEDS_REVIEW" | "REJECTED" = "REJECTED";
-      let aiDecision: "STRONG_MATCH" | "POTENTIAL_MATCH" | "NOT_A_MATCH" | "INELIGIBLE" = "NOT_A_MATCH";
-      let hardEligibilityFailure = false;
-      let rejectionReason: string | null = null;
+      let prelimStatus: "MATCHED" | "NEEDS_REVIEW" | "REJECTED" = "REJECTED";
+      let prelimAiDecision: "STRONG_MATCH" | "POTENTIAL_MATCH" | "NOT_A_MATCH" | "INELIGIBLE" = "NOT_A_MATCH";
+      let prelimHardEligibilityFailure = false;
+      let prelimRejectionReason: string | null = null;
 
-      if (roleMatchPct >= 70 && cvMatchScore >= 70) {
-        status = "MATCHED";
-        aiDecision = "STRONG_MATCH";
-      } else if (roleMatchPct >= 50 && cvMatchScore >= 50) {
-        status = "NEEDS_REVIEW";
-        aiDecision = "POTENTIAL_MATCH";
+      if (roleMatchPct >= 70 && prelimCvMatchScore >= 70 && !isExplicitNonMedicalRole) {
+        prelimStatus = "MATCHED";
+        prelimAiDecision = "STRONG_MATCH";
+      } else if (roleMatchPct >= 50 && prelimCvMatchScore >= 50 && !isExplicitNonMedicalRole) {
+        prelimStatus = "NEEDS_REVIEW";
+        prelimAiDecision = "POTENTIAL_MATCH";
       } else {
-        status = "REJECTED";
-        aiDecision = "NOT_A_MATCH";
-        hardEligibilityFailure = true;
-        rejectionReason = "Listing does not match candidate's approved target roles";
+        prelimStatus = "REJECTED";
+        prelimAiDecision = "NOT_A_MATCH";
+        prelimHardEligibilityFailure = true;
+        prelimRejectionReason = isExplicitNonMedicalRole
+          ? "Disqualified: Non-medical listing"
+          : "Listing does not match candidate's approved target roles";
       }
-      
+
+      scoredJobs.push({
+        job,
+        roleMatchPct,
+        isExplicitNonMedicalRole,
+        prelimCvMatchScore,
+        prelimStatus,
+        prelimAiDecision,
+        prelimHardEligibilityFailure,
+        prelimRejectionReason,
+        jobSkills,
+        matchedSkills,
+      });
+    }
+
+    // ━━━ AI CORE BRAIN EVALUATION ━━━
+    // Send qualified candidate opportunities to real AI (Gemini / OpenAI / OpenRouter)
+    const candidatesForAi = scoredJobs
+      .filter((s) => s.roleMatchPct >= 50 && !s.isExplicitNonMedicalRole)
+      .slice(0, 40)
+      .map((s) => s.job);
+
+    let aiEvaluations: any = new Map();
+    let aiStatus: "ONLINE" | "DEGRADED" | "OFFLINE" = "OFFLINE";
+    let aiErrors: string[] = [];
+    let aiProviderUsed = "none";
+    let aiModelUsed = "none";
+
+    if (candidatesForAi.length > 0) {
+      try {
+        const cvDoc = await getVerifiedMasterCv().catch(() => ({ text: "" }));
+        aiEvaluations = await batchEvaluateQualifiedJobs(
+          candidatesForAi,
+          candidateEvidence,
+          cvDoc.text.slice(0, 3000),
+          4,
+        );
+        aiStatus = aiEvaluations.aiStatus || "OFFLINE";
+        aiErrors = aiEvaluations.errors || [];
+        aiProviderUsed = aiEvaluations.providerUsed || "none";
+        aiModelUsed = aiEvaluations.modelUsed || "none";
+
+        if (aiErrors.length > 0) {
+          errors.push(`[AI Brain Error]: ${aiErrors.join(" | ")}`);
+        }
+      } catch (aiErr: any) {
+        aiStatus = "OFFLINE";
+        const msg = aiErr?.message || String(aiErr);
+        aiErrors.push(msg);
+        errors.push(`[AI Brain Error]: AI evaluation halted: ${msg}`);
+      }
+    }
+
+    // Persist all jobs with AI judgments
+    for (const scored of scoredJobs) {
+      const { job, roleMatchPct, isExplicitNonMedicalRole, prelimCvMatchScore, prelimStatus, prelimAiDecision, prelimHardEligibilityFailure, prelimRejectionReason, jobSkills, matchedSkills: prelimMatchedSkills } = scored;
+      const aiEval = aiEvaluations.get(job.id);
+
+      let cvMatchScore = prelimCvMatchScore;
+      let status: "MATCHED" | "NEEDS_REVIEW" | "REJECTED" = prelimStatus;
+      let aiDecision: "STRONG_MATCH" | "POTENTIAL_MATCH" | "NOT_A_MATCH" | "INSUFFICIENT_INFORMATION" | "INELIGIBLE" = prelimAiDecision;
+      let hardEligibilityFailure = prelimHardEligibilityFailure;
+      let rejectionReason: string | null = prelimRejectionReason;
+      let matchReason = "Preliminary role and qualification match.";
+      let isAiVerified = false;
+      let providerUsed = "heuristic";
+      let modelUsed = "pre-ingestion";
+      let finalMatchedSkills = prelimMatchedSkills;
+      let finalMissingSkills = jobSkills.filter((s) => !prelimMatchedSkills.includes(s));
+
+      if (aiEval && aiEval.isAiVerified) {
+        cvMatchScore = aiEval.matchScore;
+        aiDecision = aiEval.decision;
+        hardEligibilityFailure = aiEval.hardEligibilityFailure;
+        rejectionReason = aiEval.hardFailureReason || (aiEval.decision === "NOT_A_MATCH" || aiEval.decision === "INELIGIBLE" ? aiEval.explanation : null);
+        matchReason = aiEval.explanation;
+        isAiVerified = true;
+        providerUsed = aiEval.providerUsed || aiProviderUsed;
+        modelUsed = aiEval.modelUsed || aiModelUsed;
+        finalMatchedSkills = aiEval.matchedSkills || prelimMatchedSkills;
+        finalMissingSkills = aiEval.missingSkills || [];
+
+        if (aiEval.decision === "STRONG_MATCH") {
+          status = "MATCHED";
+        } else if (aiEval.decision === "POTENTIAL_MATCH" || aiEval.decision === "INSUFFICIENT_INFORMATION") {
+          status = "NEEDS_REVIEW";
+        } else {
+          status = "REJECTED";
+        }
+      } else {
+        if (roleMatchPct >= 70 && cvMatchScore >= 70 && !isExplicitNonMedicalRole) {
+          status = "MATCHED";
+          aiDecision = "STRONG_MATCH";
+        } else if (roleMatchPct >= 50 && cvMatchScore >= 50 && !isExplicitNonMedicalRole) {
+          status = "NEEDS_REVIEW";
+          aiDecision = "POTENTIAL_MATCH";
+        } else {
+          status = "REJECTED";
+          aiDecision = "NOT_A_MATCH";
+          hardEligibilityFailure = true;
+          rejectionReason = isExplicitNonMedicalRole
+            ? "Disqualified: Non-medical listing"
+            : "Listing does not match candidate's approved target roles";
+        }
+      }
+
       const enrichedJob: Partial<EnrichedJob> & { matchScore?: number } = {
         ...job,
         cvMatchScore,
-        cvMatchedSkills: matchedSkills,
-        cvMissingSkills: jobSkills.filter(s => !matchedSkills.includes(s)),
+        cvMatchedSkills: finalMatchedSkills,
+        cvMissingSkills: finalMissingSkills,
         matchScore: cvMatchScore,
       };
       
@@ -898,9 +1025,14 @@ export async function discoverJobsWithCvGuidance(
             aiDecision,
             hardEligibilityFailure,
             rejectionReason,
-            matchedSkills,
-            missingSkills: jobSkills.filter(s => !matchedSkills.includes(s)),
-            isAiVerified: Boolean(job.isRequirementVerified),
+            matchReason,
+            aiProvider: providerUsed,
+            aiModel: modelUsed,
+            aiEvaluatedAt: isAiVerified ? new Date() : null,
+            isAiVerified,
+            evidenceFingerprint: candidateEvidence.evidenceFingerprint,
+            matchedSkills: finalMatchedSkills,
+            missingSkills: finalMissingSkills,
             discoveredAt: job.discoveredAt || new Date(),
           })
           .onConflictDoUpdate({
@@ -911,9 +1043,14 @@ export async function discoverJobsWithCvGuidance(
               aiDecision,
               hardEligibilityFailure,
               rejectionReason,
-              matchedSkills,
-              missingSkills: jobSkills.filter(s => !matchedSkills.includes(s)),
-              isAiVerified: Boolean(job.isRequirementVerified),
+              matchReason,
+              aiProvider: providerUsed,
+              aiModel: modelUsed,
+              aiEvaluatedAt: isAiVerified ? new Date() : null,
+              isAiVerified,
+              evidenceFingerprint: candidateEvidence.evidenceFingerprint,
+              matchedSkills: finalMatchedSkills,
+              missingSkills: finalMissingSkills,
             },
           });
 
@@ -949,8 +1086,8 @@ export async function discoverJobsWithCvGuidance(
               isVerified: Boolean(rv.isVerified),
               verificationNotes: rv.verificationNotes || [],
               cvMatchScore,
-              cvMatchedSkills: matchedSkills,
-              cvMissingSkills: jobSkills.filter(s => !matchedSkills.includes(s)),
+              cvMatchedSkills: finalMatchedSkills,
+              cvMissingSkills: finalMissingSkills,
               roleMatchScore: cvMatchScore,
               canApply: Boolean(job.isRequirementVerified),
               verifiedAt: new Date(),
@@ -1003,6 +1140,10 @@ export async function discoverJobsWithCvGuidance(
       sourcesScraped,
       executionTime: Date.now() - startTime,
       rolesSearched: rolesToSearch,
+      aiStatus,
+      aiError: aiErrors[0] || null,
+      aiProviderUsed,
+      aiModelUsed,
     };
   } catch (err) {
     errors.push(err instanceof Error ? err.message : String(err));

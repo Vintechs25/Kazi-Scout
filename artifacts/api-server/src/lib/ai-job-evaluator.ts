@@ -181,7 +181,21 @@ async function callGeminiEvaluation(
 
       if (!res.ok) {
         const text = await res.text().catch(() => "");
-        lastError = new Error(`Gemini evaluation error on ${m} (${res.status}): ${text.slice(0, 200)}`);
+        let reason = "";
+        try {
+          const errObj = JSON.parse(text);
+          reason = errObj.error?.message || errObj.error?.details?.[0]?.reason || "";
+        } catch {}
+
+        // If the API key itself is invalid or unauthorized, fail fast to allow fallback provider
+        if (res.status === 400 && (text.includes("API_KEY_INVALID") || text.includes("API key not valid") || reason.includes("API key not valid"))) {
+          throw new Error("Gemini API key is invalid (API_KEY_INVALID). Please update your API key in Agent & Settings.");
+        }
+        if (res.status === 401 || res.status === 403) {
+          throw new Error(`Gemini authorization failed (${res.status}): ${reason || "Access denied"}.`);
+        }
+
+        lastError = new Error(`Gemini error on ${m} (${res.status}): ${reason || text.slice(0, 200)}`);
         continue;
       }
 
@@ -192,6 +206,9 @@ async function callGeminiEvaluation(
       const cleaned = cleanJsonText(rawText);
       return { data: JSON.parse(cleaned), modelUsed: m };
     } catch (err: any) {
+      if (err?.message?.includes("API_KEY_INVALID") || err?.message?.includes("authorization failed")) {
+        throw err;
+      }
       lastError = err;
     }
   }
@@ -235,7 +252,7 @@ async function callOpenAiEvaluation(
     payload.response_format = { type: "json_object" };
   }
 
-  const res = await fetch(endpoint, {
+  let res = await fetch(endpoint, {
     method: "POST",
     headers: {
       Authorization: `Bearer ${apiKey.trim()}`,
@@ -245,13 +262,29 @@ async function callOpenAiEvaluation(
     signal: AbortSignal.timeout(25_000),
   });
 
+  // If response_format caused an error on OpenRouter models that don't support it, retry without it
+  if (!res.ok && payload.response_format) {
+    const retryPayload = { ...payload };
+    delete retryPayload.response_format;
+    res = await fetch(endpoint, {
+      method: "POST",
+      headers: {
+        Authorization: `Bearer ${apiKey.trim()}`,
+        "Content-Type": "application/json",
+      },
+      body: JSON.stringify(retryPayload),
+      signal: AbortSignal.timeout(25_000),
+    });
+  }
+
   if (!res.ok) {
-    throw new Error(`OpenAI evaluation error (${res.status}): ${await res.text()}`);
+    const errText = await res.text().catch(() => "");
+    throw new Error(`OpenAI/OpenRouter evaluation error (${res.status}): ${errText.slice(0, 200)}`);
   }
 
   const data = (await res.json()) as any;
   const rawText = data.choices?.[0]?.message?.content;
-  if (!rawText) throw new Error("No response text from OpenAI");
+  if (!rawText) throw new Error("No response text from OpenAI/OpenRouter");
   aiEvaluationCallsCount++;
   const cleaned = cleanJsonText(rawText);
   return { data: JSON.parse(cleaned), modelUsed: cleanModel };
@@ -290,6 +323,8 @@ export async function evaluateJobFit(
       providerOrder = ["openai", "gemini", "agentrouter"];
     }
   }
+
+  const providerErrors: Record<string, string> = {};
 
   for (const prov of providerOrder) {
     if (prov === "agentrouter" && agentRouterCreds?.apiKey && agentRouterCreds?.model) {
@@ -330,8 +365,9 @@ export async function evaluateJobFit(
         if (parsed.success) {
           return parsed.data;
         }
-      } catch (err) {
-        console.warn(`[AiJobEvaluator] Agent Router evaluation failed on "${job.title}":`, err);
+      } catch (err: any) {
+        providerErrors.agentrouter = err?.message || String(err);
+        console.warn(`[AiJobEvaluator] Agent Router evaluation failed on "${job.title}":`, err?.message || err);
       }
     }
 
@@ -369,8 +405,9 @@ export async function evaluateJobFit(
         if (parsed.success) {
           return parsed.data;
         }
-      } catch (err) {
-        console.warn(`[AiJobEvaluator] Gemini evaluation failed on "${job.title}":`, err);
+      } catch (err: any) {
+        providerErrors.gemini = err?.message || String(err);
+        console.warn(`[AiJobEvaluator] Gemini evaluation failed on "${job.title}":`, err?.message || err);
       }
     }
 
@@ -407,13 +444,18 @@ export async function evaluateJobFit(
         if (parsed.success) {
           return parsed.data;
         }
-      } catch (err) {
-        console.warn(`[AiJobEvaluator] OpenAI evaluation failed on "${job.title}":`, err);
+      } catch (err: any) {
+        providerErrors.openai = err?.message || String(err);
+        console.warn(`[AiJobEvaluator] OpenAI evaluation failed on "${job.title}":`, err?.message || err);
       }
     }
   }
 
   // Strict Mode Failure: When all configured AI providers fail, qualification STOPS.
+  const errorSummary = Object.entries(providerErrors)
+    .map(([k, v]) => `${k.toUpperCase()}: ${v}`)
+    .join(" | ") || "No configured AI provider credentials found";
+
   return {
     decision: "INSUFFICIENT_INFORMATION",
     matchScore: 0,
@@ -424,8 +466,8 @@ export async function evaluateJobFit(
     locationEligibility: "Pending AI provider availability.",
     hardEligibilityFailure: false,
     hardFailureReason: null,
-    explanation: "AI evaluation unavailable: Configured AI providers failed to evaluate this role. Disallowed from active AI-verified results.",
-    uncertainties: ["AI evaluation could not be completed"],
+    explanation: `AI Brain Error: ${errorSummary}. Disallowed from active AI-verified results. Please update your API key in Agent & Settings.`,
+    uncertainties: [`AI Evaluation Failed: ${errorSummary}`],
     confidence: "low",
     isAiVerified: false,
     providerUsed: "none",
@@ -443,9 +485,26 @@ export async function batchEvaluateQualifiedJobs(
   evidence: CandidateEvidenceProfile,
   cvSnippet: string,
   concurrency = 3,
-): Promise<Map<string, AiEvaluation>> {
+): Promise<Map<string, AiEvaluation> & {
+  aiStatus: "ONLINE" | "DEGRADED" | "OFFLINE";
+  providerUsed: string;
+  modelUsed: string;
+  errors: string[];
+}> {
   const results = new Map<string, AiEvaluation>();
-  if (jobs.length === 0) return results;
+  let successfulProvider = "none";
+  let successfulModel = "none";
+  const collectedErrors: string[] = [];
+
+  if (jobs.length === 0) {
+    Object.assign(results, {
+      aiStatus: "ONLINE",
+      providerUsed: "none",
+      modelUsed: "none",
+      errors: [],
+    });
+    return results as any;
+  }
 
   // Retrieve integration credentials and default AI provider preference
   const [integrations, [state]] = await Promise.all([
@@ -565,15 +624,36 @@ export async function batchEvaluateQualifiedJobs(
             agentRouterCreds,
             defaultProvider,
           );
+          if (evalResult.isAiVerified && evalResult.providerUsed !== "none") {
+            successfulProvider = evalResult.providerUsed;
+            successfulModel = evalResult.modelUsed || "unknown";
+          } else if (!evalResult.isAiVerified && evalResult.explanation.includes("AI Brain Error:")) {
+            const errStr = evalResult.explanation.replace(/^AI Brain Error:\s*/i, "");
+            if (!collectedErrors.includes(errStr)) collectedErrors.push(errStr);
+          }
           results.set(job.id, evalResult);
-        } catch (err) {
-          console.error(`[AiJobEvaluator] Error evaluating job ${job.id}:`, err);
+        } catch (err: any) {
+          console.error(`[AiJobEvaluator] Error evaluating job ${job.id}:`, err?.message || err);
+          if (!collectedErrors.includes(err?.message || String(err))) {
+            collectedErrors.push(err?.message || String(err));
+          }
         }
       }),
     );
   }
 
-  return results;
+  const aiStatus = (successfulProvider !== "none" && successfulProvider !== "gate")
+    ? (collectedErrors.length > 0 ? "DEGRADED" : "ONLINE")
+    : "OFFLINE";
+
+  Object.assign(results, {
+    aiStatus,
+    providerUsed: successfulProvider,
+    modelUsed: successfulModel,
+    errors: collectedErrors,
+  });
+
+  return results as any;
 }
 
 /**
@@ -635,3 +715,147 @@ export async function evaluateSingleJob(
     defaultProvider,
   );
 }
+
+export interface AiBrainStatus {
+  status: "ONLINE" | "DEGRADED" | "OFFLINE";
+  activeProvider: string;
+  activeModel: string | null;
+  activeProviderLabel: string;
+  providers: {
+    gemini: { configured: boolean; model: string | null; status: "ONLINE" | "ERROR" | "NOT_CONFIGURED"; message: string };
+    openai: { configured: boolean; model: string | null; status: "ONLINE" | "ERROR" | "NOT_CONFIGURED"; message: string };
+    agentrouter: { configured: boolean; model: string | null; status: "ONLINE" | "ERROR" | "NOT_CONFIGURED"; message: string };
+  };
+  errors: string[];
+  recommendation: string | null;
+  lastChecked: string;
+}
+
+let cachedBrainHealth: { data: AiBrainStatus; expiresAt: number } | null = null;
+
+export async function getAiBrainHealth(forceRefresh = false): Promise<AiBrainStatus> {
+  const now = Date.now();
+  if (!forceRefresh && cachedBrainHealth && cachedBrainHealth.expiresAt > now) {
+    return cachedBrainHealth.data;
+  }
+
+  const [integrations, [state]] = await Promise.all([
+    db.select().from(integrationSettingsTable),
+    db.select().from(systemStateTable).where(eq(systemStateTable.id, "agent")).limit(1),
+  ]);
+
+  const defaultProvider = state?.defaultAiProvider || "auto";
+
+  const geminiRow = integrations.find((i) => i.provider === "gemini");
+  const openAiRow = integrations.find((i) => i.provider === "openai");
+  const agentRouterRow = integrations.find((i) => i.provider === "agentrouter");
+
+  const health: AiBrainStatus = {
+    status: "OFFLINE",
+    activeProvider: "none",
+    activeModel: null,
+    activeProviderLabel: "None",
+    providers: {
+      gemini: { configured: Boolean(geminiRow?.encryptedCredentials), model: geminiRow?.model ?? null, status: "NOT_CONFIGURED", message: "Not configured" },
+      openai: { configured: Boolean(openAiRow?.encryptedCredentials), model: openAiRow?.model ?? null, status: "NOT_CONFIGURED", message: "Not configured" },
+      agentrouter: { configured: Boolean(agentRouterRow?.encryptedCredentials), model: agentRouterRow?.model ?? null, status: "NOT_CONFIGURED", message: "Not configured" },
+    },
+    errors: [],
+    recommendation: null,
+    lastChecked: new Date().toISOString(),
+  };
+
+  // Test Gemini if credentials present
+  if (geminiRow?.encryptedCredentials) {
+    try {
+      const c = decryptCredentials<{ apiKey?: string }>(geminiRow.encryptedCredentials);
+      if (c.apiKey) {
+        const testRes = await fetch(
+          `https://generativelanguage.googleapis.com/v1beta/models?key=${encodeURIComponent(c.apiKey.trim())}`,
+          { signal: AbortSignal.timeout(6000) }
+        );
+        if (testRes.ok) {
+          health.providers.gemini.status = "ONLINE";
+          health.providers.gemini.message = `Verified with model ${geminiRow.model || "gemini-3.6-flash"}`;
+        } else {
+          const errBody = await testRes.json().catch(() => ({}));
+          const reason = (errBody as any)?.error?.message || `Status ${testRes.status}`;
+          health.providers.gemini.status = "ERROR";
+          health.providers.gemini.message = reason.includes("API key not valid")
+            ? "Gemini API key is invalid (API_KEY_INVALID). Please update in Agent & Settings."
+            : `Gemini error: ${reason}`;
+          health.errors.push(`Gemini: ${health.providers.gemini.message}`);
+        }
+      }
+    } catch (err: any) {
+      health.providers.gemini.status = "ERROR";
+      health.providers.gemini.message = `Connection failed: ${err.message || String(err)}`;
+      health.errors.push(`Gemini: ${health.providers.gemini.message}`);
+    }
+  }
+
+  // Test OpenAI / OpenRouter if credentials present
+  if (openAiRow?.encryptedCredentials) {
+    try {
+      const c = decryptCredentials<{ apiKey?: string }>(openAiRow.encryptedCredentials);
+      if (c.apiKey) {
+        const isOpenRouter = c.apiKey.trim().startsWith("sk-or-v1");
+        const endpoint = isOpenRouter
+          ? "https://openrouter.ai/api/v1/auth/key"
+          : "https://api.openai.com/v1/models";
+        const testRes = await fetch(endpoint, {
+          headers: { Authorization: `Bearer ${c.apiKey.trim()}` },
+          signal: AbortSignal.timeout(6000),
+        });
+        if (testRes.ok) {
+          health.providers.openai.status = "ONLINE";
+          health.providers.openai.message = `Verified with ${isOpenRouter ? "OpenRouter" : "OpenAI"} (${openAiRow.model || "standard"})`;
+        } else {
+          health.providers.openai.status = "ERROR";
+          health.providers.openai.message = `${isOpenRouter ? "OpenRouter" : "OpenAI"} returned ${testRes.status}`;
+          health.errors.push(`OpenAI/OpenRouter: ${health.providers.openai.message}`);
+        }
+      }
+    } catch (err: any) {
+      health.providers.openai.status = "ERROR";
+      health.providers.openai.message = err.message || String(err);
+      health.errors.push(`OpenAI: ${health.providers.openai.message}`);
+    }
+  }
+
+  // Determine overall status
+  const geminiOnline = health.providers.gemini.status === "ONLINE";
+  const openaiOnline = health.providers.openai.status === "ONLINE";
+
+  if (geminiOnline && (defaultProvider === "gemini" || defaultProvider === "auto")) {
+    health.status = "ONLINE";
+    health.activeProvider = "gemini";
+    health.activeModel = geminiRow?.model || "gemini-3.6-flash";
+    health.activeProviderLabel = "Google Gemini";
+  } else if (openaiOnline) {
+    health.status = geminiRow?.encryptedCredentials && !geminiOnline ? "DEGRADED" : "ONLINE";
+    health.activeProvider = "openai";
+    health.activeModel = openAiRow?.model || "gpt-4o-mini";
+    health.activeProviderLabel = openAiRow?.model?.includes(":") ? "OpenRouter" : "OpenAI";
+    if (health.status === "DEGRADED") {
+      health.recommendation = "Operating on fallback provider. Please update your Gemini API key in Agent & Settings.";
+    }
+  } else if (geminiOnline) {
+    health.status = "ONLINE";
+    health.activeProvider = "gemini";
+    health.activeModel = geminiRow?.model || "gemini-3.6-flash";
+    health.activeProviderLabel = "Google Gemini";
+  } else {
+    health.status = "OFFLINE";
+    health.activeProvider = "none";
+    health.activeModel = null;
+    health.activeProviderLabel = "None";
+    health.recommendation = health.errors.length > 0
+      ? `AI Core Brain Offline: ${health.errors[0]}. Please update your API key in Agent & Settings.`
+      : "No working AI provider configured. Please add an API key in Agent & Settings.";
+  }
+
+  cachedBrainHealth = { data: health, expiresAt: now + 45_000 };
+  return health;
+}
+

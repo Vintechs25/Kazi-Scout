@@ -1031,8 +1031,21 @@ function Jobs() {
   const [refreshingDir, setRefreshingDir] = useState(false);
   const [selectedJobIds, setSelectedJobIds] = useState<string[]>([]);
   const [bulkActioning, setBulkActioning] = useState(false);
+  const [aiErrorModal, setAiErrorModal] = useState<{ title: string; error: string; recommendation?: string } | null>(null);
 
   const qc = useQueryClient();
+  const brainQ = useQuery({
+    queryKey: ['ai-brain-status'],
+    queryFn: async () => {
+      try {
+        const res = await fetch('/api/ai/brain-status');
+        if (res.ok) return await res.json();
+      } catch {}
+      return null;
+    },
+    refetchInterval: 45000,
+  });
+
   const jobsQ = useQuery({
     queryKey: ['jobs', search],
     queryFn: async () => {
@@ -1089,12 +1102,24 @@ function Jobs() {
     try {
       setCleaning(true);
       const res = await fetch('/api/jobs/re-evaluate', { method: 'POST' });
-      if (!res.ok) throw new Error('Failed to re-evaluate jobs');
-      const data = await res.json();
+      const data = await res.json().catch(() => ({}));
+      if (!res.ok || data.success === false) {
+        setAiErrorModal({
+          title: "AI Core Brain Evaluation Halted",
+          error: data.error || "AI provider failed to respond or is offline.",
+          recommendation: data.recommendation || "Please check your AI API key and provider configuration in Agent & Settings.",
+        });
+        return;
+      }
       refresh();
-      alert(`AI Evaluation complete: Evaluated ${data.evaluated} jobs with Gemini 3.6 Flash against Master CV. Qualified: ${data.qualified}, Disqualified: ${data.disqualified}.`);
-    } catch (err) {
-      alert(errText(err));
+      brainQ.refetch();
+      alert(`AI Evaluation complete: Evaluated ${data.evaluated} jobs with ${data.providerUsed || 'AI Core Brain'}. Qualified: ${data.qualified}, Disqualified: ${data.disqualified}.`);
+    } catch (err: any) {
+      setAiErrorModal({
+        title: "AI Connection Error",
+        error: errText(err),
+        recommendation: "Please ensure the server is running and check your API key in Agent & Settings.",
+      });
     } finally {
       setCleaning(false);
     }
@@ -1306,6 +1331,47 @@ function Jobs() {
       onRefresh={refreshDirective}
       isRefreshing={refreshingDir}
     />
+
+    {/* AI Core Brain Status Banner on Job Records */}
+    {brainQ.data && brainQ.data.status === 'OFFLINE' && (
+      <div style={{ display: 'flex', alignItems: 'flex-start', justifyContent: 'space-between', padding: '12px 16px', background: 'rgba(239, 68, 68, 0.12)', border: '1px solid rgba(239, 68, 68, 0.35)', borderRadius: 8, marginBottom: 12, gap: 10, flexWrap: 'wrap' }}>
+        <div style={{ display: 'flex', alignItems: 'flex-start', gap: 10, fontSize: 13, color: '#fca5a5' }}>
+          <AlertCircle size={18} style={{ color: '#ef4444', marginTop: 1, flexShrink: 0 }} />
+          <div>
+            <strong style={{ color: '#fca5a5' }}>AI Core Brain Offline:</strong> {brainQ.data.errors?.[0] || 'AI provider credentials failed authentication.'}
+            <div style={{ fontSize: 11, color: '#fca5a5', opacity: 0.85, marginTop: 2 }}>
+              {brainQ.data.recommendation || 'AI job qualification and fit verification are suspended.'}
+            </div>
+          </div>
+        </div>
+        <Link href="/settings" style={{ fontSize: 12, color: '#fff', background: '#dc2626', padding: '4px 10px', borderRadius: 6, textDecoration: 'none', fontWeight: 600, display: 'inline-block' }}>
+          Configure AI Key in Settings &rarr;
+        </Link>
+      </div>
+    )}
+
+    {brainQ.data && brainQ.data.status === 'DEGRADED' && (
+      <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '8px 14px', background: 'rgba(245, 158, 11, 0.1)', border: '1px solid rgba(245, 158, 11, 0.25)', borderRadius: 8, marginBottom: 12, flexWrap: 'wrap', gap: 8 }}>
+        <div style={{ display: 'flex', alignItems: 'center', gap: 8, fontSize: 12, color: '#fde68a' }}>
+          <Sparkles size={14} style={{ color: '#f59e0b', flexShrink: 0 }} />
+          <span>
+            <strong>AI Core Brain Operating on Fallback:</strong> {brainQ.data.activeProviderLabel || brainQ.data.activeProvider} ({brainQ.data.activeModel}). Primary provider: {brainQ.data.errors?.[0] || 'reported error'}.
+          </span>
+        </div>
+        <Link href="/settings" style={{ fontSize: 11, color: '#fde68a', textDecoration: 'underline' }}>
+          Settings &rarr;
+        </Link>
+      </div>
+    )}
+
+    {brainQ.data && brainQ.data.status === 'ONLINE' && (
+      <div style={{ display: 'flex', alignItems: 'center', gap: 8, padding: '6px 12px', background: 'rgba(16, 185, 129, 0.08)', border: '1px solid rgba(16, 185, 129, 0.2)', borderRadius: 8, marginBottom: 12, fontSize: 12, color: '#6ee7b7' }}>
+        <Sparkles size={13} style={{ color: '#10b981' }} />
+        <span>
+          AI Core Brain <strong>Online</strong> • Active Provider: <strong>{brainQ.data.activeProviderLabel || brainQ.data.activeProvider?.toUpperCase()}</strong> ({brainQ.data.activeModel})
+        </span>
+      </div>
+    )}
 
     <div className="toolbar" style={{ flexWrap: 'wrap', gap: 10 }}>
       <form className="search-field" onSubmit={e => { e.preventDefault(); setSearch(query.trim()); }}>
@@ -1538,6 +1604,69 @@ function Jobs() {
       <Field label="Role title" name="title" required/><Field label="Company" name="company" required/><Field label="Location" name="location"/><Field label="Salary" name="salary" placeholder="As listed, if known"/><Field label="Source" name="source" required placeholder="Where you found it"/><Field label="Original job URL" name="url" type="url"/><label className="form-item" style={{ flexDirection: 'row', alignItems: 'center' }}><input type="checkbox" name="remote"/> Remote role</label><TextArea label="Description or notes" name="description" required className="full"/><div className="form-item full"><Button variant="primary" type="submit" disabled={create.isPending}>{create.isPending ? 'Saving…' : 'Save job record'}</Button></div>
     </form></Drawer>}
     {selected && <Drawer title="Job details" close={() => setSelected(null)}>{jobQ.isLoading ? <Loading/> : jobQ.isError ? <ErrorState error={jobQ.error} retry={jobQ.refetch}/> : jobQ.data ? <JobDetails job={jobQ.data} onPrepare={() => prepareApp(jobQ.data!.id)} preparing={preparing} onDelete={() => { deleteJob(jobQ.data!.id); setSelected(null); }} onTrack={() => track.mutate({ id: jobQ.data!.id, data: { method: 'manual' } }, { onSuccess: () => { refresh(); alert('Added to your application review queue. Nothing was submitted.'); }, onError: err => alert(errText(err)) })} pending={track.isPending} onStatus={(status: any) => update.mutate({ id: jobQ.data!.id, data: { status } }, { onSuccess: () => { refresh(); qc.invalidateQueries({ queryKey: getGetJobQueryKey(selected) }); } })}/> : null}</Drawer>}
+    {/* AI Core Brain Error Modal */}
+    {aiErrorModal && (
+      <div style={{
+        position: 'fixed',
+        top: 0,
+        left: 0,
+        right: 0,
+        bottom: 0,
+        background: 'rgba(0, 0, 0, 0.75)',
+        backdropFilter: 'blur(4px)',
+        display: 'flex',
+        alignItems: 'center',
+        justifyContent: 'center',
+        zIndex: 1000,
+        padding: 16,
+      }} onClick={() => setAiErrorModal(null)}>
+        <div style={{
+          background: 'hsl(var(--card))',
+          border: '1px solid rgba(239, 68, 68, 0.4)',
+          borderRadius: 12,
+          maxWidth: 540,
+          width: '100%',
+          padding: 24,
+          boxShadow: '0 20px 40px rgba(0,0,0,0.5)',
+        }} onClick={e => e.stopPropagation()}>
+          <div style={{ display: 'flex', alignItems: 'flex-start', gap: 12, marginBottom: 16 }}>
+            <AlertCircle size={24} style={{ color: '#ef4444', flexShrink: 0, marginTop: 2 }} />
+            <div>
+              <h3 style={{ margin: 0, fontSize: 17, fontWeight: 700, color: '#fca5a5' }}>
+                {aiErrorModal.title}
+              </h3>
+              <p style={{ margin: '8px 0 0 0', fontSize: 13, color: '#fca5a5', lineHeight: 1.5 }}>
+                {aiErrorModal.error}
+              </p>
+            </div>
+          </div>
+
+          {aiErrorModal.recommendation && (
+            <div style={{ padding: '10px 14px', background: 'rgba(255, 255, 255, 0.04)', borderRadius: 8, fontSize: 12, color: 'hsl(var(--muted-foreground))', marginBottom: 20 }}>
+              💡 <strong>Recommendation:</strong> {aiErrorModal.recommendation}
+            </div>
+          )}
+
+          <div style={{ display: 'flex', justifyContent: 'flex-end', gap: 10 }}>
+            <button
+              type="button"
+              className="btn btn-secondary"
+              onClick={() => setAiErrorModal(null)}
+            >
+              Dismiss
+            </button>
+            <Link
+              href="/settings"
+              className="btn"
+              style={{ background: '#dc2626', color: '#fff', textDecoration: 'none', fontWeight: 600 }}
+              onClick={() => setAiErrorModal(null)}
+            >
+              Configure AI Key in Settings &rarr;
+            </Link>
+          </div>
+        </div>
+      </div>
+    )}
   </main>;
 }
 

@@ -347,7 +347,20 @@ async function callOpenAiDirective(
   prompt: string,
 ): Promise<unknown> {
   const cleanModel = normalizeModelName(modelName);
+  const isOpenRouter = apiKey.trim().startsWith("sk-or-v1-") || cleanModel.includes("/");
+  const endpoint = isOpenRouter
+    ? "https://openrouter.ai/api/v1/chat/completions"
+    : "https://api.openai.com/v1/chat/completions";
+
   const isReasoning = cleanModel.startsWith("o1") || cleanModel.startsWith("o3");
+  const headers: Record<string, string> = {
+    Authorization: `Bearer ${apiKey.trim()}`,
+    "Content-Type": "application/json",
+  };
+  if (isOpenRouter) {
+    headers["HTTP-Referer"] = "https://kaziscout.vintechsystems.store";
+    headers["X-Title"] = "KaziScout AI Brain";
+  }
 
   const payload: any = {
     model: cleanModel,
@@ -366,23 +379,30 @@ async function callOpenAiDirective(
     payload.response_format = { type: "json_object" };
   }
 
-  const res = await fetch("https://api.openai.com/v1/chat/completions", {
+  let res = await fetch(endpoint, {
     method: "POST",
-    headers: {
-      Authorization: `Bearer ${apiKey.trim()}`,
-      "Content-Type": "application/json",
-    },
+    headers,
     body: JSON.stringify(payload),
     signal: AbortSignal.timeout(30_000),
   });
 
+  if (!res.ok && res.status === 400 && payload.response_format) {
+    delete payload.response_format;
+    res = await fetch(endpoint, {
+      method: "POST",
+      headers,
+      body: JSON.stringify(payload),
+      signal: AbortSignal.timeout(30_000),
+    });
+  }
+
   if (!res.ok) {
-    throw new Error(`OpenAI error (${res.status}): ${await res.text()}`);
+    throw new Error(`${isOpenRouter ? "OpenRouter" : "OpenAI"} error (${res.status}): ${await res.text()}`);
   }
 
   const data = (await res.json()) as any;
   const rawText = data.choices?.[0]?.message?.content;
-  if (!rawText) throw new Error("Empty response from OpenAI");
+  if (!rawText) throw new Error(`Empty response from ${isOpenRouter ? "OpenRouter" : "OpenAI"}`);
   const cleaned = rawText.replace(/^```json\s*/i, "").replace(/^```\s*/i, "").replace(/\s*```$/i, "").trim();
   return JSON.parse(cleaned);
 }

@@ -215,8 +215,21 @@ export function EnhancedDiscovery() {
   const [aggressiveMode, setAggressiveMode] = useState(true);
   const [verifyRequirements, setVerifyRequirements] = useState(true);
   const [maxJobs, setMaxJobs] = useState(300);
+  const [inspectedRun, setInspectedRun] = useState<DiscoveryRun | null>(null);
 
   // Queries
+  const { data: brainStatus, refetch: refetchBrainStatus } = useQuery({
+    queryKey: ['ai-brain-status'],
+    queryFn: async () => {
+      try {
+        const res = await fetch('/api/ai/brain-status', { credentials: 'include' });
+        if (res.ok) return await res.json();
+      } catch {}
+      return null;
+    },
+    refetchInterval: 45000,
+  });
+
   const { data: historyData, isLoading: historyLoading, refetch: refetchHistory } = useQuery({
     queryKey: ['discovery-history'],
     queryFn: () => fetchDiscoveryHistory(20),
@@ -268,6 +281,12 @@ export function EnhancedDiscovery() {
   });
 
   const handleRunDiscovery = async () => {
+    if (brainStatus?.status === 'OFFLINE') {
+      const proceed = confirm(
+        `AI Core Brain Offline Warning:\n\n${brainStatus.errors?.[0] || 'No working AI provider credentials found.'}\n\nJobs will be crawled from live feeds, but AI fit qualification will remain pending until a working API key is configured in Settings.\n\nDo you want to proceed with scraping anyway?`
+      );
+      if (!proceed) return;
+    }
     setIsRunning(true);
     setLastResult(null);
     try {
@@ -279,8 +298,9 @@ export function EnhancedDiscovery() {
       });
       setLastResult(result);
       refetchHistory();
-    } catch (err) {
-      // Handled
+      refetchBrainStatus();
+    } catch (err: any) {
+      alert(`Discovery failed: ${err?.message || err}`);
     } finally {
       setIsRunning(false);
     }
@@ -308,6 +328,57 @@ export function EnhancedDiscovery() {
           </Link>
         </div>
       </header>
+
+      {/* AI Core Brain Status Indicator */}
+      {brainStatus && brainStatus.status === 'OFFLINE' && (
+        <div style={{ display: 'flex', alignItems: 'flex-start', justifyContent: 'space-between', padding: '14px 18px', background: 'rgba(239, 68, 68, 0.12)', border: '1px solid rgba(239, 68, 68, 0.35)', borderRadius: 10, marginBottom: 16, gap: 12 }}>
+          <div style={{ display: 'flex', alignItems: 'flex-start', gap: 12 }}>
+            <AlertCircle size={20} style={{ color: '#ef4444', marginTop: 2, flexShrink: 0 }} />
+            <div>
+              <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+                <strong style={{ fontSize: 14, color: '#fca5a5' }}>AI Core Brain Offline</strong>
+                <span className="badge" style={{ fontSize: 10, textTransform: 'uppercase', background: 'rgba(239,68,68,0.25)', color: '#fca5a5', border: '1px solid rgba(239,68,68,0.4)' }}>Action Required</span>
+              </div>
+              <p style={{ margin: '4px 0 0 0', fontSize: 13, color: '#fca5a5', opacity: 0.9 }}>
+                {brainStatus.recommendation || 'AI candidate evaluation and matching are offline because the configured AI provider credentials failed or are invalid.'}
+              </p>
+              {brainStatus.errors && brainStatus.errors.length > 0 && (
+                <div style={{ marginTop: 8, padding: '6px 10px', background: 'rgba(0,0,0,0.3)', borderRadius: 6, fontSize: 11, fontFamily: 'monospace', color: '#fecaca', border: '1px solid rgba(239,68,68,0.2)' }}>
+                  {brainStatus.errors.map((e: string, i: number) => (
+                    <div key={i}>• {e}</div>
+                  ))}
+                </div>
+              )}
+            </div>
+          </div>
+          <Link href="/settings" className="btn btn-sm" style={{ background: '#dc2626', color: '#fff', fontWeight: 600, border: 'none', whiteSpace: 'nowrap', marginTop: 2 }}>
+            Fix API Key in Settings &rarr;
+          </Link>
+        </div>
+      )}
+
+      {brainStatus && brainStatus.status === 'DEGRADED' && (
+        <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '10px 16px', background: 'rgba(245, 158, 11, 0.1)', border: '1px solid rgba(245, 158, 11, 0.3)', borderRadius: 8, marginBottom: 16, flexWrap: 'wrap', gap: 10 }}>
+          <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
+            <Zap size={16} style={{ color: '#f59e0b', flexShrink: 0 }} />
+            <span style={{ fontSize: 13, color: '#fde68a' }}>
+              <strong>AI Core Brain Operating on Fallback:</strong> Running via <strong>{brainStatus.activeProviderLabel || brainStatus.activeProvider}</strong> ({brainStatus.activeModel}). Primary provider: {brainStatus.errors?.[0] || 'issue reported'}.
+            </span>
+          </div>
+          <Link href="/settings" style={{ fontSize: 12, color: '#fde68a', textDecoration: 'underline', fontWeight: 600 }}>
+            Configure Providers &rarr;
+          </Link>
+        </div>
+      )}
+
+      {brainStatus && brainStatus.status === 'ONLINE' && (
+        <div style={{ display: 'flex', alignItems: 'center', gap: 8, padding: '8px 14px', background: 'rgba(16, 185, 129, 0.08)', border: '1px solid rgba(16, 185, 129, 0.22)', borderRadius: 8, marginBottom: 16, fontSize: 12, color: '#6ee7b7' }}>
+          <Sparkles size={14} style={{ color: '#10b981' }} />
+          <span>
+            AI Core Brain <strong>Online</strong> • Active Provider: <strong>{brainStatus.activeProviderLabel || brainStatus.activeProvider?.toUpperCase()}</strong> ({brainStatus.activeModel}) • Real-time CV evaluation active.
+          </span>
+        </div>
+      )}
 
       {/* Stats Grid */}
       <section className="stats-grid">
@@ -476,6 +547,29 @@ export function EnhancedDiscovery() {
                 <div style={{ fontSize: 22, fontWeight: 700, marginTop: 4 }}>{lastResult.sourcesScraped.length}</div>
               </div>
             </div>
+
+            {lastResult.errors && lastResult.errors.length > 0 && (
+              <div style={{ marginTop: 14, padding: '12px 16px', background: 'rgba(239, 68, 68, 0.12)', border: '1px solid rgba(239, 68, 68, 0.3)', borderRadius: 8 }}>
+                <div style={{ display: 'flex', alignItems: 'center', gap: 8, color: '#fca5a5', fontWeight: 600, fontSize: 13, marginBottom: 6 }}>
+                  <AlertCircle size={16} style={{ color: '#ef4444' }} />
+                  <span>Pipeline & AI Brain Warnings ({lastResult.errors.length})</span>
+                </div>
+                <div style={{ display: 'flex', flexDirection: 'column', gap: 4 }}>
+                  {lastResult.errors.map((err, i) => (
+                    <div key={i} style={{ fontSize: 12, color: '#fca5a5', fontFamily: 'monospace' }}>
+                      • {err}
+                    </div>
+                  ))}
+                </div>
+                {lastResult.errors.some(e => e.includes('AI Brain Error') || e.includes('API key') || e.includes('API_KEY')) && (
+                  <div style={{ marginTop: 8 }}>
+                    <Link href="/settings" style={{ fontSize: 12, color: '#fff', background: '#dc2626', padding: '4px 10px', borderRadius: 6, textDecoration: 'none', display: 'inline-block', fontWeight: 600 }}>
+                      Update AI API Key in Settings &rarr;
+                    </Link>
+                  </div>
+                )}
+              </div>
+            )}
           </div>
         </section>
       )}
@@ -498,12 +592,12 @@ export function EnhancedDiscovery() {
                 <th>Discovered</th>
                 <th>Matched</th>
                 <th>Duration</th>
-                <th>Status</th>
+                <th>Status (Click to Inspect)</th>
               </tr>
             </thead>
             <tbody>
               {runs.map(run => (
-                <tr key={run.id}>
+                <tr key={run.id} style={{ cursor: 'pointer' }} onClick={() => setInspectedRun(run)}>
                   <td>
                     <div style={{ fontWeight: 600, fontSize: 12 }}>
                       {new Date(run.startedAt).toLocaleDateString()}
@@ -538,9 +632,24 @@ export function EnhancedDiscovery() {
                     </span>
                   </td>
                   <td>
-                    <span className={`badge ${run.errors?.length ? 'badge-amber' : 'badge-green'}`}>
-                      {run.errors?.length ? 'Warnings' : 'Completed'}
-                    </span>
+                    <button
+                      type="button"
+                      onClick={(e) => {
+                        e.stopPropagation();
+                        setInspectedRun(run);
+                      }}
+                      className={`badge ${run.errors?.length ? 'badge-amber' : 'badge-green'}`}
+                      style={{
+                        cursor: 'pointer',
+                        border: 'none',
+                        background: run.errors?.length ? 'rgba(245, 158, 11, 0.2)' : undefined,
+                        color: run.errors?.length ? '#f59e0b' : undefined,
+                        fontWeight: 600,
+                      }}
+                      title="Click to view run details and errors"
+                    >
+                      {run.errors?.length ? `Warnings (${run.errors.length}) ↗` : 'Completed ↗'}
+                    </button>
                   </td>
                 </tr>
               ))}
@@ -559,6 +668,133 @@ export function EnhancedDiscovery() {
           </table>
         </div>
       </section>
+
+      {/* Run Inspection Modal */}
+      {inspectedRun && (
+        <div style={{
+          position: 'fixed',
+          top: 0,
+          left: 0,
+          right: 0,
+          bottom: 0,
+          background: 'rgba(0, 0, 0, 0.75)',
+          backdropFilter: 'blur(4px)',
+          display: 'flex',
+          alignItems: 'center',
+          justifyContent: 'center',
+          zIndex: 1000,
+          padding: 16,
+        }} onClick={() => setInspectedRun(null)}>
+          <div style={{
+            background: 'hsl(var(--card))',
+            border: '1px solid hsl(var(--border))',
+            borderRadius: 12,
+            maxWidth: 640,
+            width: '100%',
+            maxHeight: '85vh',
+            overflowY: 'auto',
+            padding: 24,
+            boxShadow: '0 20px 40px rgba(0,0,0,0.5)',
+          }} onClick={e => e.stopPropagation()}>
+            <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 16, borderBottom: '1px solid hsl(var(--border))', paddingBottom: 12 }}>
+              <div>
+                <h3 style={{ margin: 0, fontSize: 17, fontWeight: 700, display: 'flex', alignItems: 'center', gap: 8 }}>
+                  <Clock size={18} style={{ color: 'hsl(var(--primary))' }} /> Discovery Session Details
+                </h3>
+                <div style={{ fontSize: 12, color: 'hsl(var(--muted-foreground))', marginTop: 2 }}>
+                  {new Date(inspectedRun.startedAt).toLocaleString()} • Duration: {(inspectedRun.executionTime / 1000).toFixed(1)}s
+                </div>
+              </div>
+              <button
+                type="button"
+                onClick={() => setInspectedRun(null)}
+                style={{ background: 'transparent', border: 'none', color: 'hsl(var(--muted-foreground))', cursor: 'pointer', padding: 4 }}
+              >
+                <X size={20} />
+              </button>
+            </div>
+
+            <div style={{ display: 'grid', gridTemplateColumns: 'repeat(4, 1fr)', gap: 10, marginBottom: 16 }}>
+              <div style={{ padding: '10px 12px', background: 'hsl(var(--secondary) / 0.3)', borderRadius: 8, textAlign: 'center' }}>
+                <div style={{ fontSize: 11, color: 'hsl(var(--muted-foreground))' }}>Discovered</div>
+                <div style={{ fontSize: 18, fontWeight: 700 }}>{inspectedRun.discovered}</div>
+              </div>
+              <div style={{ padding: '10px 12px', background: 'hsl(var(--secondary) / 0.3)', borderRadius: 8, textAlign: 'center' }}>
+                <div style={{ fontSize: 11, color: 'hsl(var(--muted-foreground))' }}>Matched</div>
+                <div style={{ fontSize: 18, fontWeight: 700, color: 'hsl(var(--primary))' }}>{inspectedRun.matched}</div>
+              </div>
+              <div style={{ padding: '10px 12px', background: 'hsl(var(--secondary) / 0.3)', borderRadius: 8, textAlign: 'center' }}>
+                <div style={{ fontSize: 11, color: 'hsl(var(--muted-foreground))' }}>Sources</div>
+                <div style={{ fontSize: 18, fontWeight: 700 }}>{inspectedRun.sourcesScraped.length}</div>
+              </div>
+              <div style={{ padding: '10px 12px', background: 'hsl(var(--secondary) / 0.3)', borderRadius: 8, textAlign: 'center' }}>
+                <div style={{ fontSize: 11, color: 'hsl(var(--muted-foreground))' }}>Errors/Warnings</div>
+                <div style={{ fontSize: 18, fontWeight: 700, color: inspectedRun.errors?.length ? '#f59e0b' : '#10b981' }}>
+                  {inspectedRun.errors?.length || 0}
+                </div>
+              </div>
+            </div>
+
+            <div style={{ marginBottom: 16 }}>
+              <div style={{ fontSize: 12, fontWeight: 600, color: 'hsl(var(--muted-foreground))', marginBottom: 6 }}>
+                Target Roles Searched:
+              </div>
+              <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap' }}>
+                {inspectedRun.rolesSearched.map((role, idx) => (
+                  <span key={idx} className="badge" style={{ fontSize: 11 }}>{role}</span>
+                ))}
+              </div>
+            </div>
+
+            {/* AI and Pipeline Errors Section */}
+            <div style={{ marginBottom: 16 }}>
+              <div style={{ fontSize: 12, fontWeight: 600, color: 'hsl(var(--muted-foreground))', marginBottom: 6, display: 'flex', alignItems: 'center', gap: 6 }}>
+                <AlertCircle size={14} style={{ color: inspectedRun.errors?.length ? '#ef4444' : '#10b981' }} />
+                <span>AI Brain Status & Execution Logs:</span>
+              </div>
+              {inspectedRun.errors && inspectedRun.errors.length > 0 ? (
+                <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
+                  {inspectedRun.errors.map((err, idx) => (
+                    <div
+                      key={idx}
+                      style={{
+                        padding: '10px 12px',
+                        background: err.includes('AI Brain Error') || err.includes('API_KEY') ? 'rgba(239, 68, 68, 0.12)' : 'rgba(245, 158, 11, 0.1)',
+                        border: `1px solid ${err.includes('AI Brain Error') || err.includes('API_KEY') ? 'rgba(239, 68, 68, 0.3)' : 'rgba(245, 158, 11, 0.3)'}`,
+                        borderRadius: 8,
+                        fontSize: 12,
+                        fontFamily: 'monospace',
+                        color: err.includes('AI Brain Error') || err.includes('API_KEY') ? '#fca5a5' : '#fde68a',
+                      }}
+                    >
+                      {err}
+                    </div>
+                  ))}
+                  <div style={{ marginTop: 4 }}>
+                    <Link href="/settings" className="btn btn-sm" style={{ background: 'hsl(var(--primary))', color: '#fff', textDecoration: 'none', display: 'inline-block' }}>
+                      Update AI Settings & Keys &rarr;
+                    </Link>
+                  </div>
+                </div>
+              ) : (
+                <div style={{ padding: '10px 12px', background: 'rgba(16, 185, 129, 0.1)', border: '1px solid rgba(16, 185, 129, 0.25)', borderRadius: 8, fontSize: 12, color: '#6ee7b7' }}>
+                  ✓ Run completed smoothly with no pipeline or AI errors.
+                </div>
+              )}
+            </div>
+
+            <div style={{ display: 'flex', justifyContent: 'flex-end', marginTop: 20 }}>
+              <button
+                type="button"
+                className="btn btn-secondary"
+                onClick={() => setInspectedRun(null)}
+              >
+                Close
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
     </main>
   );
 }
