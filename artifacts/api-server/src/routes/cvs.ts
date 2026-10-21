@@ -649,7 +649,7 @@ export async function syncParsedProfileToWorkspace(
   invalidateSearchDirective(targetAccountId);
 }
 
-function sanitizeProfileDraft(raw: unknown): Record<string, unknown> {
+export function sanitizeProfileDraft(raw: unknown): Record<string, unknown> {
   if (!raw || typeof raw !== "object") return {};
 
   let source = raw as Record<string, unknown>;
@@ -982,15 +982,24 @@ export function parseCvLocally(rawText: string): Record<string, unknown> {
   const isDoctor = isSurgeon || /m\.?b\.?,?\s*b\.?s|mbbs|physician|doctor|clinical governance|ward rounds|residency|medical officer|pediatric|obstetric/i.test(text);
   const isNurse = !isDoctor && /nurse|nursing|midwife|registered nurse|bsn/i.test(text);
   const isPharmacist = /pharmacist|pharmacy|pharmaceutical|pharm\.?d/i.test(text);
-  const isLawyer = /lawyer|attorney|barrister|solicitor|ll\.?b|ll\.?m|litigation|legal counsel/i.test(text);
-  const isAccountant = /accountant|accounting|auditor|audit|cpa|acca|chartered accountant|financial analyst/i.test(text);
+  const isLawyer = /lawyer|attorney|barrister|solicitor|ll\.?b|ll\.?m|litigation|legal counsel|advocate/i.test(text);
+  const isAccountant = /accountant|accounting|auditor|audit|cpa|acca|chartered accountant|financial analyst|bookkeeper|tax consultant/i.test(text);
   const isCivilEngineer = /civil engineer|structural engineer|construction engineer/i.test(text);
   const isMechEngineer = /mechanical engineer|hvac|thermodynamics/i.test(text);
   const isElectEngineer = /electrical engineer|power systems|electronics engineer/i.test(text);
   const isSoftware = /software engineer|software developer|web developer|frontend|backend|full[- ]?stack|react|node\.js|python developer/i.test(text);
+  const isDataRole = !isSoftware && /data analyst|business intelligence|bi analyst|data scientist|data engineer|sql analyst/i.test(text);
   const isITSupport = /it support|systems administrator|network administrator|technical support|helpdesk/i.test(text);
-  const isTeacher = /teacher|lecturer|professor|curriculum developer/i.test(text);
+  const isTeacher = /teacher|lecturer|professor|curriculum developer|academic tutor/i.test(text);
   const isMarketing = /marketing specialist|marketing manager|digital marketing|seo specialist/i.test(text);
+  const isAgriculture = /agric|agronom|crop production|livestock|horticultur|farm manager|agribusiness|food science|veterinar/i.test(text);
+  const isNgo = /non[- ]?governmental|ngo\b|humanitarian|m&e officer|monitoring and evaluation|grants officer|wash specialist|community development|field coordinator/i.test(text);
+  const isProcurement = /procurement|supply chain|logistics officer|warehouse manager|purchasing officer|inventory control|stores officer/i.test(text);
+  const isHr = /human resources|hr officer|talent acquisition|recruiter|people and culture|hr generalist|personnel officer/i.test(text);
+  const isBanking = /credit officer|relationship manager|loan officer|microfinance|branch manager|bank teller|banking operations/i.test(text);
+  const isHospitality = /hospitality|hotel manager|chef|front office|catering|food and beverage|f&b supervisor|tour consultant/i.test(text);
+  const isMedia = /communications officer|public relations|pr officer|journalist|media specialist|content creator|copywriter/i.test(text);
+  const isInsurance = /insurance|actuarial|underwriter|claims officer|insurance broker|loss adjuster/i.test(text);
 
   const targetRoles: string[] = [];
   const industries: string[] = [];
@@ -1022,14 +1031,14 @@ export function parseCvLocally(rawText: string): Record<string, unknown> {
     defaultSkills.push("Dispensing & Pharmacology", "Drug Interaction Screening", "Patient Counseling");
     defaultEducation.push("Bachelor of Pharmacy (B.Pharm) / Pharm.D");
   } else if (isLawyer) {
-    targetRoles.push("Legal Counsel", "Attorney", "Legal Consultant");
+    targetRoles.push("Legal Counsel", "Attorney", "Legal Consultant", "Advocate");
     industries.push("Legal Services", "Corporate Law & Compliance");
     defaultSkills.push("Legal Drafting", "Contract Negotiation", "Litigation & Dispute Resolution", "Regulatory Compliance");
     defaultEducation.push("Bachelor of Laws (LL.B)");
   } else if (isAccountant) {
-    targetRoles.push("Chartered Accountant", "Financial Analyst", "Audit Specialist");
+    targetRoles.push("Chartered Accountant", "Financial Analyst", "Audit Specialist", "Finance Officer");
     industries.push("Accounting & Finance", "Financial Services");
-    defaultSkills.push("Financial Reporting", "Audit & Assurance", "Tax Compliance", "Budgeting & Forecasting");
+    defaultSkills.push("Financial Reporting", "Audit & Assurance", "Tax Compliance", "Budgeting & Forecasting", "CPA");
     defaultEducation.push("B.Sc. in Accounting / Finance");
   } else if (isCivilEngineer) {
     targetRoles.push("Civil Engineer", "Structural Engineer", "Project Engineer");
@@ -1054,12 +1063,57 @@ export function parseCvLocally(rawText: string): Record<string, unknown> {
     if (targetRoles.length === 0) targetRoles.push("Software Developer", "Software Engineer");
     industries.push("Information Technology", "Software Development");
     defaultSkills.push("Software Development", "API Design", "Database Management", "Git Version Control");
+  } else if (isDataRole) {
+    targetRoles.push("Data Analyst", "Business Intelligence Analyst", "Data Scientist");
+    industries.push("Information Technology", "Data & Analytics");
+    defaultSkills.push("Data Analysis", "SQL", "Python", "Power BI", "Data Visualization", "Excel");
+    defaultEducation.push("B.Sc. in Computer Science / Statistics / Mathematics");
   } else if (isITSupport) {
     targetRoles.push("IT Support Specialist", "Network Administrator", "Systems Specialist");
     industries.push("Information Technology", "IT Infrastructure & Support");
     defaultSkills.push("Hardware & Software Troubleshooting", "Network Administration", "Helpdesk Support");
+  } else if (isAgriculture) {
+    targetRoles.push("Agricultural Officer", "Agronomist", "Farm Operations Manager", "Agribusiness Specialist");
+    industries.push("Agriculture & Agribusiness", "Farming & Crop Production");
+    defaultSkills.push("Agronomy", "Crop Management", "Soil Analysis", "Farm Management", "Agribusiness Finance");
+    defaultEducation.push("B.Sc. in Agriculture / Agronomy / Agribusiness");
+  } else if (isNgo) {
+    targetRoles.push("Project Officer", "Monitoring & Evaluation (M&E) Specialist", "Grants & Compliance Officer", "Humanitarian Coordinator");
+    industries.push("Non-Governmental Organizations (NGOs)", "Humanitarian & Development");
+    defaultSkills.push("Project Management", "Monitoring & Evaluation (M&E)", "Grant Management", "Community Mobilization", "Donor Reporting");
+    defaultEducation.push("Degree in Development Studies / Social Sciences / Project Management");
+  } else if (isProcurement) {
+    targetRoles.push("Procurement Officer", "Supply Chain Specialist", "Logistics Coordinator", "Warehouse Manager");
+    industries.push("Supply Chain & Logistics", "Procurement & Purchasing");
+    defaultSkills.push("Public Procurement (PPADA)", "Vendor Management", "Contract Negotiation", "Inventory Control", "Logistics Planning");
+    defaultEducation.push("B.Sc. in Supply Chain Management / Procurement / Logistics");
+  } else if (isHr) {
+    targetRoles.push("Human Resources Officer", "Talent Acquisition Specialist", "HR Generalist", "People & Culture Manager");
+    industries.push("Human Resources", "Talent Management");
+    defaultSkills.push("Recruitment & Selection", "Kenyan Labor Laws", "Employee Relations", "Payroll Administration", "Performance Management");
+    defaultEducation.push("Degree in Human Resource Management / Business Administration");
+  } else if (isBanking) {
+    targetRoles.push("Credit Officer", "Relationship Manager", "Branch Operations Officer", "Financial Analyst");
+    industries.push("Banking & Microfinance", "Financial Services");
+    defaultSkills.push("Credit Appraisal", "Loan Portfolio Management", "KYC & AML Compliance", "Financial Analysis", "Client Relationship Management");
+    defaultEducation.push("B.Com / B.Sc. in Banking & Finance / Economics");
+  } else if (isHospitality) {
+    targetRoles.push("Hotel Operations Manager", "Food & Beverage Supervisor", "Executive Chef", "Tourism Consultant");
+    industries.push("Hospitality & Tourism", "Food & Beverage Services");
+    defaultSkills.push("Guest Relations", "Food Safety & Hygiene", "Cost Control", "Event Coordination");
+    defaultEducation.push("Degree / Diploma in Hospitality Management");
+  } else if (isMedia) {
+    targetRoles.push("Communications Officer", "Public Relations Specialist", "Media Manager", "Content Producer");
+    industries.push("Media & Public Relations", "Corporate Communications");
+    defaultSkills.push("Press Releases", "Media Relations", "Crisis Communications", "Content Strategy", "Digital Communications");
+    defaultEducation.push("Degree in Mass Communication / Journalism / Public Relations");
+  } else if (isInsurance) {
+    targetRoles.push("Underwriting Officer", "Actuarial Analyst", "Insurance Claims Specialist", "Risk Assessment Officer");
+    industries.push("Insurance & Risk Management", "Actuarial Services");
+    defaultSkills.push("Underwriting Principles", "Claims Adjudication", "Risk Assessment", "Policy Administration", "Actuarial Analysis");
+    defaultEducation.push("B.Sc. in Actuarial Science / Insurance");
   } else if (isTeacher) {
-    targetRoles.push("Lecturer", "Academic Educator", "Curriculum Specialist");
+    targetRoles.push("Lecturer", "Academic Educator", "Curriculum Specialist", "Teacher");
     industries.push("Education & Academia", "Higher Education");
     defaultSkills.push("Classroom Instruction", "Curriculum Development", "Student Assessment");
   } else if (isMarketing) {

@@ -293,7 +293,7 @@ export class SourceService {
    * Sync a single source: crawl listings, ingest into jobsTable with deduplication,
    * record provenance, and update totalIndexed & totalDiscovered.
    */
-  public static async syncSource(id: string, options: { limit?: number; keywords?: string[]; profileId?: string } = {}) {
+  public static async syncSource(id: string, options: { limit?: number; keywords?: string[]; profileId?: string; accountId?: string } = {}) {
     const source = await this.getSourceById(id);
     if (!source) throw new Error(`Source not found: ${id}`);
 
@@ -312,6 +312,7 @@ export class SourceService {
       source,
       runId,
       options.profileId,
+      options.accountId,
     );
 
     return {

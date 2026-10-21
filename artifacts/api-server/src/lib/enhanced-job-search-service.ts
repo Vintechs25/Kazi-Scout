@@ -27,6 +27,7 @@ import { verifyJobAgainstUserProfile } from "./requirement-verification-system";
 import type { NormalizedJob, JobSearchFilter } from "./job-search-service";
 import { validateListing } from "./ingestion-contract";
 import { SourceRouter } from "./source-router";
+import { aggressiveCrawlKenya, crawlJobsByKeywords, type CrawledJob } from "./connectors/kenya-aggressive-crawler";
 
 // ============================================================================
 // TYPES
@@ -405,11 +406,11 @@ export async function discoverJobsWithCvGuidance(
     }
 
     // Limit active sources per run
-    const maxSources = aggressiveMode ? 35 : 25;
+    const maxSources = aggressiveMode ? 50 : 25;
     sourcesToScrape = sourcesToScrape.slice(0, maxSources);
     
     // Generous per-source limit so rich feeds yield full batches of listings
-    const perSourceLimit = Math.max(30, Math.ceil(maxJobs / Math.max(1, Math.min(sourcesToScrape.length, 8))));
+    const perSourceLimit = Math.max(50, Math.ceil(maxJobs / Math.max(1, Math.min(sourcesToScrape.length, 8))));
 
     // Track progress
     let jobsDiscovered = 0;
@@ -421,6 +422,47 @@ export async function discoverJobsWithCvGuidance(
     let duplicateCount = 0;
     let gateRejectedCount = 0;
     let validationRejectedCount = 0;
+
+    // AGGRESSIVE MODE: Kick off parallel Kenya aggressive crawl
+    // This concurrently hits 50+ verified Kenyan sources across all career fields
+    if (aggressiveMode) {
+      try {
+        const crawledJobs = await crawlJobsByKeywords(rolesToSearch, Math.min(maxJobs, 800));
+        console.log(`[AggressiveCrawl] Kenya crawler returned ${crawledJobs.length} jobs across all career fields`);
+        for (const cj of crawledJobs) {
+          if (discoveredJobs.length >= maxJobs) break;
+          const fingerprint = fingerprintJob({ company: cj.company, title: cj.title, location: cj.location ?? null, description: cj.description });
+          if (duplicateFingerprints.has(fingerprint)) { duplicateCount++; continue; }
+          duplicateFingerprints.add(fingerprint);
+          const validation = validateListing({ title: cj.title, company: cj.company, url: cj.url, description: cj.description, deadline: null });
+          if (!validation.valid) { validationRejectedCount++; continue; }
+          const normalized: NormalizedJob = {
+            id: cj.id,
+            title: cj.title, company: cj.company,
+            location: cj.location ?? null,
+            remote: cj.remote,
+            salary: cj.salary ?? null,
+            source: cj.sourceId,
+            sourceUrl: cj.sourceUrl,
+            externalJobId: cj.externalJobId ?? null,
+            description: cj.description || "",
+            discoveredAt: new Date(),
+            normalizedCompany: normalizeCompany(cj.company),
+            normalizedTitle: normalizeText(cj.title),
+            normalizedLocation: normalizeText(cj.location || ""),
+            jobType: cj.jobType ?? undefined,
+          };
+          discoveredJobs.push({ ...normalized,
+            requirementVerification: { hasClearInstructions: false, applicationMethod: "online", applicationUrl: cj.url, applicationEmail: null, deadline: null, requiredDocuments: [], specialInstructions: [], eligibilityRequirements: [], isVerified: false, verificationNotes: [] } as any,
+            cvMatchScore: 0, cvMatchedSkills: [], cvMissingSkills: [], roleMatchScore: 0, isRequirementVerified: false,
+          });
+          if (!sourcesScraped.includes(cj.sourceId)) sourcesScraped.push(cj.sourceId);
+          jobsDiscovered++;
+        }
+      } catch (crawlErr: any) {
+        errors.push(`AggressiveCrawl failed: ${crawlErr?.message || crawlErr}`);
+      }
+    }
 
     // Fetch directive dynamically tailored to active searched roles
     const directive = await getOrGenerateSearchDirective(accountId, false, rolesToSearch);
@@ -639,6 +681,76 @@ export async function discoverJobsWithCvGuidance(
         }
       }
 
+      // Finance & Accounting role matching synonyms
+      const hasFinanceTarget = rolesToSearch.some(r => /account|audit|finance|cpa|acca|tax|treasury/i.test(r));
+      if (hasFinanceTarget) {
+        if (/\b(accountant|senior\s+accountant|chief\s+accountant|chartered\s+accountant)\b/i.test(titleLower)) {
+          roleMatchPct = Math.max(roleMatchPct, 95);
+        } else if (/\b(auditor|internal\s+auditor|finance\s+officer|financial\s+analyst)\b/i.test(titleLower)) {
+          roleMatchPct = Math.max(roleMatchPct, 92);
+        } else if (/\b(accounts\s+assistant|tax\s+officer|treasury\s+officer|credit\s+analyst|payroll)\b/i.test(titleLower)) {
+          roleMatchPct = Math.max(roleMatchPct, 88);
+        } else if (/\b(finance|accounting|audit)\b/i.test(titleLower)) {
+          roleMatchPct = Math.max(roleMatchPct, 85);
+        }
+      }
+
+      // Agriculture & Agribusiness role matching synonyms
+      const hasAgriTarget = rolesToSearch.some(r => /agric|agronom|farm|crop|livestock|horticultur|agribusiness/i.test(r));
+      if (hasAgriTarget) {
+        if (/\b(agronomist|agricultural\s+officer|farm\s+manager|farm\s+operations)\b/i.test(titleLower)) {
+          roleMatchPct = Math.max(roleMatchPct, 95);
+        } else if (/\b(agribusiness|livestock\s+officer|crop\s+specialist|extension\s+officer)\b/i.test(titleLower)) {
+          roleMatchPct = Math.max(roleMatchPct, 90);
+        } else if (/\b(agriculture|farming|horticulture|food\s+production)\b/i.test(titleLower)) {
+          roleMatchPct = Math.max(roleMatchPct, 85);
+        }
+      }
+
+      // NGO & Development role matching synonyms
+      const hasNgoTarget = rolesToSearch.some(r => /ngo|humanitarian|project|m&e|monitoring|grants|community|wash/i.test(r));
+      if (hasNgoTarget) {
+        if (/\b(project\s+coordinator|project\s+officer|program\s+manager|program\s+officer)\b/i.test(titleLower)) {
+          roleMatchPct = Math.max(roleMatchPct, 95);
+        } else if (/\b(m&e\s+officer|monitoring\s+and\s+evaluation|grants\s+officer|compliance\s+officer)\b/i.test(titleLower)) {
+          roleMatchPct = Math.max(roleMatchPct, 92);
+        } else if (/\b(humanitarian|community\s+development|wash\s+officer|field\s+officer)\b/i.test(titleLower)) {
+          roleMatchPct = Math.max(roleMatchPct, 88);
+        }
+      }
+
+      // Procurement & Logistics role matching synonyms
+      const hasProcurementTarget = rolesToSearch.some(r => /procurement|supply\s+chain|logistics|warehouse|purchasing|inventory/i.test(r));
+      if (hasProcurementTarget) {
+        if (/\b(procurement\s+officer|supply\s+chain\s+specialist|logistics\s+manager)\b/i.test(titleLower)) {
+          roleMatchPct = Math.max(roleMatchPct, 95);
+        } else if (/\b(logistics\s+officer|warehouse\s+manager|purchasing\s+officer|inventory\s+controller)\b/i.test(titleLower)) {
+          roleMatchPct = Math.max(roleMatchPct, 90);
+        } else if (/\b(stores\s+officer|supply\s+chain|procurement|logistics)\b/i.test(titleLower)) {
+          roleMatchPct = Math.max(roleMatchPct, 85);
+        }
+      }
+
+      // Human Resources role matching synonyms
+      const hasHrTarget = rolesToSearch.some(r => /human\s+resources|hr\b|talent|people\s+and\s+culture|recruiter/i.test(r));
+      if (hasHrTarget) {
+        if (/\b(hr\s+officer|human\s+resources\s+officer|talent\s+acquisition|people\s+and\s+culture)\b/i.test(titleLower)) {
+          roleMatchPct = Math.max(roleMatchPct, 95);
+        } else if (/\b(hr\s+generalist|recruiter|hr\s+assistant|personnel\s+officer)\b/i.test(titleLower)) {
+          roleMatchPct = Math.max(roleMatchPct, 90);
+        }
+      }
+
+      // Legal & Compliance role matching synonyms
+      const hasLegalTarget = rolesToSearch.some(r => /legal|lawyer|attorney|counsel|compliance|advocate/i.test(r));
+      if (hasLegalTarget) {
+        if (/\b(legal\s+counsel|advocate|lawyer|attorney|legal\s+officer)\b/i.test(titleLower)) {
+          roleMatchPct = Math.max(roleMatchPct, 95);
+        } else if (/\b(compliance\s+officer|legal\s+assistant|paralegal)\b/i.test(titleLower)) {
+          roleMatchPct = Math.max(roleMatchPct, 88);
+        }
+      }
+
       // 2. Extract and match skills
       const jobSkills = extractSkillsFromText(
         `${job.title} ${job.description} ${job.company} ${job.location || ''}`
@@ -653,6 +765,12 @@ export async function discoverJobsWithCvGuidance(
           "treatment", "emergency", "inpatient", "outpatient", "healthcare",
           "hospital", "consultation", "medical officer"
         ] : []),
+        ...(hasFinanceTarget ? ["financial reporting", "accounting", "auditing", "tax", "budgeting", "cpa", "reconciliation"] : []),
+        ...(hasAgriTarget ? ["agronomy", "crop management", "farm management", "soil analysis", "agribusiness"] : []),
+        ...(hasNgoTarget ? ["project management", "monitoring & evaluation", "grant writing", "community mobilization", "reporting"] : []),
+        ...(hasProcurementTarget ? ["procurement", "supply chain", "logistics", "vendor management", "inventory control"] : []),
+        ...(hasHrTarget ? ["recruitment", "employee relations", "labor laws", "payroll", "performance management"] : []),
+        ...(hasLegalTarget ? ["legal drafting", "compliance", "litigation", "contract review", "regulatory"] : []),
       ];
 
       const matchedSkills = jobSkills.filter(skill => 

@@ -208,8 +208,8 @@ router.post("/sources/:id/sync", async (req, res) => {
       res.status(404).json({ error: "Source not found" });
       return;
     }
-
-    const result = await SourceService.syncSource(req.params.id, { limit: 40 });
+    const accountId = res.locals?.accountId || (req as any).user?.id || (req as any).session?.sub || "local";
+    const result = await SourceService.syncSource(req.params.id, { limit: 40, accountId });
     res.json(result);
   } catch (error: any) {
     res.status(500).json({ error: error.message || "Failed to sync source" });

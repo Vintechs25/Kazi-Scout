@@ -229,12 +229,45 @@ export function evaluatePreIngestionGate(
 
     // In tech: Developer <-> Engineer synonym matching
     if (isCandidateTech) {
-      substantiveRoleWords.push("developer", "engineer", "software");
+      substantiveRoleWords.push("developer", "engineer", "software", "tech", "data", "it");
     }
 
     // In healthcare: Surgeon <-> Doctor <-> Physician <-> Medical Officer synonym matching
     if (isCandidateMedical) {
-      substantiveRoleWords.push("surgeon", "doctor", "physician", "clinical", "medical");
+      substantiveRoleWords.push("surgeon", "doctor", "physician", "clinical", "medical", "nurse", "health");
+    }
+
+    if (isCandidateFinance) {
+      substantiveRoleWords.push("accountant", "accounting", "auditor", "finance", "financial", "cpa", "acca", "tax", "accounts", "treasury", "credit");
+    }
+
+    const isCandidateAgri = /agric|agronom|farm|crop|livestock|horticultur|agribusiness/i.test(candidateRolesBlob);
+    if (isCandidateAgri) {
+      substantiveRoleWords.push("agriculture", "agricultural", "agronomist", "farm", "farming", "crop", "livestock", "agribusiness", "horticulture");
+    }
+
+    const isCandidateNgo = /ngo|humanitarian|project|m&e|monitoring|grants|community|wash/i.test(candidateRolesBlob);
+    if (isCandidateNgo) {
+      substantiveRoleWords.push("project", "program", "programme", "monitoring", "evaluation", "humanitarian", "development", "grants", "community", "field");
+    }
+
+    const isCandidateProcurement = /procurement|supply chain|logistics|warehouse|purchasing|inventory/i.test(candidateRolesBlob);
+    if (isCandidateProcurement) {
+      substantiveRoleWords.push("procurement", "supply", "chain", "logistics", "warehouse", "purchasing", "inventory", "buyer", "stores");
+    }
+
+    const isCandidateHr = /human resources|hr |talent acquisition|people and culture|recruiter/i.test(candidateRolesBlob);
+    if (isCandidateHr) {
+      substantiveRoleWords.push("human", "resources", "talent", "recruitment", "recruiter", "personnel");
+    }
+
+    if (isCandidateLegal) {
+      substantiveRoleWords.push("legal", "counsel", "lawyer", "attorney", "advocate", "compliance", "litigation");
+    }
+
+    const isCandidateEducation = /teacher|lecturer|professor|curriculum|education|academic|tutor/i.test(candidateRolesBlob);
+    if (isCandidateEducation) {
+      substantiveRoleWords.push("teacher", "teaching", "lecturer", "professor", "curriculum", "education", "academic", "tutor", "instructor");
     }
 
     const matchesSubstantiveTitle = substantiveRoleWords.some(w => {

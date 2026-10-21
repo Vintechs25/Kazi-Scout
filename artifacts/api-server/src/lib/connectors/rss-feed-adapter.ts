@@ -127,21 +127,46 @@ export class RssFeedAdapter implements IJobConnector {
       /\b(health|medical|doctor|surgeon|nurse|clinical|hospital|pharma|cpsb|county|physician|dentist|patholog|pediatric|anesthe|radiolog)\b/i.test(k)
     );
 
-    const healthFeeds: string[] = [];
-    if (isSearchingHealth) {
-      if (source.id.includes("careerpoint")) {
-        healthFeeds.push("https://www.careerpointkenya.co.ke/category/medical-jobs-in-kenya/feed/");
+    const isSearchingFinance = (filter?.keywords || []).some(k =>
+      /\b(account|audit|finance|cpa|acca|tax|treasury|credit|banking)\b/i.test(k)
+    );
+    const isSearchingNgo = (filter?.keywords || []).some(k =>
+      /\b(ngo|humanitarian|project|m&e|grants|community|wash|development)\b/i.test(k)
+    );
+    const isSearchingEng = (filter?.keywords || []).some(k =>
+      /\b(engineer|engineering|civil|mechanical|electrical|structural)\b/i.test(k)
+    );
+    const isSearchingProcurement = (filter?.keywords || []).some(k =>
+      /\b(procurement|supply\s+chain|logistics|warehouse|purchasing|inventory)\b/i.test(k)
+    );
+
+    const categoryFeeds: string[] = [];
+    if (source.id.includes("careerpoint")) {
+      if (isSearchingHealth) categoryFeeds.push("https://www.careerpointkenya.co.ke/category/medical-jobs-in-kenya/feed/");
+      if (isSearchingIt) categoryFeeds.push("https://www.careerpointkenya.co.ke/category/it-jobs-in-kenya/feed/");
+      if (isSearchingFinance) {
+        categoryFeeds.push("https://www.careerpointkenya.co.ke/category/accounting-jobs-in-kenya/feed/");
+        categoryFeeds.push("https://www.careerpointkenya.co.ke/category/finance-jobs-in-kenya/feed/");
+        categoryFeeds.push("https://www.careerpointkenya.co.ke/category/banking-jobs-in-kenya/feed/");
       }
-      if (source.id.includes("jobwebkenya")) {
-        healthFeeds.push("https://jobwebkenya.com/feed/");
-      }
-      if (source.id.includes("myjobmag")) {
-        healthFeeds.push("https://www.myjobmag.co.ke/jobsxml.xml");
-      }
+      if (isSearchingNgo) categoryFeeds.push("https://www.careerpointkenya.co.ke/category/ngo-jobs-in-kenya/feed/");
+      if (isSearchingEng) categoryFeeds.push("https://www.careerpointkenya.co.ke/category/engineering-jobs-in-kenya/feed/");
+      if (isSearchingProcurement) categoryFeeds.push("https://www.careerpointkenya.co.ke/category/procurement-jobs-in-kenya/feed/");
+      categoryFeeds.push("https://www.careerpointkenya.co.ke/feed/?paged=2");
+    }
+
+    if (source.id.includes("jobwebkenya")) {
+      categoryFeeds.push("https://jobwebkenya.com/feed/?post_type=job_listing");
+      categoryFeeds.push("https://jobwebkenya.com/feed/?paged=2");
+      categoryFeeds.push("https://jobwebkenya.com/feed/?paged=3");
+    }
+
+    if (source.id.includes("myjobmag")) {
+      categoryFeeds.push("https://www.myjobmag.co.ke/jobsxml.xml");
     }
 
     const feedUrls: string[] = Array.from(new Set([
-      ...healthFeeds,
+      ...categoryFeeds,
       config.feedUrl,
       (source as any).feedUrl,
       source.canonicalUrl.endsWith("/feed") || source.canonicalUrl.endsWith("/feed/") ? source.canonicalUrl : null,

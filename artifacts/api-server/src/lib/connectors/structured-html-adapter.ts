@@ -60,13 +60,37 @@ export class StructuredHtmlAdapter implements IJobConnector {
 
   async discoverListings(source: JobSourceRecord, filter?: ConnectorFilter): Promise<NormalizedListing[]> {
     const config = (source.config as any) || {};
-    const isSearchingIt = (filter?.keywords || []).some(k =>
-      /\b(it|ict|tech|software|developer|programmer|engineer|network|cloud|sysadmin|cyber)\b/i.test(k)
-    );
-    const isSearchingHealth = (filter?.keywords || []).some(k =>
-      /\b(health|medical|doctor|surgeon|nurse|clinical|hospital|pharma|cpsb|county|physician|dentist|patholog|pediatric|anesthe|radiolog)\b/i.test(k)
-    );
     const keywords = filter?.keywords || [];
+    const isSearchingIt = keywords.some(k =>
+      /\b(it|ict|tech|software|developer|programmer|engineer|network|cloud|sysadmin|cyber|frontend|backend|devops)\b/i.test(k)
+    );
+    const isSearchingHealth = keywords.some(k =>
+      /\b(health|medical|doctor|surgeon|nurse|clinical|hospital|pharma|cpsb|county|physician|dentist|patholog|pediatric|anesthe|radiolog|midwife)\b/i.test(k)
+    );
+    const isSearchingFinance = keywords.some(k =>
+      /\b(finance|financial|account|accountant|auditor|audit|tax|banking|banker|treasury|cpa|credit|actuarial)\b/i.test(k)
+    );
+    const isSearchingAgri = keywords.some(k =>
+      /\b(agri|agriculture|agronomist|agribusiness|crop|horticulture|livestock|farm|farming|irrigation|veterinary)\b/i.test(k)
+    );
+    const isSearchingNgo = keywords.some(k =>
+      /\b(ngo|humanitarian|development|relief|m&e|monitoring|un|unhcr|unicef|wash|grant|advocacy|community|social\s*work)\b/i.test(k)
+    );
+    const isSearchingProcurement = keywords.some(k =>
+      /\b(procurement|supply\s*chain|purchasing|logistics|buyer|storekeeper|inventory|warehouse)\b/i.test(k)
+    );
+    const isSearchingHr = keywords.some(k =>
+      /\b(hr|human\s*resources|talent|recruitment|people\s*operations|personnel|payroll)\b/i.test(k)
+    );
+    const isSearchingLegal = keywords.some(k =>
+      /\b(legal|lawyer|advocate|paralegal|counsel|compliance|attorney|litigation|conveyancing)\b/i.test(k)
+    );
+    const isSearchingEngineering = keywords.some(k =>
+      /\b(civil\s*engineer|mechanical\s*engineer|electrical\s*engineer|structural|surveyor|architect|engineering)\b/i.test(k)
+    );
+    const isSearchingEducation = keywords.some(k =>
+      /\b(teacher|tutor|lecturer|professor|instructor|curriculum|dean|principal|headteacher|education|school)\b/i.test(k)
+    );
     const limit = filter?.limit ?? 40;
     const items: NormalizedListing[] = [];
     const seenUrls = new Set<string>();
@@ -100,6 +124,30 @@ export class StructuredHtmlAdapter implements IJobConnector {
       }
       if (isSearchingIt) {
         bmPages.push("https://www.brightermonday.co.ke/jobs/software-data");
+      }
+      if (isSearchingFinance) {
+        bmPages.push("https://www.brightermonday.co.ke/jobs/accounting-auditing-finance");
+      }
+      if (isSearchingAgri) {
+        bmPages.push("https://www.brightermonday.co.ke/jobs/farming-agriculture");
+      }
+      if (isSearchingNgo) {
+        bmPages.push("https://www.brightermonday.co.ke/jobs/community-social-services");
+      }
+      if (isSearchingProcurement) {
+        bmPages.push("https://www.brightermonday.co.ke/jobs/supply-chain-procurement");
+      }
+      if (isSearchingHr) {
+        bmPages.push("https://www.brightermonday.co.ke/jobs/human-resources");
+      }
+      if (isSearchingLegal) {
+        bmPages.push("https://www.brightermonday.co.ke/jobs/legal-services");
+      }
+      if (isSearchingEngineering) {
+        bmPages.push("https://www.brightermonday.co.ke/jobs/engineering");
+      }
+      if (isSearchingEducation) {
+        bmPages.push("https://www.brightermonday.co.ke/jobs/teaching-training");
       }
       for (const k of keywords.slice(0, 3)) {
         bmPages.push(`https://www.brightermonday.co.ke/jobs?q=${encodeURIComponent(k)}`);
@@ -168,6 +216,31 @@ export class StructuredHtmlAdapter implements IJobConnector {
       if (isSearchingIt) {
         mjmPages.push("https://www.myjobmag.co.ke/jobs-by-field/information-technology");
       }
+      if (isSearchingFinance) {
+        mjmPages.push("https://www.myjobmag.co.ke/jobs-by-field/finance-accounting");
+        mjmPages.push("https://www.myjobmag.co.ke/jobs-by-field/banking-financial-services");
+      }
+      if (isSearchingAgri) {
+        mjmPages.push("https://www.myjobmag.co.ke/jobs-by-field/agriculture-agro-allied");
+      }
+      if (isSearchingNgo) {
+        mjmPages.push("https://www.myjobmag.co.ke/jobs-by-field/ngo-non-profit");
+      }
+      if (isSearchingProcurement) {
+        mjmPages.push("https://www.myjobmag.co.ke/jobs-by-field/procurement-purchasing");
+      }
+      if (isSearchingHr) {
+        mjmPages.push("https://www.myjobmag.co.ke/jobs-by-field/human-resources");
+      }
+      if (isSearchingLegal) {
+        mjmPages.push("https://www.myjobmag.co.ke/jobs-by-field/law-legal");
+      }
+      if (isSearchingEngineering) {
+        mjmPages.push("https://www.myjobmag.co.ke/jobs-by-field/engineering");
+      }
+      if (isSearchingEducation) {
+        mjmPages.push("https://www.myjobmag.co.ke/jobs-by-field/education-teaching");
+      }
       for (const k of keywords.slice(0, 3)) {
         mjmPages.push(`https://www.myjobmag.co.ke/search/jobs?q=${encodeURIComponent(k)}`);
       }
@@ -229,20 +302,44 @@ export class StructuredHtmlAdapter implements IJobConnector {
     // Strictly extract /job/{slug}/ and /vacancy/{slug}/
     // ==========================================
     if (source.id.includes("corporatestaffing") || source.id.includes("corporate-staffing")) {
-      const isSearchingHealth = keywords.some(k =>
-        /\b(health|medical|doctor|surgeon|nurse|clinical|hospital|pharma|cpsb|county)\b/i.test(k)
-      );
-
       const cssPages: string[] = [];
       if (isSearchingHealth) {
         cssPages.push("https://www.corporatestaffing.co.ke/tag/medical-officer-jobs-in-kenya/");
         cssPages.push("https://www.corporatestaffing.co.ke/tag/healthcare-jobs-in-kenya/");
         cssPages.push("https://www.corporatestaffing.co.ke/tag/nursing-jobs-in-kenya/");
       }
-      cssPages.push("https://www.corporatestaffing.co.ke/jobs/");
       if (isSearchingIt) {
         cssPages.push("https://www.corporatestaffing.co.ke/tag/it-jobs-in-kenya/");
       }
+      if (isSearchingFinance) {
+        cssPages.push("https://www.corporatestaffing.co.ke/tag/accounting-jobs-in-kenya/");
+        cssPages.push("https://www.corporatestaffing.co.ke/tag/finance-jobs-in-kenya/");
+        cssPages.push("https://www.corporatestaffing.co.ke/tag/banking-jobs-in-kenya/");
+      }
+      if (isSearchingProcurement) {
+        cssPages.push("https://www.corporatestaffing.co.ke/tag/procurement-jobs-in-kenya/");
+        cssPages.push("https://www.corporatestaffing.co.ke/tag/supply-chain-jobs-in-kenya/");
+      }
+      if (isSearchingHr) {
+        cssPages.push("https://www.corporatestaffing.co.ke/tag/hr-jobs-in-kenya/");
+        cssPages.push("https://www.corporatestaffing.co.ke/tag/human-resources-jobs-in-kenya/");
+      }
+      if (isSearchingNgo) {
+        cssPages.push("https://www.corporatestaffing.co.ke/tag/ngo-jobs-in-kenya/");
+      }
+      if (isSearchingEngineering) {
+        cssPages.push("https://www.corporatestaffing.co.ke/tag/engineering-jobs-in-kenya/");
+      }
+      if (isSearchingAgri) {
+        cssPages.push("https://www.corporatestaffing.co.ke/tag/agriculture-jobs-in-kenya/");
+      }
+      if (isSearchingLegal) {
+        cssPages.push("https://www.corporatestaffing.co.ke/tag/legal-jobs-in-kenya/");
+      }
+      if (isSearchingEducation) {
+        cssPages.push("https://www.corporatestaffing.co.ke/tag/teaching-jobs-in-kenya/");
+      }
+      cssPages.push("https://www.corporatestaffing.co.ke/jobs/");
       for (const k of keywords.slice(0, 3)) {
         cssPages.push(`https://www.corporatestaffing.co.ke/?s=${encodeURIComponent(k)}`);
       }

@@ -9,7 +9,7 @@ import {
   type JobRecord,
   type JobSourceRecord,
 } from "@workspace/db";
-import { eq, or, and, sql } from "drizzle-orm";
+import { eq, or, and, sql, isNull } from "drizzle-orm";
 import { randomUUID } from "node:crypto";
 
 export interface RawListing {
@@ -156,7 +156,9 @@ export async function processListingPipeline(
   source: JobSourceRecord,
   runId: string = randomUUID(),
   profileId?: string,
+  accountId?: string,
 ): Promise<IngestionRunSummary> {
+  const targetAccountId = accountId || null;
   const startedAt = new Date();
   const summary: IngestionRunSummary = {
     runId,
@@ -229,15 +231,22 @@ export async function processListingPipeline(
     const postedDate = raw.postedDate ? new Date(raw.postedDate) : new Date();
     const deadlineDate = raw.deadlineDate ? new Date(raw.deadlineDate) : null;
 
-    // 4. Dedupe & Save
+    // 4. Dedupe & Save (Multi-tenant scoped by targetAccountId)
     try {
+      const accountCondition = targetAccountId
+        ? eq(jobsTable.accountId, targetAccountId)
+        : isNull(jobsTable.accountId);
+
       const existing = await db
         .select({ id: jobsTable.id })
         .from(jobsTable)
-        .where(or(
-          eq(jobsTable.fingerprint, fp),
-          eq(jobsTable.sourceUrl, raw.url),
-          raw.id ? eq(jobsTable.id, raw.id) : undefined
+        .where(and(
+          accountCondition,
+          or(
+            eq(jobsTable.fingerprint, fp),
+            eq(jobsTable.sourceUrl, raw.url),
+            raw.id ? eq(jobsTable.id, raw.id) : undefined
+          )
         ))
         .limit(1);
 
@@ -264,6 +273,7 @@ export async function processListingPipeline(
 
         await db.insert(jobsTable).values({
           id: jobId,
+          accountId: targetAccountId,
           title: titleStr,
           company: compStr,
           normalizedCompany: compStr.toLowerCase(),
