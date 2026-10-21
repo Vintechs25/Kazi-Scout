@@ -494,8 +494,14 @@ export async function batchEvaluateQualifiedJobs(
           const gateResult = evaluatePreIngestionGate(job as any, {
             targetRoleFamilies: evidence.targetRoleFamilies,
             alternativeJobTitles: [],
-            candidateYearsExperience: evidence.yearsExperience,
-          });
+            candidateSummary: {
+              fullName: evidence.fullName,
+              yearsExperience: evidence.yearsExperience,
+              currentOrRecentTitle: (evidence as any).currentTitle || "",
+              topSkills: evidence.demonstratedTechnicalSkills,
+            },
+            maxExperienceYears: Math.max(evidence.yearsExperience + 5, 20),
+          } as any);
           if (!gateResult.qualified) {
             results.set(job.id, {
               decision: "NOT_A_MATCH",
@@ -506,8 +512,8 @@ export async function batchEvaluateQualifiedJobs(
               responsibilityCompatibility: "Cross-domain or role incompatibility.",
               locationEligibility: "N/A",
               hardEligibilityFailure: true,
-              hardFailureReason: gateResult.rejectionReason,
-              explanation: `Disqualified by Pre-Ingestion Gate: ${gateResult.rejectionReason}`,
+              hardFailureReason: gateResult.rejectionReason ?? null,
+              explanation: `Disqualified by Pre-Ingestion Gate: ${gateResult.rejectionReason || "Listing fails qualification criteria"}`,
               uncertainties: [],
               confidence: "high",
               isAiVerified: true,
