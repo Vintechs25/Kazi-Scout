@@ -795,7 +795,7 @@ router.post("/jobs/re-evaluate", async (req, res): Promise<void> => {
     // If AI evaluation failed for all candidates, do not silently pretend success
     if (aiStatus === "OFFLINE" && candidatesForAi.length > 0) {
       const mainErr = aiErrors[0] || "AI evaluation failed - provider credentials invalid or unavailable";
-      return res.status(400).json({
+      res.status(400).json({
         success: false,
         aiStatus: "OFFLINE",
         error: `AI Core Brain Offline: ${mainErr}. Discovered jobs were not AI-evaluated. Please update your AI API key in Agent & Settings.`,
@@ -804,6 +804,7 @@ router.post("/jobs/re-evaluate", async (req, res): Promise<void> => {
         rejectedByGate,
         aiEvaluated: 0,
       });
+      return;
     }
 
     res.json({

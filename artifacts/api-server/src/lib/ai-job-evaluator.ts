@@ -624,7 +624,7 @@ export async function batchEvaluateQualifiedJobs(
             agentRouterCreds,
             defaultProvider,
           );
-          if (evalResult.isAiVerified && evalResult.providerUsed !== "none") {
+          if (evalResult.isAiVerified && evalResult.providerUsed && evalResult.providerUsed !== "none") {
             successfulProvider = evalResult.providerUsed;
             successfulModel = evalResult.modelUsed || "unknown";
           } else if (!evalResult.isAiVerified && evalResult.explanation.includes("AI Brain Error:")) {
