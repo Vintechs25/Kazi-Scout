@@ -532,14 +532,15 @@ export async function discoverJobsWithCvGuidance(
               });
 
           const timeoutPromise = new Promise<any[]>((_, reject) =>
-            setTimeout(() => reject(new Error("Source crawl timed out after 8s")), 8000),
+            setTimeout(() => reject(new Error("Source crawl timed out after 12s")), 12000),
           );
 
           sourceJobs = await Promise.race([fetchPromise, timeoutPromise]);
           console.log(`[Discovery] Scraped ${source.id} (${source.name}): yielded ${sourceJobs.length} listings in ${Date.now() - t0}ms`);
         } catch (srcErr: any) {
-          console.warn(`[Discovery] Source ${source.id} skipped: ${srcErr?.message || srcErr}`);
-          errors.push(`Source ${source.id} failed: ${srcErr?.message || srcErr}`);
+          const errMsg = srcErr?.message || String(srcErr);
+          console.warn(`[Discovery] Source ${source.id} skipped: ${errMsg}`);
+          errors.push(`Source ${source.name || source.id}: ${errMsg}`);
           continue;
         }
 

@@ -4,7 +4,7 @@ import { db, candidateProfilesTable, integrationSettingsTable } from "@workspace
 import { eq, or } from "drizzle-orm";
 import { getVerifiedMasterCv } from "./cv-storage";
 import { decryptCredentials } from "./credential-encryption";
-import { normalizeModelName } from "./provider-services";
+import { normalizeModelName, normalizeAgentRouterBaseUrl, parseAiJsonResponse } from "./provider-services";
 
 export const verifiedWorkExperienceSchema = z.object({
   title: z.string(),
@@ -127,12 +127,13 @@ export async function callAgentRouterCandidateEvidence(
   baseUrl?: string | null,
 ): Promise<unknown> {
   const cleanModel = normalizeModelName(modelName);
-  const rootUrl = (baseUrl?.trim() || "https://agentrouter.org/v1").replace(/\/$/, "");
+  const rootUrl = normalizeAgentRouterBaseUrl(baseUrl);
   const res = await fetch(`${rootUrl}/chat/completions`, {
     method: "POST",
     headers: {
       Authorization: `Bearer ${apiKey.trim()}`,
       "Content-Type": "application/json",
+      "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/122.0.0.0 Safari/537.36",
     },
     body: JSON.stringify({
       model: cleanModel,
@@ -145,8 +146,14 @@ export async function callAgentRouterCandidateEvidence(
     signal: AbortSignal.timeout(30_000),
   });
 
-  if (!res.ok) throw new Error(`AgentRouter evidence error (${res.status}): ${await res.text()}`);
-  const data = (await res.json()) as any;
+  if (!res.ok) {
+    const errText = await res.text();
+    if (errText.trim().startsWith("<") || res.headers.get("content-type")?.includes("text/html")) {
+      throw new Error(`Agent Router returned an HTML error page (${res.status}). Ensure your Base URL ends with /v1 (e.g. ${rootUrl}).`);
+    }
+    throw new Error(`AgentRouter evidence error (${res.status}): ${errText.slice(0, 300)}`);
+  }
+  const data = (await parseAiJsonResponse(res, "Agent Router")) as any;
   const rawText = data?.choices?.[0]?.message?.content;
   if (!rawText) throw new Error("Empty response from AgentRouter");
   const cleaned = rawText.replace(/^```json\s*/i, "").replace(/^```\s*/i, "").replace(/\s*```$/i, "").trim();

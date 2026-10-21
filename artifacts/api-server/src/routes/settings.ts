@@ -28,7 +28,7 @@ import {
 } from "@workspace/db";
 import { decryptCredentials, encryptCredentials } from "../lib/credential-encryption";
 import { gmailRedirectUri } from "../lib/gmail-oauth-utils";
-import { testAiProvider } from "../lib/provider-services";
+import { testAiProvider, normalizeAgentRouterBaseUrl } from "../lib/provider-services";
 import { getAuthenticatedAccountId } from "../lib/auth";
 
 const router: IRouter = Router();
@@ -76,7 +76,9 @@ function providerConnection(
     detail: connectionDetail(provider, row),
     configured: Boolean(row),
     model: row?.model ?? null,
-    baseUrl: row?.baseUrl ?? null,
+    baseUrl: provider === "agentrouter"
+      ? (row?.baseUrl ? normalizeAgentRouterBaseUrl(row.baseUrl) : "https://agentrouter.org/v1")
+      : (row?.baseUrl ?? null),
     clientId: row?.clientId ?? null,
     connectedEmail: row?.connectedEmail ?? null,
     isDefault: defaultAiProvider === provider,
@@ -135,7 +137,10 @@ router.put("/settings/providers/:provider", async (req, res): Promise<void> => {
   }
 
   const updatedAt = new Date();
-  const baseUrl = body.data.baseUrl?.trim() || null;
+  const rawBaseUrl = body.data.baseUrl?.trim() || null;
+  const baseUrl = params.data.provider === "agentrouter"
+    ? normalizeAgentRouterBaseUrl(rawBaseUrl)
+    : rawBaseUrl;
   const [row] = await db
     .insert(integrationSettingsTable)
     .values({

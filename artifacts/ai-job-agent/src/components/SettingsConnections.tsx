@@ -73,12 +73,17 @@ function AiProviderCard({
     setLoadingModels(true);
     setModelsError("");
     try {
+      let resolvedBaseUrl = baseUrl.trim();
+      if (provider === "agentrouter" && resolvedBaseUrl) {
+        resolvedBaseUrl = resolvedBaseUrl.replace(/\/+$/, "").replace(/\/chat\/completions\/?$/i, "").replace(/\/models\/?$/i, "");
+        if (!/\/v1$/i.test(resolvedBaseUrl)) resolvedBaseUrl = `${resolvedBaseUrl}/v1`;
+      }
       const response = await fetch(`/api/settings/providers/${provider}/models`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
           apiKey: key || undefined,
-          baseUrl: baseUrl.trim() || undefined,
+          baseUrl: resolvedBaseUrl || undefined,
         }),
       });
       if (!response.ok) {
@@ -114,7 +119,12 @@ function AiProviderCard({
     const values = new FormData(form);
     const modelValue = String(values.get("model") || selectedModel || "").trim();
     const apiKeyValue = String(values.get("apiKey") || apiKey || "").trim();
-    const baseUrlValue = String(values.get("baseUrl") || baseUrl || "").trim();
+    let baseUrlValue = String(values.get("baseUrl") || baseUrl || "").trim();
+    if (provider === "agentrouter" && baseUrlValue) {
+      baseUrlValue = baseUrlValue.replace(/\/+$/, "").replace(/\/chat\/completions\/?$/i, "").replace(/\/models\/?$/i, "");
+      if (!/\/v1$/i.test(baseUrlValue)) baseUrlValue = `${baseUrlValue}/v1`;
+      setBaseUrl(baseUrlValue);
+    }
 
     save.mutate(
       {

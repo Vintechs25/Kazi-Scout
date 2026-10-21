@@ -33,6 +33,43 @@ export function detectProvider(
   return "openai";
 }
 
+/**
+ * Ensures Agent Router Base URL strictly targets the OpenAI-compatible /v1 endpoint,
+ * preventing accidental routing to the web frontend root (which returns HTML).
+ */
+export function normalizeAgentRouterBaseUrl(baseUrl?: string | null): string {
+  let url = (baseUrl?.trim() || "https://agentrouter.org/v1").replace(/\/+$/, "");
+  url = url.replace(/\/chat\/completions\/?$/i, "");
+  url = url.replace(/\/models\/?$/i, "");
+  url = url.replace(/\/+$/, "");
+  if (!/\/v1$/i.test(url)) {
+    url = `${url}/v1`;
+  }
+  return url;
+}
+
+/**
+ * Safely parse JSON from AI provider responses with protection against HTML challenge/error pages.
+ */
+export async function parseAiJsonResponse(res: Response, providerName = "AI Provider"): Promise<any> {
+  const text = await res.text();
+  const trimmed = text.trim();
+
+  if (trimmed.startsWith("<") || /<!doctype html/i.test(trimmed) || /<html/i.test(trimmed)) {
+    throw new Error(
+      `${providerName} returned HTML instead of JSON. Ensure your Base URL is formatted as "https://agentrouter.org/v1" (including "/v1") and your API key is valid.`
+    );
+  }
+
+  try {
+    return JSON.parse(text);
+  } catch (err: any) {
+    throw new Error(
+      `${providerName} response was not valid JSON (${err?.message || err}). Response preview: ${trimmed.slice(0, 150)}`
+    );
+  }
+}
+
 export function normalizeModelName(name: string): string {
   return name.replace(/^models\//, "").trim();
 }
@@ -221,9 +258,12 @@ export async function listModels(
     const actualProvider = detectProvider(provider, apiKey, baseUrl);
 
     if (actualProvider === "agentrouter") {
-      const rootUrl = (baseUrl?.trim() || "https://agentrouter.org/v1").replace(/\/$/, "");
+      const rootUrl = normalizeAgentRouterBaseUrl(baseUrl);
       const response = await fetch(`${rootUrl}/models`, {
-        headers: { Authorization: `Bearer ${apiKey.trim()}` },
+        headers: {
+          Authorization: `Bearer ${apiKey.trim()}`,
+          "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/122.0.0.0 Safari/537.36",
+        },
         signal: AbortSignal.timeout(12_000),
       });
 
@@ -232,6 +272,14 @@ export async function listModels(
           success: false,
           models: [],
           message: `The Agent Router API rejected the request (Status ${response.status}). Check your key and Base URL.`,
+        };
+      }
+
+      if (response.headers.get("content-type")?.includes("text/html")) {
+        return {
+          success: false,
+          models: [],
+          message: `Agent Router returned an HTML web page instead of API JSON. Ensure your Base URL includes "/v1" (e.g. ${rootUrl}).`,
         };
       }
 
@@ -405,9 +453,12 @@ export async function testAiProvider(
     const cleanModel = normalizeModelName(model);
 
     if (actualProvider === "agentrouter") {
-      const rootUrl = (baseUrl?.trim() || "https://agentrouter.org/v1").replace(/\/$/, "");
+      const rootUrl = normalizeAgentRouterBaseUrl(baseUrl);
       const response = await fetch(`${rootUrl}/models`, {
-        headers: { Authorization: `Bearer ${trimmedKey}` },
+        headers: {
+          Authorization: `Bearer ${trimmedKey}`,
+          "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/122.0.0.0 Safari/537.36",
+        },
         signal: AbortSignal.timeout(12_000),
       });
 
@@ -415,6 +466,13 @@ export async function testAiProvider(
         return {
           success: false,
           message: `The Agent Router key was rejected (Status ${response.status}). Check credentials and Base URL.`,
+        };
+      }
+
+      if (response.headers.get("content-type")?.includes("text/html")) {
+        return {
+          success: false,
+          message: `Agent Router returned an HTML web page instead of API JSON. Ensure your Base URL includes "/v1" (e.g. ${rootUrl}).`,
         };
       }
 
@@ -1103,7 +1161,7 @@ export async function extractProfileDraftFromFile(
 
   // === AGENTROUTER (pass image if model supports vision, e.g., gpt-4o routed through AgentRouter) ===
   if (actualProvider === "agentrouter") {
-    const rootUrl = (baseUrl?.trim() || "https://agentrouter.org/v1").replace(/\/$/, "");
+    const rootUrl = normalizeAgentRouterBaseUrl(baseUrl);
     const isImage = mimeType.startsWith("image/");
     const contentParts: any[] = isImage
       ? [
@@ -1114,7 +1172,11 @@ export async function extractProfileDraftFromFile(
 
     const res = await fetch(`${rootUrl}/chat/completions`, {
       method: "POST",
-      headers: { Authorization: `Bearer ${trimmedKey}`, "Content-Type": "application/json" },
+      headers: {
+        Authorization: `Bearer ${trimmedKey}`,
+        "Content-Type": "application/json",
+        "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/122.0.0.0 Safari/537.36",
+      },
       body: JSON.stringify({
         model: cleanModel,
         messages: [{ role: "user", content: contentParts }],
@@ -1202,12 +1264,13 @@ Generate the tailored application package now.`;
     let response: Response;
 
     if (actualProvider === "agentrouter") {
-      const rootUrl = (baseUrl?.trim() || "https://agentrouter.org/v1").replace(/\/$/, "");
+      const rootUrl = normalizeAgentRouterBaseUrl(baseUrl);
       response = await fetch(`${rootUrl}/chat/completions`, {
         method: "POST",
         headers: {
           Authorization: `Bearer ${trimmedKey}`,
           "Content-Type": "application/json",
+          "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/122.0.0.0 Safari/537.36",
         },
         body: JSON.stringify({
           model: cleanModel,
@@ -1349,7 +1412,7 @@ export async function callAgentRouterEvaluation(
   baseUrl?: string | null,
 ): Promise<{ data: unknown; modelUsed: string }> {
   const cleanModel = normalizeModelName(modelName);
-  const rootUrl = (baseUrl?.trim() || "https://agentrouter.org/v1").replace(/\/$/, "");
+  const rootUrl = normalizeAgentRouterBaseUrl(baseUrl);
   const chatUrl = `${rootUrl}/chat/completions`;
 
   const payload: Record<string, unknown> = {
@@ -1369,16 +1432,21 @@ export async function callAgentRouterEvaluation(
     headers: {
       Authorization: `Bearer ${apiKey.trim()}`,
       "Content-Type": "application/json",
+      "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/122.0.0.0 Safari/537.36",
     },
     body: JSON.stringify(payload),
     signal: AbortSignal.timeout(25_000),
   });
 
   if (!res.ok) {
-    throw new Error(`Agent Router evaluation error (${res.status}): ${await res.text()}`);
+    const errText = await res.text();
+    if (errText.trim().startsWith("<") || res.headers.get("content-type")?.includes("text/html")) {
+      throw new Error(`Agent Router returned an HTML error page (Status ${res.status}). Verify your Base URL ends with /v1 (e.g. ${rootUrl}) and your API key is valid.`);
+    }
+    throw new Error(`Agent Router evaluation error (${res.status}): ${errText.slice(0, 300)}`);
   }
 
-  const data = (await res.json()) as any;
+  const data = await parseAiJsonResponse(res, "Agent Router");
   const rawText = data.choices?.[0]?.message?.content;
   if (!rawText) throw new Error("No response text from Agent Router");
   const cleaned = rawText
@@ -1386,7 +1454,11 @@ export async function callAgentRouterEvaluation(
     .replace(/^```\s*/i, "")
     .replace(/\s*```$/i, "")
     .trim();
-  return { data: JSON.parse(cleaned), modelUsed: cleanModel };
+  try {
+    return { data: JSON.parse(cleaned), modelUsed: cleanModel };
+  } catch (parseErr: any) {
+    throw new Error(`Agent Router returned non-JSON completion: ${cleaned.slice(0, 150)}`);
+  }
 }
 
 
