@@ -842,7 +842,7 @@ export async function getAiBrainHealth(forceRefresh = false): Promise<AiBrainSta
           health.providers.agentrouter.message = `Verified with Agent Router (${agentRouterRow.model || "standard"})`;
         } else if (contentType.includes("text/html")) {
           health.providers.agentrouter.status = "ERROR";
-          health.providers.agentrouter.message = `Agent Router returned an HTML web page instead of API JSON. Ensure Base URL ends with /v1 (e.g. ${rootUrl})`;
+          health.providers.agentrouter.message = `Agent Router returned an HTML web page instead of API JSON (Alibaba WAF anti-bot challenge on ${rootUrl}). If using a private router, enter its custom Base URL; or connect Gemini/OpenRouter.`;
           health.errors.push(`Agent Router: ${health.providers.agentrouter.message}`);
         } else {
           health.providers.agentrouter.status = "ERROR";

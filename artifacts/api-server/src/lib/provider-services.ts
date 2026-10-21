@@ -57,7 +57,7 @@ export async function parseAiJsonResponse(res: Response, providerName = "AI Prov
 
   if (trimmed.startsWith("<") || /<!doctype html/i.test(trimmed) || /<html/i.test(trimmed)) {
     throw new Error(
-      `${providerName} returned HTML instead of JSON. Ensure your Base URL is formatted as "https://agentrouter.org/v1" (including "/v1") and your API key is valid.`
+      `${providerName} returned HTML instead of JSON (anti-bot firewall challenge or invalid endpoint). If using a self-hosted or private router, check its custom Base URL. Alternatively, connect a Google Gemini or OpenRouter key in Settings.`
     );
   }
 
@@ -279,7 +279,7 @@ export async function listModels(
         return {
           success: false,
           models: [],
-          message: `Agent Router returned an HTML web page instead of API JSON. Ensure your Base URL includes "/v1" (e.g. ${rootUrl}).`,
+          message: `Agent Router returned an HTML web page instead of API JSON. If using a private router, verify its custom Base URL. If using agentrouter.org, their WAF firewall intercepts server requests — consider using Gemini or OpenRouter.`,
         };
       }
 
@@ -472,7 +472,7 @@ export async function testAiProvider(
       if (response.headers.get("content-type")?.includes("text/html")) {
         return {
           success: false,
-          message: `Agent Router returned an HTML web page instead of API JSON. Ensure your Base URL includes "/v1" (e.g. ${rootUrl}).`,
+          message: `Agent Router returned an HTML web page instead of API JSON. If using a private router, verify its custom Base URL. If using agentrouter.org, their WAF firewall intercepts server requests — consider using Gemini or OpenRouter.`,
         };
       }
 
