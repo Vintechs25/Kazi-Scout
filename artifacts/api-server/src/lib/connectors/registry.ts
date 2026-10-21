@@ -11,6 +11,7 @@ import { SearchOnlyAdapter } from "./search-only-adapter";
 import { ManualUrlAdapter } from "./manual-url-adapter";
 import { CommunityAnnouncementAdapter } from "./community-announcement-adapter";
 import { GoogleJobsAdapter } from "./google-jobs-adapter";
+import { BrowserNavigationAdapter } from "./browser-navigation-adapter";
 import type { JobSourceRecord } from "@workspace/db";
 import type { SourceDefinition } from "../source-registry-data";
 
@@ -24,6 +25,7 @@ const rssFeed = new RssFeedAdapter();
 const jsonApi = new JsonApiAdapter();
 const structuredHtml = new StructuredHtmlAdapter();
 const googleJobs = new GoogleJobsAdapter();
+const browserNavigation = new BrowserNavigationAdapter();
 
 const connectors = new Map<string, IJobConnector>([
   ["FEED", rssFeed],
@@ -41,6 +43,7 @@ const connectors = new Map<string, IJobConnector>([
   ["GOOGLE_JOBS", googleJobs],
   ["MANUAL_URL", new ManualUrlAdapter()],
   ["COMMUNITY_ANNOUNCEMENT", new CommunityAnnouncementAdapter()],
+  ["BROWSER_NAVIGATION", browserNavigation],
 ]);
 
 export function getConnectorForSource(source: JobSourceRecord | SourceDefinition): IJobConnector {
@@ -54,6 +57,7 @@ export function getConnectorForSource(source: JobSourceRecord | SourceDefinition
   if (source.supportsApi) return connectors.get("JSON_API")!;
   if (source.supportsHtmlExtraction) return connectors.get("STRUCTURED_HTML")!;
   if (source.supportsSearchOnly) return connectors.get("SEARCH_ONLY")!;
+  if ((source as any).supportsBrowserAutomation || (source as any).supportsBrowserNavigation) return connectors.get("BROWSER_NAVIGATION")!;
 
   return connectors.get("SEARCH_ONLY")!;
 }

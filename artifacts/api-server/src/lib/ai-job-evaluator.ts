@@ -16,7 +16,7 @@ import { z } from "@workspace/api-zod";
 import { db, integrationSettingsTable, jobsTable, systemStateTable } from "@workspace/db";
 import { eq } from "drizzle-orm";
 import { decryptCredentials } from "./credential-encryption";
-import { callAgentRouterEvaluation, normalizeModelName, normalizeAgentRouterBaseUrl } from "./provider-services";
+import { callAgentRouterEvaluation, normalizeModelName, normalizeAgentRouterBaseUrl, buildAgentRouterHeaders } from "./provider-services";
 import { evaluatePreIngestionGate } from "./pre-ingestion-gate";
 import type { CandidateEvidenceProfile } from "./candidate-evidence";
 import type { NormalizedJob } from "./job-search-service";
@@ -830,10 +830,7 @@ export async function getAiBrainHealth(forceRefresh = false): Promise<AiBrainSta
       if (c.apiKey) {
         const rootUrl = normalizeAgentRouterBaseUrl(agentRouterRow.baseUrl);
         const testRes = await fetch(`${rootUrl}/models`, {
-          headers: {
-            Authorization: `Bearer ${c.apiKey.trim()}`,
-            "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/122.0.0.0 Safari/537.36",
-          },
+          headers: buildAgentRouterHeaders(c.apiKey),
           signal: AbortSignal.timeout(6000),
         });
         const contentType = testRes.headers.get("content-type") || "";

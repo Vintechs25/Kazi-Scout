@@ -33,10 +33,6 @@ export function detectProvider(
   return "openai";
 }
 
-/**
- * Ensures Agent Router Base URL strictly targets the OpenAI-compatible /v1 endpoint,
- * preventing accidental routing to the web frontend root (which returns HTML).
- */
 export function normalizeAgentRouterBaseUrl(baseUrl?: string | null): string {
   let url = (baseUrl?.trim() || "https://agentrouter.org/v1").replace(/\/+$/, "");
   url = url.replace(/\/chat\/completions\/?$/i, "");
@@ -47,6 +43,25 @@ export function normalizeAgentRouterBaseUrl(baseUrl?: string | null): string {
   }
   return url;
 }
+
+export function sanitizeApiKey(apiKey: string): string {
+  return apiKey.trim().replace(/^Bearer\s+/i, "").replace(/^["']|["']$/g, "").trim();
+}
+
+export function buildAgentRouterHeaders(apiKey: string): Record<string, string> {
+  const cleanKey = sanitizeApiKey(apiKey);
+  return {
+    Authorization: `Bearer ${cleanKey}`,
+    Authentication: `Bearer ${cleanKey}`,
+    "api-key": cleanKey,
+    "x-api-key": cleanKey,
+    "HTTP-Referer": "https://kaziscout.vintechsystems.store",
+    "X-Title": "KaziScout",
+    "Content-Type": "application/json",
+    "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/122.0.0.0 Safari/537.36",
+  };
+}
+
 
 /**
  * Safely parse JSON from AI provider responses with protection against HTML challenge/error pages.
@@ -260,10 +275,7 @@ export async function listModels(
     if (actualProvider === "agentrouter") {
       const rootUrl = normalizeAgentRouterBaseUrl(baseUrl);
       const response = await fetch(`${rootUrl}/models`, {
-        headers: {
-          Authorization: `Bearer ${apiKey.trim()}`,
-          "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/122.0.0.0 Safari/537.36",
-        },
+        headers: buildAgentRouterHeaders(apiKey),
         signal: AbortSignal.timeout(12_000),
       });
 
@@ -466,10 +478,7 @@ const actualProvider = detectProvider(provider, apiKey, baseUrl);
     if (actualProvider === "agentrouter") {
       const rootUrl = normalizeAgentRouterBaseUrl(baseUrl);
       const response = await fetch(`${rootUrl}/models`, {
-        headers: {
-          Authorization: `Bearer ${trimmedKey}`,
-          "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/122.0.0.0 Safari/537.36",
-        },
+        headers: buildAgentRouterHeaders(trimmedKey),
         signal: AbortSignal.timeout(12_000),
       });
 
@@ -1278,11 +1287,7 @@ Generate the tailored application package now.`;
       const rootUrl = normalizeAgentRouterBaseUrl(baseUrl);
       response = await fetch(`${rootUrl}/chat/completions`, {
         method: "POST",
-        headers: {
-          Authorization: `Bearer ${trimmedKey}`,
-          "Content-Type": "application/json",
-          "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/122.0.0.0 Safari/537.36",
-        },
+        headers: buildAgentRouterHeaders(trimmedKey),
         body: JSON.stringify({
           model: cleanModel,
           messages: [
@@ -1440,11 +1445,7 @@ export async function callAgentRouterEvaluation(
 
   const res = await fetch(chatUrl, {
     method: "POST",
-    headers: {
-      Authorization: `Bearer ${apiKey.trim()}`,
-      "Content-Type": "application/json",
-      "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/122.0.0.0 Safari/537.36",
-    },
+    headers: buildAgentRouterHeaders(apiKey),
     body: JSON.stringify(payload),
     signal: AbortSignal.timeout(25_000),
   });

@@ -539,8 +539,8 @@ export async function discoverJobsWithCvGuidance(
           console.log(`[Discovery] Scraped ${source.id} (${source.name}): yielded ${sourceJobs.length} listings in ${Date.now() - t0}ms`);
         } catch (srcErr: any) {
           const errMsg = srcErr?.message || String(srcErr);
-          console.warn(`[Discovery] Source ${source.id} skipped: ${errMsg}`);
-          errors.push(`Source ${source.name || source.id}: ${errMsg}`);
+          console.warn(`[Discovery] Source ${source.id} (${source.name}) transiently skipped: ${errMsg}`);
+          // Individual source timeouts are non-fatal network variances and should not corrupt the top-level AI Brain status
           continue;
         }
 

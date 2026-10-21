@@ -29,6 +29,7 @@ export interface SourceDefinition {
     | "CAREER_PAGE"
     | "SEARCH_ONLY"
     | "BROWSER_AUTOMATION"
+    | "BROWSER_NAVIGATION"
     | "MANUAL_URL"
     | "COMMUNITY_ANNOUNCEMENT";
   connectorType:
@@ -38,6 +39,7 @@ export interface SourceDefinition {
     | "ATS_REGISTRY"
     | "STRUCTURED_HTML"
     | "SEARCH_ONLY"
+    | "BROWSER_NAVIGATION"
     | "MANUAL_URL"
     | "COMMUNITY_ANNOUNCEMENT";
   status:
@@ -56,6 +58,7 @@ export interface SourceDefinition {
   supportsFeed: boolean;
   supportsHtmlExtraction: boolean;
   supportsSearchOnly?: boolean;
+  supportsBrowserNavigation?: boolean;
   supportsApplicationRedirect: boolean;
   authenticationRequired: boolean;
   rateLimit: number;
@@ -2494,8 +2497,8 @@ export const COMPREHENSIVE_SOURCE_CATALOG: SourceDefinition[] = [
     region: "Worldwide",
     integrationType: "STRUCTURED_HTML",
     connectorType: "STRUCTURED_HTML",
-    status: "READY",
-    enabled: true,
+    status: "DEGRADED",
+    enabled: false,
     supportsApi: false,
     supportsFeed: false,
     supportsHtmlExtraction: true,
