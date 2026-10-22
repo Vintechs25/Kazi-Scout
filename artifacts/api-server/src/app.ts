@@ -9,10 +9,15 @@ import fs from "node:fs";
 import { ensureDatabaseReady, isTursoConfigured } from "@workspace/db";
 
 const app: Express = express();
-const serveWeb = process.env.SERVE_WEB === "true";
 const candidateDist1 = path.resolve(process.cwd(), "../ai-job-agent/dist/public");
 const candidateDist2 = path.resolve(process.cwd(), "artifacts/ai-job-agent/dist/public");
-const webDist = fs.existsSync(candidateDist1) ? candidateDist1 : candidateDist2;
+const candidateDist3 = path.resolve(process.cwd(), "dist/public");
+const webDist = fs.existsSync(candidateDist1)
+  ? candidateDist1
+  : fs.existsSync(candidateDist2)
+    ? candidateDist2
+    : candidateDist3;
+const serveWeb = process.env.SERVE_WEB === "true" || fs.existsSync(path.join(webDist, "index.html"));
 app.set("trust proxy", 1);
 app.disable("x-powered-by");
 app.use((_req, res, next) => {
