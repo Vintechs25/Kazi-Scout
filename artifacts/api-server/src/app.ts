@@ -94,7 +94,6 @@ app.use("/api", async (_req, _res, next) => {
 });
 
 app.use("/api", router);
-app.use("/", router);
 
 if (serveWeb) {
   app.get("/{*splat}", (req, res, next) => {
