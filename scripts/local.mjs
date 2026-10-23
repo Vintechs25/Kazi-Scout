@@ -73,7 +73,7 @@ function startLocalApp(nodeEnv) {
     ["--filter", "@workspace/api-server", "run", "start"],
     {
       NODE_ENV: nodeEnv,
-      PORT: "5000",
+      PORT: process.env.PORT || "5050",
       SERVE_WEB: "true",
       LOCAL_APP: "true",
     },
