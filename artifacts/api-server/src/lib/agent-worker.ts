@@ -189,14 +189,22 @@ export async function startAgent(): Promise<void> {
   // Schedule regular job searches
   searchTimeout = setInterval(async () => {
     if (!isRunning) return;
-    await runJobSearch();
+    try {
+      await runJobSearch();
+    } catch (err) {
+      console.error("[Agent] Error during scheduled job search:", err);
+    }
   }, agentConfig.searchIntervalMinutes * 60000);
 
   // Schedule regular applications (offset by half the interval)
   setTimeout(() => {
     applyTimeout = setInterval(async () => {
       if (!isRunning) return;
-      await runJobApplications();
+      try {
+        await runJobApplications();
+      } catch (err) {
+        console.error("[Agent] Error during scheduled job applications:", err);
+      }
     }, agentConfig.applyIntervalMinutes * 60000);
   }, (agentConfig.applyIntervalMinutes * 60000) / 2);
 
@@ -204,7 +212,11 @@ export async function startAgent(): Promise<void> {
   setTimeout(() => {
     responseTimeout = setInterval(async () => {
       if (!isRunning) return;
-      await runResponseCheck();
+      try {
+        await runResponseCheck();
+      } catch (err) {
+        console.error("[Agent] Error during scheduled response check:", err);
+      }
     }, agentConfig.checkResponsesIntervalMinutes * 60000);
   }, (agentConfig.checkResponsesIntervalMinutes * 60000) / 3);
 
@@ -277,20 +289,32 @@ export async function resumeAgent(): Promise<void> {
   // Restart all cycles
   searchTimeout = setInterval(async () => {
     if (!isRunning) return;
-    await runJobSearch();
+    try {
+      await runJobSearch();
+    } catch (err) {
+      console.error("[Agent] Error during resumed job search:", err);
+    }
   }, agentConfig.searchIntervalMinutes * 60000);
 
   setTimeout(() => {
     applyTimeout = setInterval(async () => {
       if (!isRunning) return;
-      await runJobApplications();
+      try {
+        await runJobApplications();
+      } catch (err) {
+        console.error("[Agent] Error during resumed job applications:", err);
+      }
     }, agentConfig.applyIntervalMinutes * 60000);
   }, (agentConfig.applyIntervalMinutes * 60000) / 2);
 
   setTimeout(() => {
     responseTimeout = setInterval(async () => {
       if (!isRunning) return;
-      await runResponseCheck();
+      try {
+        await runResponseCheck();
+      } catch (err) {
+        console.error("[Agent] Error during resumed response check:", err);
+      }
     }, agentConfig.checkResponsesIntervalMinutes * 60000);
   }, (agentConfig.checkResponsesIntervalMinutes * 60000) / 3);
 
