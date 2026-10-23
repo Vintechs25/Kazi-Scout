@@ -16,6 +16,7 @@
  */
 
 import { secureFetch } from "./http-client";
+import { parsePdfVacancyNotice } from "./pdf-vacancy-parser";
 
 // ---------------------------------------------------------------------------
 // Types
@@ -57,7 +58,7 @@ export type CareerField =
   | "education" | "legal" | "engineering" | "agriculture"
   | "hospitality" | "media" | "logistics" | "insurance" | "all";
 
-interface SourceSpec {
+export interface SourceSpec {
   id: string;
   name: string;
   country: string;
@@ -537,7 +538,38 @@ async function crawlHtmlPage(spec: SourceSpec, pageUrl: string, seen: Set<string
       if (jobs.length >= max) break;
       const u = san(m[1]); const t = cleanHtml(m[2]);
       if (!u || seen.has(u) || isGarbage(t)) continue;
-      seen.add(u); jobs.push(buildJob(spec, t, u));
+      seen.add(u);
+
+      if (u.toLowerCase().endsWith(".pdf")) {
+        try {
+          const parsed = await parsePdfVacancyNotice(u, spec.name, spec.id);
+          if (parsed && parsed.length > 0) {
+            for (const pj of parsed) {
+              if (jobs.length >= max) break;
+              jobs.push({
+                ...pj,
+                location: pj.location || spec.defaultLocation || "Kenya",
+                url: pj.url || u,
+                sourceUrl: pj.sourceUrl || u,
+                applicationUrl: pj.applicationUrl || u,
+                externalJobId: pj.externalJobId || undefined,
+                salary: pj.salary || null,
+                county: pj.county || null,
+                postedDate: pj.postedDate || new Date(),
+                jobType: pj.jobType || "Full-time",
+                skills: pj.skills || [],
+                sourceId: spec.id,
+                sourceName: spec.name,
+              });
+            }
+            continue;
+          }
+        } catch {
+          // fallback to standard job item below
+        }
+      }
+
+      jobs.push(buildJob(spec, t, u));
     }
   } catch { /* skip on network error */ }
 }
