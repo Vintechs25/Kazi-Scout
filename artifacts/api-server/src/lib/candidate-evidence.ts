@@ -4,7 +4,7 @@ import { db, candidateProfilesTable, integrationSettingsTable } from "@workspace
 import { eq, or } from "drizzle-orm";
 import { getVerifiedMasterCv } from "./cv-storage";
 import { decryptCredentials } from "./credential-encryption";
-import { normalizeModelName, normalizeAgentRouterBaseUrl, parseAiJsonResponse } from "./provider-services";
+import { normalizeModelName, normalizeAgentRouterBaseUrl, parseAiJsonResponse, buildAgentRouterHeaders } from "./provider-services";
 
 export const verifiedWorkExperienceSchema = z.object({
   title: z.string(),
@@ -131,9 +131,8 @@ export async function callAgentRouterCandidateEvidence(
   const res = await fetch(`${rootUrl}/chat/completions`, {
     method: "POST",
     headers: {
-      Authorization: `Bearer ${apiKey.trim()}`,
+      ...buildAgentRouterHeaders(apiKey),
       "Content-Type": "application/json",
-      "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/122.0.0.0 Safari/537.36",
     },
     body: JSON.stringify({
       model: cleanModel,

@@ -18,7 +18,7 @@ import {
 import { desc, eq, or, and, isNull } from "drizzle-orm";
 import { decryptCredentials } from "./credential-encryption";
 import { extractCvText } from "./cv-text-extraction";
-import { detectProvider, normalizeModelName, normalizeAgentRouterBaseUrl, parseAiJsonResponse } from "./provider-services";
+import { detectProvider, normalizeModelName, normalizeAgentRouterBaseUrl, parseAiJsonResponse, buildAgentRouterHeaders } from "./provider-services";
 import { getVerifiedMasterCv } from "./cv-storage";
 import { getOrGenerateCandidateEvidence, type CandidateEvidenceProfile } from "./candidate-evidence";
 import { getUserEnabledRoles } from "./discovery-role-approval";
@@ -252,9 +252,8 @@ async function callAgentRouterDirective(
   const res = await fetch(`${rootUrl}/chat/completions`, {
     method: "POST",
     headers: {
-      Authorization: `Bearer ${apiKey.trim()}`,
+      ...buildAgentRouterHeaders(apiKey),
       "Content-Type": "application/json",
-      "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/122.0.0.0 Safari/537.36",
     },
     body: JSON.stringify({
       model: cleanModel,
