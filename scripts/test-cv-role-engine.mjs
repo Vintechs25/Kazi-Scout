@@ -172,7 +172,83 @@ run("Accounting CV: extracts Chartered Accountant, audit experience, CPA-K", () 
 });
 
 // -------------------------------------------------------------
-// Test 4: Profile Draft Compatibility Check
+// Test 4: Virtual Assistant & Administrative Specialist CV (Real-World Test)
+// -------------------------------------------------------------
+run("Virtual Assistant CV: extracts real jobs, hospital company, no diplomas as roles, no software engineering pollution", () => {
+  const cvText = `
+    KELVIN MUCHERU MUTERU
+    VIRTUAL ASSISTANT | EXECUTIVE ADMINISTRATIVE ASSISTANT | OPERATIONS SUPPORT
+    Location: Nairobi, Kenya Phone: +254 719 767 590 Email: mucherukelvin2@gmail.com LinkedIn: linkedin.com/in/kelvin-mucheru
+
+    PROFESSIONAL SUMMARY
+    Highly organized and tech-savvy Virtual Assistant and Administrative Specialist with 3+ years of experience providing comprehensive administrative, customer, and operational support across healthcare, cybercafe, and tech consulting environments.
+
+    TARGET ROLES
+    Primary Roles: Virtual Assistant (VA), Executive Virtual Assistant, Administrative Assistant, Operations Support Specialist, Data Entry & Records Coordinator, Digital Administrative Officer.
+
+    PROFESSIONAL EXPERIENCE
+    Administrative & Systems Support Specialist Pope Benedict XVI Catholic Hospital | Kenya Oct 2025 - Present Deliver front-line administrative and health records support for MED360 EMR/EHR system.
+    - Oversee accurate data entry, medical records maintenance, and database administration.
+
+    Virtual Administrative & Tech Support Consultant Vintech Systems and Consulting | Remote / Kenya
+    2023 - Present Provide remote administrative, digital management, and technical consultation services to micro-enterprises.
+
+    Operations & Administrative Manager Vintechs Cyber | Ruiru, Kenya
+    2024 - Present Manage daily administrative operations, client reception, document processing, and public government portal submissions.
+
+    EDUCATION
+    Diploma in Computer Science 2022 - 2025
+    Zetech University, Ruiru
+    High School Diploma 2019 - 2022
+    Ndururumo High School, Nyahururu
+
+    CERTIFICATIONS & TRAINING
+    • CCNA: Enterprise Networking & Security (Cisco, 2025)
+    • Full-Stack Software Development: PLP Academy
+  `;
+
+  const parsed = parseCvDeterministic(cvText);
+
+  assert.equal(parsed.fullName, "Kelvin Mucheru Muteru");
+  assert.equal(parsed.currentRole, "Administrative & Systems Support Specialist");
+  assert.equal(parsed.currentCompany, "Pope Benedict XVI Catholic Hospital");
+  assert.ok(parsed.workExperience.length >= 3, `Expected at least 3 positions, got: ${parsed.workExperience.length}`);
+
+  // Verify company separation
+  assert.equal(parsed.workExperience[0].roleTitle, "Administrative & Systems Support Specialist");
+  assert.equal(parsed.workExperience[0].company, "Pope Benedict XVI Catholic Hospital");
+
+  // Verify Anti-Role filtering: Degrees and Diplomas must NEVER be in target roles
+  assert.ok(
+    !parsed.targetRoles.includes("Diploma in Computer Science"),
+    "Target roles must NOT contain 'Diploma in Computer Science'"
+  );
+  assert.ok(
+    !parsed.targetRoles.includes("High School Diploma"),
+    "Target roles must NOT contain 'High School Diploma'"
+  );
+
+  // Verify no Software Engineering canonical role pollution
+  assert.ok(
+    !parsed.targetRoles.includes("Senior Software Engineer") &&
+    !parsed.targetRoles.includes("Engineering Manager") &&
+    !parsed.targetRoles.includes("Principal Software Engineer"),
+    "Target roles must NOT contain Software Engineering managerial roles for an Administrative candidate"
+  );
+
+  // Verify correct domain roles are present
+  assert.ok(
+    parsed.targetRoles.some(r => /virtual\s+assistant|administrative|operations/i.test(r)),
+    `Target roles should contain administrative / VA roles, got: ${parsed.targetRoles.join(", ")}`
+  );
+  assert.ok(
+    parsed.education.some(e => /diploma/i.test(e)),
+    "Education must contain diplomas"
+  );
+});
+
+// -------------------------------------------------------------
+// Test 5: Profile Draft Compatibility Check
 // -------------------------------------------------------------
 run("toProfileDraft: output conforms to standard profile draft schema", () => {
   const sample = parseCvDeterministic("Jane Doe\njane@example.com\n+254 700 000 000\nSoftware Developer | Cellulant | 2022 - Present\n");

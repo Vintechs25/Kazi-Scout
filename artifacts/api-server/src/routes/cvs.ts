@@ -37,9 +37,15 @@ import {
 import { getAuthenticatedAccountId } from "../lib/auth";
 import { invalidateCandidateEvidence } from "../lib/candidate-evidence";
 import { invalidateSearchDirective } from "../lib/search-directive";
-import { parseCvDeterministic, toProfileDraft } from "../lib/cv-role-engine";
-
+import {
+  parseCvDeterministic,
+  toProfileDraft,
+  cleanCandidateName,
+  repairSpacedCharacters,
+} from "../lib/cv-role-engine";
 import fs from "node:fs";
+
+export { cleanCandidateName, repairSpacedCharacters };
 
 const router: IRouter = Router();
 
@@ -370,52 +376,6 @@ router.post("/cvs/bulk", async (req, res): Promise<void> => {
     res.status(500).json({ error: err?.message || "Bulk CV operation failed" });
   }
 });
-
-/**
- * Clean candidate full name by stripping document titles, qualification suffixes,
- * street addresses, and duplicated titles
- */
-export function cleanCandidateName(rawName: string): string {
-  if (!rawName) return "";
-  let name = healBrokenCvText(rawName).trim();
-
-  // Strip leading document titles e.g. "Curriculum Vitae of", "Resume of", "Bio-data of"
-  name = name.replace(/^(?:curriculum\s+vitae|resume|bio[- ]?data|profile|cv)\s*(?:of|for|:)?\s*/i, "").trim();
-
-  // Strip duplicate honorifics e.g. "Dr. Dr." -> "Dr."
-  name = name.replace(/^(?:Dr\.?\s*)+/i, "Dr. ");
-  name = name.replace(/^(?:Prof\.?\s*)+/i, "Prof. ");
-
-  // Strip address / contact trailing clauses
-  name = name.replace(/\s*(?:\\|\/|\||\bNo\b|\bPlot\b|\bStreet\b|\bSt\b|\bRoad\b|\bRd\b|\bEstate\b|\bAvenue\b|\bAve\b|\bClose\b|\bExt\b).*$/i, "");
-
-  // Strip qualification suffixes e.g. "M.B., B.S.", "FWACS", "FRCS", "Ph.D", "CPA", "RN"
-  name = name.replace(/[\s,.]+(?:M\.?B\.?,?\s*B\.?S\.?|FWACS|FRCS|Ph\.?D|M\.?Sc|B\.?Sc|B\.?Eng|B\.?A|LL\.?B|LL\.?M|CPA|ACCA|RN|FACS|FMCOG|MWACS|PMP|PE|Esq).*$/i, "");
-
-  // If there's a period followed by a repeated surname/name or title, take only the first clean portion
-  if (name.includes(".")) {
-    const parts = name.split(/\.\s+/);
-    if (parts.length > 1 && !/^(?:Dr|Prof|Mr|Mrs|Ms|Engr|Barr)$/i.test(parts[0])) {
-      name = parts[0];
-    }
-  }
-
-  // Strip parenthetical text
-  name = name.replace(/\s*\(.*$/, "").trim();
-
-  // Format capitalized words nicely (e.g. BELLO -> Bello)
-  name = name.split(/\s+/).map((word, idx) => {
-    if (idx === 0 && /^(?:dr|prof|mr|mrs|ms|engr|barr)\.?$/i.test(word)) {
-      return word.charAt(0).toUpperCase() + word.slice(1).toLowerCase().replace(/\.?$/, ".");
-    }
-    if (/^[A-Z]{2,}$/.test(word) && !/^(?:USA|UK|UAE|II|III|IV)$/.test(word)) {
-      return word.charAt(0).toUpperCase() + word.slice(1).toLowerCase();
-    }
-    return word;
-  }).join(" ");
-
-  return name.trim();
-}
 
 /**
  * Synchronize parsed CV facts across the entire workspace:
@@ -834,76 +794,6 @@ export function sanitizeProfileDraft(raw: unknown): Record<string, unknown> {
 
   return draft;
 }
-
-export function repairSpacedCharacters(str: string): string {
-  let s = str
-    .replace(/\bCurr\s*icul\s*u\s*m\s+vita\s*e\b/gi, "Curriculum Vitae")
-    .replace(/\b(Dr|Prof|Mr|Mrs|Ms|Engr|Barr)\s*\./gi, "$1. ")
-    .replace(/M\s*\.?\s*B\s*\.?\s*,?\s*B\s*\.?\s*S/gi, "M.B., B.S.")
-    .replace(/F\s*W\s*A\s*C\s*S/gi, "FWACS")
-    .replace(/F\s*R\s*C\s*S/gi, "FRCS");
-
-  const validShortWords = new Set([
-    "a", "i", "an", "as", "at", "be", "by", "do", "go", "he", "if", "in", "is",
-    "it", "me", "my", "no", "of", "on", "or", "so", "to", "up", "us", "we"
-  ]);
-
-  const tokens = s.split(/(\s+|[.,:;()\\\/])/);
-  const out: string[] = [];
-
-  for (let i = 0; i < tokens.length; i++) {
-    const t = tokens[i];
-    if (!t) continue;
-
-    if (/^[ \t]+$/.test(t)) {
-      const prev = out[out.length - 1];
-      const next = tokens[i + 1];
-
-      if (prev && next && /^[A-Za-z]+$/.test(prev) && /^[A-Za-z]+$/.test(next)) {
-        const prevLower = prev.toLowerCase();
-        const nextLower = next.toLowerCase();
-
-        const prevIsSingle = prev.length === 1 && !validShortWords.has(prevLower);
-        const nextIsSingle = next.length === 1 && !validShortWords.has(nextLower);
-        const bothSingle = prev.length === 1 && next.length === 1;
-        const nextIsFragment = /^[a-z]/.test(next) && (
-          next.length <= 3 && !validShortWords.has(nextLower)
-        );
-        const prevIsFragment = prev.length <= 3 && !validShortWords.has(prevLower) && /^[a-z]/.test(next);
-
-        if (bothSingle || prevIsSingle || nextIsSingle || nextIsFragment || prevIsFragment) {
-          out[out.length - 1] = prev + next;
-          i++;
-          continue;
-        }
-      }
-      out.push(t);
-    } else {
-      out.push(t);
-    }
-  }
-
-  let result = out.join("");
-  // Algorithmic healing: merge trailing or leading lone syllables e.g. "S mith" -> "Smith", "John son" -> "Johnson"
-  result = result
-    .replace(/\b([A-Za-z]{2,})[ \t]+([a-z]{1,3})\b/g, (m, w, f) => {
-      const valid = new Set(["a", "an", "as", "at", "be", "by", "do", "go", "he", "if", "in", "is", "it", "me", "my", "no", "of", "on", "or", "so", "to", "up", "us", "we", "for", "and", "the", "but", "not", "you", "all", "any", "can", "had", "her", "was", "one", "our", "out", "day", "get", "has", "him", "his", "how", "man", "new", "now", "old", "see", "two", "way", "who", "boy", "did", "its", "let", "put", "say", "she", "too", "use"]);
-      if (!valid.has(f.toLowerCase())) {
-        return w + f;
-      }
-      return m;
-    })
-    .replace(/\b([A-Za-z]{1,3})[ \t]+([a-z]{2,})\b/g, (m, f, w) => {
-      const valid = new Set(["a", "an", "as", "at", "be", "by", "do", "go", "he", "if", "in", "is", "it", "me", "my", "no", "of", "on", "or", "so", "to", "up", "us", "we", "for", "and", "the", "but", "not", "you", "all", "any", "can", "had", "her", "was", "one", "our", "out"]);
-      if (!valid.has(f.toLowerCase()) && /^[a-z]/.test(w)) {
-        return f + w;
-      }
-      return m;
-    });
-
-  return result;
-}
-
 
 export function parseCvLocally(rawText: string): Record<string, unknown> {
   const parsed = parseCvDeterministic(rawText);
