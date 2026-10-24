@@ -660,6 +660,44 @@ Output MUST be a single JSON object strictly matching this schema:
   return deterministic;
 }
 
+/**
+ * Zero-AI Deterministic Directive Generator for Crawlers & Fast Discovery
+ * Guarantees zero latency, zero external API calls, and zero failure points.
+ */
+export async function getDeterministicSearchDirective(
+  accountId?: string,
+  activeRoles?: string[],
+): Promise<SearchDirective> {
+  let profile: any = null;
+  let searchProfiles: any[] = [];
+  if (accountId) {
+    try {
+      const [p] = await db
+        .select()
+        .from(candidateProfilesTable)
+        .where(eq(candidateProfilesTable.id, accountId))
+        .limit(1);
+      profile = p;
+      searchProfiles = await db
+        .select()
+        .from(searchProfilesTable)
+        .where(eq(searchProfilesTable.accountId, accountId));
+    } catch {
+      // fallback
+    }
+  }
+
+  const cacheKey = `deterministic-${accountId || "anon"}-${(activeRoles || []).join("-")}`;
+  return generateDeterministicDirective(
+    profile,
+    "deterministic-crawler-evidence",
+    searchProfiles,
+    cacheKey,
+    true,
+    activeRoles,
+  );
+}
+
 export function invalidateSearchDirective(accountId?: string): void {
   if (accountId) {
     inMemoryCachedDirectiveMap.delete(accountId);
@@ -667,3 +705,4 @@ export function invalidateSearchDirective(accountId?: string): void {
     inMemoryCachedDirectiveMap.clear();
   }
 }
+

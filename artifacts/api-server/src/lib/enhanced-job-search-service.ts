@@ -21,7 +21,7 @@ import { parseCvComprehensive, getParsedCv } from "./cv-parser-enhanced";
 import { fingerprintJob, normalizeCompany, normalizeText } from "./job-deduplication";
 import { splitJobSections, extractContextualYears, extractSkillsFromText, COMPREHENSIVE_SKILL_SYNONYMS } from "./section-parser";
 import { evaluatePreIngestionGate } from "./pre-ingestion-gate";
-import { getOrGenerateSearchDirective, type SearchDirective } from "./search-directive";
+import { getOrGenerateSearchDirective, getDeterministicSearchDirective, type SearchDirective } from "./search-directive";
 import { getOrGenerateCandidateEvidence } from "./candidate-evidence";
 import { verifyJobAgainstUserProfile } from "./requirement-verification-system";
 import type { NormalizedJob, JobSearchFilter } from "./job-search-service";
@@ -429,8 +429,8 @@ export async function discoverJobsWithCvGuidance(
     let gateRejectedCount = 0;
     let validationRejectedCount = 0;
 
-    // Fetch directive dynamically tailored to active searched roles
-    const directive = await getOrGenerateSearchDirective(accountId, false, rolesToSearch);
+    // Zero-AI deterministic qualification directive tailored to active searched roles
+    const directive = await getDeterministicSearchDirective(accountId, rolesToSearch);
 
     // Parallel Kenya crawler: hits verified Kenyan sources tailored to the candidate's field
     try {

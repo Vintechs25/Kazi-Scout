@@ -21,6 +21,7 @@ import { normalizeModelName, detectProvider } from "./provider-services";
 import { extractCvText } from "./cv-text-extraction";
 import { COMPREHENSIVE_SKILL_SYNONYMS, normalizeSkillToken, extractSkillsFromText } from "./section-parser";
 import { parseCvLocally, syncParsedProfileToWorkspace } from "../routes/cvs";
+import { parseCvDeterministic } from "./cv-role-engine";
 
 // ============================================================================
 // SCHEMAS
@@ -226,18 +227,19 @@ export async function parseCvComprehensive(
     throw new Error("Failed to extract text from CV");
   }
 
-  // 1. Run universal fact extraction
+  // 1. Run deterministic CV extraction engine
+  const deterministicParsed = parseCvDeterministic(rawText);
   const localDraft = parseCvLocally(rawText) as Record<string, any>;
 
   // 2. Extract technical & domain skills from CV text
   const extractedSkills = extractSkillsFromText(rawText);
   const technicalSkills = Array.from(new Set([
-    ...(localDraft.technologies || []),
-    ...(localDraft.skills || []),
+    ...(deterministicParsed.technologies || []),
+    ...(deterministicParsed.skills || []),
     ...extractedSkills,
   ])).filter(Boolean);
 
-  const softSkills = (localDraft.skills || []).slice(0, 10);
+  const softSkills = (deterministicParsed.skills || []).slice(0, 10);
   const skills: Skill[] = technicalSkills.map(s => ({
     name: s,
     category: "Technical & Domain Expertise",
@@ -245,25 +247,30 @@ export async function parseCvComprehensive(
   }));
 
   // 3. Extract verified target roles
-  const targetRoles: string[] = Array.isArray(localDraft.targetRoles) && localDraft.targetRoles.length > 0
-    ? localDraft.targetRoles
+  const targetRoles: string[] = deterministicParsed.targetRoles.length > 0
+    ? deterministicParsed.targetRoles
     : ["Professional Specialist"];
 
-  const extractedRoles: ExtractedRole[] = targetRoles.map(role => ({
-    roleTitle: role,
-    confidence: 90,
+  const primaryRoles = deterministicParsed.primaryRoles.length > 0
+    ? deterministicParsed.primaryRoles
+    : targetRoles.slice(0, 4);
+
+  const secondaryRoles = deterministicParsed.secondaryRoles.length > 0
+    ? deterministicParsed.secondaryRoles
+    : targetRoles.slice(4);
+
+  const extractedRoles: ExtractedRole[] = (deterministicParsed.extractedRoles || []).map(r => ({
+    roleTitle: r.roleTitle,
+    confidence: r.confidence,
     source: "cv",
     sourceId: cvId,
-    reasoning: ["Extracted and verified from CV credentials and career experience"],
-    seniorityLevel: (localDraft.yearsExperience || 0) >= 8 ? "Senior / Lead" : (localDraft.yearsExperience || 0) >= 3 ? "Mid-Level" : "Associate / Junior",
-    domain: localDraft.industries?.[0] || "Professional Practice",
+    reasoning: r.reasoning,
+    seniorityLevel: r.seniorityLevel,
+    domain: r.domain,
   }));
 
-  const primaryRoles = targetRoles.slice(0, 4);
-  const secondaryRoles = targetRoles.slice(4);
-
   // 4. Build role-based search queries & keywords
-  const country = localDraft.country || "Kenya";
+  const country = deterministicParsed.country || "Kenya";
   const searchKeywords = Array.from(new Set([...targetRoles, ...technicalSkills.slice(0, 10)]));
   const searchQueries = Array.from(new Set([
     ...targetRoles,
@@ -272,28 +279,37 @@ export async function parseCvComprehensive(
   ]));
 
   // 5. Build education, certifications, and work experience
-  const education: Education[] = (localDraft.education || []).map((e: string) => ({
+  const education: Education[] = (deterministicParsed.education || []).map((e: string) => ({
     institution: e,
     degree: e,
-    fieldOfStudy: localDraft.industries?.[0] || null,
+    fieldOfStudy: deterministicParsed.industries?.[0] || null,
     startDate: null,
     endDate: null,
   }));
 
-  const certifications: Certification[] = (localDraft.certifications || []).map((c: string) => ({
+  const certifications: Certification[] = (deterministicParsed.certifications || []).map((c: string) => ({
     name: c,
     issuer: null,
     issueDate: null,
   }));
 
-  const workExperience: WorkExperience[] = primaryRoles.map(r => ({
-    roleTitle: r,
-    company: "Professional Practice",
-    startDate: null,
-    endDate: null,
-    isCurrent: true,
-    description: `Experienced professional with demonstrated background in ${r} and related practice areas.`,
-  }));
+  const workExperience: WorkExperience[] = deterministicParsed.workExperience.length > 0
+    ? deterministicParsed.workExperience.map(p => ({
+        roleTitle: p.roleTitle,
+        company: p.company,
+        startDate: p.startDate,
+        endDate: p.endDate,
+        isCurrent: p.isCurrent,
+        description: p.description || `Verified professional experience as ${p.roleTitle} at ${p.company}.`,
+      }))
+    : primaryRoles.map(r => ({
+        roleTitle: r,
+        company: deterministicParsed.currentCompany || "Direct Professional Practice",
+        startDate: null,
+        endDate: null,
+        isCurrent: true,
+        description: `Experienced professional with demonstrated background in ${r} and related practice areas.`,
+      }));
 
   const projects: Project[] = [];
 
@@ -310,15 +326,15 @@ export async function parseCvComprehensive(
     parsingMethod: "deterministic",
     providerUsed: null,
     modelUsed: null,
-    confidence: 85,
-    fullName: localDraft.fullName || "Candidate",
-    email: localDraft.email || null,
-    phone: localDraft.phone || null,
-    location: localDraft.city ? `${localDraft.city}, ${country}` : country || null,
+    confidence: 90,
+    fullName: deterministicParsed.fullName || localDraft.fullName || "Candidate",
+    email: deterministicParsed.email || localDraft.email || null,
+    phone: deterministicParsed.phone || localDraft.phone || null,
+    location: deterministicParsed.city ? `${deterministicParsed.city}, ${country}` : country || null,
     linkedIn: null,
     gitHub: null,
     portfolio: null,
-    professionalSummary: `Verified credentials and professional background for ${localDraft.fullName || "Candidate"}.`,
+    professionalSummary: `Verified credentials and professional background for ${deterministicParsed.fullName || "Candidate"} across ${deterministicParsed.industries.join(", ") || "field of practice"}.`,
     careerObjective: `Seeking high-impact roles as ${primaryRoles.join(", ")}.`,
     workExperience,
     education,
@@ -330,10 +346,10 @@ export async function parseCvComprehensive(
     extractedRoles,
     primaryRoles,
     secondaryRoles,
-    totalExperienceYears: Math.round(localDraft.yearsExperience || 0),
-    totalExperienceMonths: Math.round((localDraft.yearsExperience || 0) * 12),
-    currentRole: primaryRoles[0] || null,
-    currentCompany: null,
+    totalExperienceYears: Math.round(deterministicParsed.yearsExperience || 0),
+    totalExperienceMonths: Math.round((deterministicParsed.yearsExperience || 0) * 12),
+    currentRole: deterministicParsed.currentRole || primaryRoles[0] || null,
+    currentCompany: deterministicParsed.currentCompany || null,
     searchKeywords,
     searchQueries,
     fingerprint,
@@ -342,6 +358,7 @@ export async function parseCvComprehensive(
     parsingErrors: [],
     warnings: truncated ? ["CV text was truncated due to length limits"] : [],
   };
+
 
   // Save to cvParsingResultsTable
   await db.insert(cvParsingResultsTable).values({

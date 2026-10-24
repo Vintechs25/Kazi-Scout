@@ -27,8 +27,7 @@ import {
 import { evaluatePreIngestionGate } from "../lib/pre-ingestion-gate";
 import { fingerprintJob } from "../lib/job-deduplication";
 import { validateListing } from "../lib/ingestion-contract";
-import { getOrGenerateSearchDirective } from "../lib/search-directive";
-import { getOrGenerateCandidateEvidence } from "../lib/candidate-evidence";
+import { getDeterministicSearchDirective } from "../lib/search-directive";
 import { getAuthenticatedAccountId } from "../lib/auth";
 
 const router: IRouter = Router();
@@ -170,10 +169,10 @@ async function executeCrawl(session: CrawlerSessionState): Promise<CrawlerSessio
     session.stats.jobsFound = rawJobs.length;
     session.stats.sourcesProcessed = session.stats.totalSources;
 
-    // Optional pre-ingestion gate validation & directive matching
+    // Zero-AI deterministic qualification gate validation & directive matching
     let directive: any = null;
     try {
-      directive = await getOrGenerateSearchDirective(session.accountId, false, roles);
+      directive = await getDeterministicSearchDirective(session.accountId, roles);
     } catch {
       // fallback to neutral gate
     }

@@ -25,6 +25,7 @@ async function buildAll() {
       path.resolve(artifactDir, "src/lib/pre-ingestion-gate.ts"),
       path.resolve(artifactDir, "src/lib/search-directive.ts"),
       path.resolve(artifactDir, "src/lib/ai-job-evaluator.ts"),
+      path.resolve(artifactDir, "src/lib/cv-role-engine.ts"),
       path.resolve(artifactDir, "src/lib/enhanced-job-search-service.ts"),
     ],
     platform: "node",
